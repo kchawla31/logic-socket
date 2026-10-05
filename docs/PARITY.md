@@ -10,7 +10,7 @@ Source paths are relative to `packages/`. Phase: 1 core/HTTP/env/MCP inspector �
 | Workspace (scope collection/design/mcp/...) | models/workspace.ts | core::model::Workspace | 1 |
 | Folder (RequestGroup) + folder env, headers, auth, scripts | models/request-group.ts | core::model::Folder | 1 (scripts 2) |
 | HTTP Request (url, method, params, path params, headers, body, auth, settings) | models/request.ts | core::model::Request | 1 |
-| Environment (base + sub, JSON / kv-pair, secret type) | models/environment.ts | core::model::Environment | 1 (secret vault 5) |
+| Environment (base + sub, JSON / kv-pair, secret type) | models/environment.ts | core::model::Environment | 1 (secret vault 5 ✅) |
 | Global environments (environment workspaces) | models/workspace.ts scope `environment` | core::model::Environment w/ global flag | 1 |
 | Cookie jar | models/cookie-jar.ts | core::model::CookieJar + http::cookies | 1 |
 | Response (status, headers, timings, body, test results) | models/response.ts | core::model::Response | 1 |
@@ -21,9 +21,9 @@ Source paths are relative to `packages/`. Phase: 1 core/HTTP/env/MCP inspector �
 | Unit test suites | models/unit-test*.ts | covered by runner + scripts | 2 |
 | gRPC request / proto files | models/grpc-request.ts, proto-*.ts | core::model::GrpcRequest, ProtoFile | 4 ✅ |
 | WebSocket / Socket.IO requests & payloads | models/websocket-*.ts, socket-io-*.ts | core::model::RealtimeRequest (websocket / sse / socketio) | 4 ✅ |
-| API spec (design docs) | models/api-spec.ts | core::model::ApiSpec | 5 |
+| API spec (design docs) | models/api-spec.ts | spec text kept on import only | not modelled yet |
 | Mock servers / routes | models/mock-*.ts | deferred (post-5) | — |
-| Git repository / credentials | models/git-*.ts, insomnia-vcs | sync crate | 5 |
+| Git repository / credentials | models/git-*.ts, insomnia-vcs | core::model::GitRepo + engine::git | 5 ✅ |
 | Client / CA certificates | models/client-certificate.ts, ca-certificate.ts | http::tls | deferred (D29) |
 | Settings | models/settings.ts | core::model::Settings | 1 |
 | Organization / Project / cloud sync / user session | models/organization.ts, project.ts | local-only projects in 1; cloud out of scope | 1 / — |
@@ -87,10 +87,10 @@ Source paths are relative to `packages/`. Phase: 1 core/HTTP/env/MCP inspector �
 
 | Capability | Insomnia source | Rust target | Phase |
 |---|---|---|---|
-| Insomnia v4/v5 export import & export | insomnia/src/common/insomnia-v5.ts, main/importers | io | 5 |
-| Postman, OpenAPI, HAR, cURL importers | main/importers/importers/ | io | 5 (cURL paste 1, UX) |
-| Git sync | insomnia-vcs, insomnia/src/sync | sync | 5 |
-| Vault secrets (AES-GCM) | account/, environment SECRET type | vault | 5 |
+| Insomnia v4/v5 export import & export | insomnia/src/common/insomnia-v5.ts, main/importers | convert::insomnia | 5 ✅ (v5 import+export, v4/v3 import) |
+| Postman, OpenAPI, HAR, cURL importers | main/importers/importers/ | convert::{postman,openapi,har,curl} | 5 ✅ (WSDL ✗) |
+| Git sync | insomnia-vcs, insomnia/src/sync | engine::git (system git) | 5 ✅ |
+| Vault secrets (AES-GCM) | account/, environment SECRET type | engine::vault | 5 ✅ |
 
 ## Phase 2 API matrix (`insomnia.*` in scripts)
 
@@ -101,7 +101,7 @@ Source: `packages/insomnia-scripting-environment/src/objects/` + `packages/insom
 | `insomnia` / `$` / `pm` aliases | implement | `$` as in Insomnia; `pm` alias eases Postman script reuse |
 | `environment`, `baseEnvironment`, `collectionVariables` (= base), `globals`, `iterationData` | implement | `name, has, get, set, unset, clear, replaceIn, toObject`; mutations persisted after the run (iterationData read-only to storage) |
 | `variables` | implement | `has, get, set, replaceIn, toObject`; precedence local → iterationData → folder → environment → base → globals; `set` writes script-local vars (highest render precedence) |
-| `vault` | NotSupported | Phase 5 (vault) |
+| `vault` | NotSupported | secrets are ordinary variables in scripts; `insomnia.vault` not yet |
 | `request.url` (string or Url: `toString, getHost, getPath, getQueryString, query.add/upsert/remove/get/toObject, addQueryParams`) | implement | query maps to request parameters |
 | `request.method`, `request.name`, `request.id` | implement | |
 | `request.headers` (`add, upsert, remove, get, has, each, toObject, all`), `request.addHeader/removeHeader/upsertHeader` | implement | |

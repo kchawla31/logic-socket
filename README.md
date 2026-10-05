@@ -8,7 +8,7 @@ A Rust rewrite of the Insomnia API client: a desktop app (Tauri 2 + React) and t
 - **AI requests (LLM ↔ MCP)**: Anthropic, OpenAI, Ollama or any OpenAI-compatible endpoint; streaming answers, thinking, and MCP tools the model can call — read-only tools run automatically, risky ones wait for your approval; token usage, time-to-first-token and the exact provider payloads; MCP sampling backed by your provider. Keys stay in the OS keychain
 - **Collection runner**: iterations, CSV/JSON data, delays, bail, `setNextRequest` flow control; spec/dot/json/JUnit reports; `irs run collection` for CI
 
-Status and scope: see `docs/PARITY.md` (what maps to which phase), `docs/PHASE1_REPORT.md`, `docs/PHASE2_REPORT.md`, and `docs/DECISIONS.md`.
+Status and scope: see `docs/PARITY.md` (what maps to which phase), the phase reports `docs/PHASE1_REPORT.md` … `docs/PHASE5_REPORT.md`, and `docs/DECISIONS.md`.
 
 ## Run the desktop app
 
@@ -51,6 +51,21 @@ irs rt http://localhost:8790/socket.io/ -k socketio --emit chat --args '["hi"]'
 irs mock grpc &                # demo.Greeter with reflection on :50051
 irs grpc grpc://localhost:50051 -l
 irs grpc grpc://localhost:50051 -m demo.Greeter/Chat --send '{"user":"a","text":"hi"}' --send '{"user":"a","text":"bye"}'
+
+# Import / export / code
+irs import petstore.yaml                     # Insomnia v4/v5, Postman, OpenAPI 3, Swagger 2, HAR, curl
+irs import prod.postman_environment.json --into "My API"
+irs export "My API" -f postman -o my-api.postman_collection.json
+irs code "Get JSON" --lang python            # curl, httpie, js, python, go, rust
+
+# Secrets (encrypted with a key in your keychain; IRS_VAULT_KEY for CI)
+irs env set "My API" token - --secret         # reads the value from stdin
+irs vault export-key                          # move secrets to another machine
+
+# Git sync (one Insomnia v5 file per workspace; secrets never committed)
+irs git clone https://github.com/acme/api-collections.git ~/api-collections
+irs git open ~/my-repo && irs git link my-repo "My API"
+irs git status my-repo && irs git commit my-repo -m "Add orders" && irs git push my-repo
 
 # Runner (exit code 0 = all passed, 1 = failures, 2 = usage/runtime error)
 irs run collection "My API" -d data.csv -r junit -o report.xml
