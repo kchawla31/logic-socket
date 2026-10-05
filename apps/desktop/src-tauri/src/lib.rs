@@ -3,6 +3,7 @@
 
 mod ai;
 mod auth;
+mod grpc;
 mod rt;
 
 use std::collections::HashMap;
@@ -34,6 +35,8 @@ pub struct AppState {
     runs: std::sync::Mutex<HashMap<String, RunSlot>>,
     ai_runs: std::sync::Mutex<HashMap<String, ai::AiRunSlot>>,
     rt: std::sync::Mutex<HashMap<String, Arc<irs_realtime::Session>>>,
+    grpc_schemas: std::sync::Mutex<HashMap<String, irs_grpc::Schema>>,
+    grpc_calls: std::sync::Mutex<HashMap<String, Arc<std::sync::Mutex<irs_grpc::StreamCall>>>>,
 }
 
 #[derive(Default)]
@@ -89,6 +92,15 @@ fn tree(engine: &Engine, parent: &str) -> CmdResult<Vec<TreeNode>> {
                 sort_key,
                 name,
                 transport: None,
+                children: vec![],
+            },
+            "GrpcRequest" => TreeNode {
+                transport: d.data["method"].as_str().map(str::to_string),
+                id: d.meta.id,
+                kind: "grpc".into(),
+                sort_key,
+                name,
+                method: None,
                 children: vec![],
             },
             "RealtimeRequest" => TreeNode {
@@ -250,6 +262,11 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                 .meta
                 .id
         }
+        "GrpcRequest" => store
+            .insert(parent.as_deref(), serde_json::from_value::<irs_core::GrpcRequest>(data).map_err(e)?)
+            .map_err(e)?
+            .meta
+            .id,
         "RealtimeRequest" => {
             store
                 .insert(
@@ -288,6 +305,11 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                                     serde_json::from_value::<irs_core::LlmRequest>(c.data)
                                         .map_err(e)?,
                                 )
+                                .map_err(e)?;
+                        }
+                        "GrpcRequest" => {
+                            store
+                                .insert(Some(dst), serde_json::from_value::<irs_core::GrpcRequest>(c.data).map_err(e)?)
                                 .map_err(e)?;
                         }
                         "RealtimeRequest" => {
@@ -998,6 +1020,8 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             runs: Default::default(),
             ai_runs: Default::default(),
             rt: Default::default(),
+            grpc_schemas: Default::default(),
+            grpc_calls: Default::default(),
         })
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -1075,6 +1099,18 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             auth::oauth2_status,
             auth::oauth2_authorize,
             auth::oauth2_clear,
+            grpc::proto_file_list,
+            grpc::proto_file_create,
+            grpc::proto_file_update,
+            grpc::grpc_create,
+            grpc::grpc_update,
+            grpc::grpc_methods,
+            grpc::grpc_invoke,
+            grpc::grpc_stream_start,
+            grpc::grpc_send,
+            grpc::grpc_commit,
+            grpc::grpc_cancel,
+            grpc::grpc_log,
         ])
 }
 

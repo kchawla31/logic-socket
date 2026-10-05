@@ -12,6 +12,7 @@ irs-mcp.workspace = true
 irs-scripting.workspace = true
 irs-llm.workspace = true
 irs-realtime.workspace = true
+irs-grpc.workspace = true
 url.workspace = true
 keyring.workspace = true
 sha2 = "0.10"

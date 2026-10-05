@@ -551,3 +551,50 @@ fn realtime_commands_connect_send_and_log() {
         false
     );
 }
+
+#[test]
+fn grpc_commands_with_protos_and_reflection() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let url = rt.block_on(irs_grpc::demo::spawn(0, true)).unwrap();
+    let h = Harness::new();
+    let ws = h.ok("workspace_create", json!({"name": "G"}));
+    let r = h.ok("grpc_create", json!({"parentId": ws["id"]}));
+    assert_eq!(h.ok("tree_get", json!({"workspaceId": ws["id"]}))[0]["kind"], "grpc");
+    let mut doc = r.clone();
+    doc["url"] = json!(url);
+    doc["method"] = json!("/demo.Greeter/SayHello");
+    doc["message"] = json!(r#"{"name": "{{ _.who }}"}"#);
+    h.ok("grpc_update", json!({"doc": doc.clone()}));
+    let mut env = h.ok("env_list", json!({"workspaceId": ws["id"]}))["base"].clone();
+    env["data"] = json!({"who": "ipc"});
+    h.ok("env_update", json!({"doc": env}));
+
+    let svcs = h.ok("grpc_methods", json!({"id": r["id"], "refresh": true}));
+    assert_eq!(svcs[0]["name"], "demo.Greeter", "via reflection");
+    let res = h.ok("grpc_invoke", json!({"id": r["id"]}));
+    assert_eq!(res["status"]["codeName"], "OK");
+    assert_eq!(res["response"]["message"], "Hello, ipc!");
+
+    // proto files instead of reflection
+    doc["schemaSource"] = json!("protos");
+    h.ok("grpc_update", json!({"doc": doc.clone()}));
+    assert!(h.call("grpc_methods", json!({"id": r["id"], "refresh": true})).unwrap_err().as_str().unwrap().contains("No proto files"));
+    h.ok("proto_file_create", json!({"workspaceId": ws["id"], "name": "demo.proto", "contents": irs_grpc::demo::DEMO_PROTO}));
+    assert_eq!(h.ok("grpc_methods", json!({"id": r["id"], "refresh": true}))[0]["methods"].as_array().unwrap().len(), 4);
+
+    // bidi stream via commands
+    doc["method"] = json!("/demo.Greeter/Chat");
+    doc["message"] = json!(r#"{"text":"yo"}"#);
+    h.ok("grpc_update", json!({"doc": doc}));
+    h.ok("grpc_stream_start", json!({"id": r["id"]}));
+    h.ok("grpc_send", json!({"id": r["id"]}));
+    h.ok("grpc_commit", json!({"id": r["id"]}));
+    let log = (0..100)
+        .find_map(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            let l = h.ok("grpc_log", json!({"id": r["id"]}));
+            l.as_array().unwrap().iter().any(|e| e["kind"] == "close").then_some(l)
+        })
+        .expect("stream finished");
+    assert!(log.as_array().unwrap().iter().any(|e| e["direction"] == "in" && e["data"].as_str().unwrap().contains("you said: yo")));
+}

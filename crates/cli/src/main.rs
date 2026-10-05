@@ -1,6 +1,7 @@
 //! `irs` — insomnia-rs command line.
 
 mod llm_cmd;
+mod grpc_cmd;
 mod mcp_cmd;
 mod mock_gql;
 mod out;
@@ -70,6 +71,8 @@ enum Cmd {
     Llm(llm_cmd::LlmCmd),
     /// WebSocket / Server-Sent Events / Socket.IO
     Rt(rt_cmd::RtArgs),
+    /// gRPC: list methods and call them (reflection or --proto files)
+    Grpc(grpc_cmd::GrpcArgs),
     /// Local demo servers for trying features without external services
     #[command(subcommand)]
     Mock(MockCmd),
@@ -90,6 +93,11 @@ enum MockCmd {
     /// Canned GraphQL server (library schema) at /graphql
     Graphql {
         #[arg(long, default_value_t = 8791)]
+        port: u16,
+    },
+    /// Demo gRPC server (demo.Greeter, with reflection)
+    Grpc {
+        #[arg(long, default_value_t = 50051)]
         port: u16,
     },
     /// Mock MCP server over Streamable HTTP (/mcp)
@@ -243,6 +251,7 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Run(c) => run_cmd::run(&engine, c).await,
         Cmd::Llm(c) => llm_cmd::run(&engine, c).await,
         Cmd::Rt(a) => rt_cmd::run(&engine, a).await,
+        Cmd::Grpc(a) => grpc_cmd::run(&engine, a).await,
         Cmd::Mock(m) => {
             let url = match m {
                 MockCmd::Realtime { port } => {
@@ -258,6 +267,7 @@ async fn run(cli: Cli) -> Result<()> {
                     irs_mcp::mock::spawn_http(Default::default(), port).await?
                 }
                 MockCmd::Graphql { port } => mock_gql::spawn(port).await?,
+                MockCmd::Grpc { port } => irs_grpc::demo::spawn(port, true).await?,
             };
             eprintln!("{} mock server on {url} — Ctrl-C to stop", green("●"));
             tokio::signal::ctrl_c().await?;
@@ -425,6 +435,7 @@ fn print_tree(engine: &Engine, parent: &str, depth: usize) -> Result<()> {
             }
             "McpServer" => println!("{pad}{:<7} {name} {}", magenta("MCP"), dim(&d.meta.id)),
             "LlmRequest" => println!("{pad}{:<7} {name} {}", cyan("AI"), dim(&d.meta.id)),
+            "GrpcRequest" => println!("{pad}{:<7} {name} {}", cyan("gRPC"), dim(&d.meta.id)),
             "RealtimeRequest" => {
                 let k = match d.data["kind"].as_str() {
                     Some("sse") => "SSE",

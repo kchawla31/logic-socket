@@ -1,0 +1,24 @@
+[package]
+name = "irs-grpc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+irs-realtime.workspace = true
+tonic = { version = "0.14", features = ["tls-ring", "tls-webpki-roots", "router"] }
+tonic-reflection = { version = "0.14", features = ["server"] }
+prost = "0.14"
+prost-types = "0.14"
+prost-reflect = { version = "0.16", features = ["serde"] }
+protox = "0.9"
+miette = "7"
+tokio.workspace = true
+tokio-stream = { version = "0.1", features = ["net"] }
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+http = "1"
+http-body = "1"
+tower-service = "0.3"

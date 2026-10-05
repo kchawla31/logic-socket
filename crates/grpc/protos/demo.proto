@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package demo;
+
+import "google/protobuf/timestamp.proto";
+
+// Demo service used by insomnia-rs tests and `irs mock grpc`.
+service Greeter {
+  // Unary: say hello.
+  rpc SayHello (HelloRequest) returns (HelloReply);
+  // Server streaming: count from 1 to `to`.
+  rpc CountUp (CountRequest) returns (stream Number);
+  // Client streaming: sum all numbers sent.
+  rpc Sum (stream Number) returns (Number);
+  // Bidirectional streaming: echo each chat message.
+  rpc Chat (stream ChatMessage) returns (stream ChatMessage);
+}
+
+message HelloRequest {
+  string name = 1;
+  repeated string tags = 2;
+  Mood mood = 3;
+}
+
+enum Mood {
+  MOOD_UNSPECIFIED = 0;
+  HAPPY = 1;
+  GRUMPY = 2;
+}
+
+message HelloReply {
+  string message = 1;
+  int32 length = 2;
+  google.protobuf.Timestamp at = 3;
+}
+
+message CountRequest { int32 to = 1; }
+
+message Number { int64 value = 1; }
+
+message ChatMessage {
+  string user = 1;
+  string text = 2;
+}

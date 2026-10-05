@@ -19,6 +19,8 @@ irs-templating.workspace = true
 irs-runner.workspace = true
 irs-llm.workspace = true
 irs-realtime.workspace = true
+irs-grpc.workspace = true
+prost-reflect = "0.16"
 futures.workspace = true
 tauri = { version = "2", features = [] }
 tokio.workspace = true
@@ -27,6 +29,7 @@ serde_json.workspace = true
 base64.workspace = true
 
 [dev-dependencies]
+irs-grpc.workspace = true
 irs-realtime.workspace = true
 irs-llm.workspace = true
 tempfile.workspace = true

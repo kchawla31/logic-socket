@@ -16,6 +16,7 @@ irs-templating.workspace = true
 irs-runner.workspace = true
 irs-llm.workspace = true
 irs-realtime.workspace = true
+irs-grpc.workspace = true
 futures.workspace = true
 tokio.workspace = true
 clap.workspace = true

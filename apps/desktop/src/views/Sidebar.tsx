@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Copy, Folder, FolderPlus, ListChecks, Pencil, Plug, Plus, Radio, Search, Sparkles, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Folder, FolderPlus, ListChecks, Network, Pencil, Plug, Plus, Radio, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { IconButton, useDialog, useToast } from '../components/ui';
@@ -75,7 +75,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
     return () => window.removeEventListener('click', close);
   }, []);
 
-  const create = async (kind: 'request' | 'folder' | 'mcp' | 'llm' | 'websocket' | 'socketio' | 'sse', parentId: string) => {
+  const create = async (kind: 'request' | 'folder' | 'mcp' | 'llm' | 'websocket' | 'socketio' | 'sse' | 'grpc', parentId: string) => {
     try {
       if (parentId !== workspaceId) toggle(parentId, true);
       if (kind === 'request') {
@@ -84,6 +84,9 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
       } else if (kind === 'folder') {
         const f = await api.folderCreate(parentId, 'New Folder');
         setRenaming(f.id);
+      } else if (kind === 'grpc') {
+        const r = await api.grpcCreate(parentId);
+        onCreated(r.id, 'grpc', r.name);
       } else if (kind === 'websocket' || kind === 'socketio' || kind === 'sse') {
         const r = await api.rtCreate(parentId, kind);
         onCreated(r.id, 'realtime', r.name);
@@ -171,6 +174,8 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
               </>
             ) : n.kind === 'mcp' ? (
               <span className="w-9 shrink-0 text-right font-mono text-[10px] font-bold text-violet-600 dark:text-violet-400">MCP</span>
+            ) : n.kind === 'grpc' ? (
+              <span className="w-9 shrink-0 text-right font-mono text-[10px] font-bold text-teal-600 dark:text-teal-400">gRPC</span>
             ) : n.kind === 'realtime' ? (
               <span className="w-9 shrink-0 text-right font-mono text-[10px] font-bold text-sky-600 dark:text-sky-400">
                 {n.transport === 'sse' ? 'SSE' : n.transport === 'socketio' ? 'SIO' : 'WS'}
@@ -277,6 +282,9 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
               </MenuItem>
               <MenuItem icon={<Sparkles className="size-3.5" />} onClick={() => create('llm', menu.node?.id ?? workspaceId)}>
                 New AI request
+              </MenuItem>
+              <MenuItem icon={<Network className="size-3.5" />} onClick={() => create('grpc', menu.node?.id ?? workspaceId)}>
+                New gRPC request
               </MenuItem>
               <MenuItem icon={<Radio className="size-3.5" />} onClick={() => create('websocket', menu.node?.id ?? workspaceId)}>
                 New WebSocket

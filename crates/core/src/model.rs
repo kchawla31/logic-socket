@@ -534,6 +534,51 @@ impl Default for RealtimeRequest {
     }
 }
 
+// ---------------------------------------------------------------- gRPC
+
+/// A `.proto` source stored in a workspace (imports resolve among them).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ProtoFile {
+    /// File name used for imports, e.g. `shop/v1/orders.proto`.
+    pub name: String,
+    pub contents: String,
+}
+model!(ProtoFile, "ProtoFile", "pf");
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GrpcRequest {
+    pub name: String,
+    pub description: String,
+    /// `grpc://host:port` (plaintext) or `grpcs://host:port` (TLS).
+    pub url: String,
+    /// `reflection` | `protos`
+    pub schema_source: String,
+    /// `/package.Service/Method`
+    pub method: String,
+    /// JSON request message (supports `{{ variables }}`).
+    pub message: String,
+    pub metadata: Vec<KeyValue>,
+    pub timeout_ms: u64,
+}
+model!(GrpcRequest, "GrpcRequest", "grpc");
+
+impl Default for GrpcRequest {
+    fn default() -> Self {
+        Self {
+            name: "New gRPC Request".into(),
+            description: String::new(),
+            url: "grpc://localhost:50051".into(),
+            schema_source: "reflection".into(),
+            method: String::new(),
+            message: "{}".into(),
+            metadata: vec![],
+            timeout_ms: 30_000,
+        }
+    }
+}
+
 // ---------------------------------------------------------------- LLM
 
 /// Where a provider's API key comes from. Keys are never stored in the database.

@@ -1,4 +1,4 @@
-import { Command as CommandIcon, Folder, Layers, ListChecks, Moon, Plug, Plus, Radio, Send, Settings as SettingsIcon, Sparkles, Sun, X } from 'lucide-react';
+import { Command as CommandIcon, Folder, Layers, ListChecks, Moon, Network, Plug, Plus, Radio, Send, Settings as SettingsIcon, Sparkles, Sun, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type Command, CommandPalette } from './components/CommandPalette';
@@ -7,6 +7,7 @@ import { api, type EnvList, errorText, onDbChanged, type TreeNode, type Workspac
 import { cn, methodColor, methodShort, modKey } from './lib/utils';
 import { AiProvidersModal } from './views/AiProviders';
 import { FolderView } from './views/FolderView';
+import { GrpcView } from './views/GrpcView';
 import { LlmView } from './views/LlmView';
 import { RealtimeView } from './views/RealtimeView';
 import { McpView } from './views/McpView';
@@ -220,6 +221,14 @@ function Shell() {
         keywords: 'realtime ws socket stream',
         run: async () => wsId && open((await api.rtCreate(wsId, k)).id, 'realtime'),
       })),
+      {
+        id: 'new-grpc',
+        group: 'Actions',
+        label: 'New gRPC request',
+        icon: <Network className="size-4" />,
+        keywords: 'grpc protobuf proto rpc',
+        run: async () => wsId && open((await api.grpcCreate(wsId)).id, 'grpc'),
+      },
       { id: 'ai-providers', group: 'Actions', label: 'AI providers', icon: <Sparkles className="size-4" />, keywords: 'llm api key anthropic openai ollama', run: () => setAiOpen(true) },
       {
         id: 'run-collection',
@@ -265,6 +274,8 @@ function Shell() {
             <Sparkles className="size-4" />
           ) : n.kind === 'realtime' ? (
             <Radio className="size-4" />
+          ) : n.kind === 'grpc' ? (
+            <Network className="size-4" />
           ) : (
             <Folder className="size-4" />
           ),
@@ -362,6 +373,7 @@ function Shell() {
                       {t.kind === 'runner' && <ListChecks className="size-3.5 shrink-0 text-emerald-500" />}
                       {t.kind === 'llm' && <Sparkles className="size-3.5 shrink-0 text-accent" />}
                       {t.kind === 'realtime' && <Radio className="size-3.5 shrink-0 text-sky-500" />}
+                      {t.kind === 'grpc' && <Network className="size-3.5 shrink-0 text-teal-500" />}
                       <span className="truncate">{label}</span>
                       <button
                         aria-label="Close tab"
@@ -380,6 +392,7 @@ function Shell() {
               {activeTab?.kind === 'folder' && <FolderView key={activeTab.id} id={activeTab.id} />}
               {activeTab?.kind === 'mcp' && <McpView key={activeTab.id} id={activeTab.id} />}
               {activeTab?.kind === 'realtime' && <RealtimeView key={activeTab.id} id={activeTab.id} />}
+              {activeTab?.kind === 'grpc' && wsId && <GrpcView key={activeTab.id} id={activeTab.id} workspaceId={wsId} />}
               {activeTab?.kind === 'llm' && <LlmView key={activeTab.id} id={activeTab.id} tree={tree} onOpenProviders={() => setAiOpen(true)} />}
               {activeTab?.kind === 'runner' && wsId && (
                 <RunnerView

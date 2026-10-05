@@ -2,6 +2,7 @@
 //! load request + ancestors + environments → render → send → persist.
 
 pub mod curl;
+pub mod grpc;
 pub mod llm;
 pub mod mcp;
 pub mod oauth2;

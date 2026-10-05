@@ -217,6 +217,47 @@ export interface RtEvent {
   size: number;
 }
 
+// ---- gRPC
+
+export interface ProtoFile extends Meta {
+  name: string;
+  contents: string;
+}
+
+export interface GrpcRequest extends Meta {
+  name: string;
+  description: string;
+  url: string;
+  schemaSource: 'reflection' | 'protos';
+  method: string;
+  message: string;
+  metadata: KeyValue[];
+  timeoutMs: number;
+}
+
+export interface GrpcMethod {
+  name: string;
+  path: string;
+  clientStreaming: boolean;
+  serverStreaming: boolean;
+  inputType: string;
+  outputType: string;
+  example: unknown;
+}
+
+export interface GrpcService {
+  name: string;
+  methods: GrpcMethod[];
+}
+
+export interface GrpcUnaryResult {
+  status: { code: number; codeName: string; message: string };
+  response?: unknown;
+  headers: [string, string][];
+  trailers: [string, string][];
+  latencyMs: number;
+}
+
 // ---- AI
 
 export type KeySource = { type: 'none' } | { type: 'keychain' } | { type: 'env'; var: string } | { type: 'template'; template: string };
@@ -356,7 +397,7 @@ export interface ResponseSummary {
 
 export interface TreeNode {
   id: string;
-  kind: 'folder' | 'request' | 'mcp' | 'llm' | 'realtime';
+  kind: 'folder' | 'request' | 'mcp' | 'llm' | 'realtime' | 'grpc';
   name: string;
   method?: string | null;
   transport?: string | null;
@@ -623,6 +664,18 @@ export const api = {
   oauth2Status: (ownerId: string) => invoke<TokenStatus>('oauth2_status', { ownerId }),
   oauth2Authorize: (ownerId: string) => invoke<TokenStatus>('oauth2_authorize', { ownerId }),
   oauth2Clear: (ownerId: string) => invoke<void>('oauth2_clear', { ownerId }),
+  protoFileList: (workspaceId: string) => invoke<ProtoFile[]>('proto_file_list', { workspaceId }),
+  protoFileCreate: (workspaceId: string, name: string, contents: string) => invoke<ProtoFile>('proto_file_create', { workspaceId, name, contents }),
+  protoFileUpdate: (doc: ProtoFile) => invoke<ProtoFile>('proto_file_update', { doc }),
+  grpcCreate: (parentId: string) => invoke<GrpcRequest>('grpc_create', { parentId }),
+  grpcUpdate: (doc: GrpcRequest) => invoke<GrpcRequest>('grpc_update', { doc }),
+  grpcMethods: (id: string, refresh: boolean) => invoke<GrpcService[]>('grpc_methods', { id, refresh }),
+  grpcInvoke: (id: string) => invoke<GrpcUnaryResult>('grpc_invoke', { id }),
+  grpcStreamStart: (id: string) => invoke<void>('grpc_stream_start', { id }),
+  grpcSend: (id: string) => invoke<void>('grpc_send', { id }),
+  grpcCommit: (id: string) => invoke<void>('grpc_commit', { id }),
+  grpcCancel: (id: string) => invoke<void>('grpc_cancel', { id }),
+  grpcLog: (id: string) => invoke<RtEvent[]>('grpc_log', { id }),
 };
 
 export function onRtEvent(cb: (id: string, ev: RtEvent) => void): Promise<UnlistenFn> {
@@ -649,4 +702,8 @@ export function errorText(e: unknown): string {
   if (typeof e === 'string') return e;
   if (e instanceof Error) return e.message;
   return JSON.stringify(e);
+}
+
+export function onGrpcEvent(cb: (id: string, ev: RtEvent) => void): Promise<UnlistenFn> {
+  return listen<{ id: string; event: RtEvent }>('grpc-event', e => cb(e.payload.id, e.payload.event));
 }
