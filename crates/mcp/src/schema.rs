@@ -37,17 +37,44 @@ pub fn param_rows(schema: &Value) -> Vec<ParamRow> {
     rows
 }
 
-fn walk_object(root: &Value, obj: &Value, prefix: &str, depth: usize, rows: &mut Vec<ParamRow>, seen: &mut HashSet<String>) {
+fn walk_object(
+    root: &Value,
+    obj: &Value,
+    prefix: &str,
+    depth: usize,
+    rows: &mut Vec<ParamRow>,
+    seen: &mut HashSet<String>,
+) {
     if depth > MAX_DEPTH {
         return;
     }
-    let required: HashSet<&str> =
-        obj.get("required").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
-    let Some(props) = obj.get("properties").and_then(Value::as_object) else { return };
+    let required: HashSet<&str> = obj
+        .get("required")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let Some(props) = obj.get("properties").and_then(Value::as_object) else {
+        return;
+    };
     for (name, prop) in props {
         let prop = resolve(root, prop, seen);
-        let path = if prefix.is_empty() { name.clone() } else { format!("{prefix}.{name}") };
-        push_row(root, &prop, name, &path, required.contains(name.as_str()), depth, rows, seen);
+        let path = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}.{name}")
+        };
+        push_row(
+            root,
+            &prop,
+            name,
+            &path,
+            required.contains(name.as_str()),
+            depth,
+            rows,
+            seen,
+        );
     }
 }
 
@@ -70,7 +97,10 @@ fn push_row(
         required,
         default: prop.get("default").cloned(),
         enum_values: enum_values(prop),
-        description: prop.get("description").and_then(Value::as_str).map(str::to_string),
+        description: prop
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         constraints: constraints(prop),
     });
     if is_object(prop) {
@@ -89,7 +119,9 @@ fn is_object(v: &Value) -> bool {
 
 /// Resolve a local `$ref` (`#/$defs/X`, `#/definitions/X`), guarding cycles.
 fn resolve(root: &Value, v: &Value, seen: &mut HashSet<String>) -> Value {
-    let Some(r) = v.get("$ref").and_then(Value::as_str) else { return v.clone() };
+    let Some(r) = v.get("$ref").and_then(Value::as_str) else {
+        return v.clone();
+    };
     if !seen.insert(r.to_string()) {
         return serde_json::json!({ "type": "object", "description": format!("(recursive {r})") });
     }
@@ -113,7 +145,10 @@ pub fn type_label(root: &Value, v: &Value, seen: &mut HashSet<String>) -> String
     let v = resolve(root, v, seen);
     for key in ["anyOf", "oneOf"] {
         if let Some(alts) = v.get(key).and_then(Value::as_array) {
-            let mut labels: Vec<String> = alts.iter().map(|a| type_label(root, a, &mut seen.clone())).collect();
+            let mut labels: Vec<String> = alts
+                .iter()
+                .map(|a| type_label(root, a, &mut seen.clone()))
+                .collect();
             labels.dedup();
             return labels.join(" | ");
         }
@@ -125,15 +160,22 @@ pub fn type_label(root: &Value, v: &Value, seen: &mut HashSet<String>) -> String
     }
     let base = match v.get("type") {
         Some(Value::String(t)) => single_type(root, &v, t, seen),
-        Some(Value::Array(ts)) => {
-            ts.iter().filter_map(Value::as_str).map(|t| single_type(root, &v, t, &mut seen.clone())).collect::<Vec<_>>().join(" | ")
-        }
+        Some(Value::Array(ts)) => ts
+            .iter()
+            .filter_map(Value::as_str)
+            .map(|t| single_type(root, &v, t, &mut seen.clone()))
+            .collect::<Vec<_>>()
+            .join(" | "),
         _ if v.get("properties").is_some() => "object".into(),
         _ if v.get("enum").is_some() => "enum".into(),
         _ if v.get("const").is_some() => format!("const {}", v["const"]),
         _ => "any".into(),
     };
-    if v.get("nullable") == Some(&Value::Bool(true)) { format!("{base} | null") } else { base }
+    if v.get("nullable") == Some(&Value::Bool(true)) {
+        format!("{base} | null")
+    } else {
+        base
+    }
 }
 
 fn single_type(root: &Value, v: &Value, t: &str, seen: &mut HashSet<String>) -> String {
@@ -157,14 +199,21 @@ fn enum_values(v: &Value) -> Vec<Value> {
     // oneOf of consts is a common "labelled enum" pattern
     v.get("oneOf")
         .and_then(Value::as_array)
-        .map(|alts| alts.iter().filter_map(|a| a.get("const").cloned()).collect())
+        .map(|alts| {
+            alts.iter()
+                .filter_map(|a| a.get("const").cloned())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 fn constraints(v: &Value) -> Vec<String> {
     let num = |k: &str| v.get(k).filter(|x| x.is_number()).map(|x| x.to_string());
     let mut out = vec![];
-    match (num("minimum").or(num("exclusiveMinimum")), num("maximum").or(num("exclusiveMaximum"))) {
+    match (
+        num("minimum").or(num("exclusiveMinimum")),
+        num("maximum").or(num("exclusiveMaximum")),
+    ) {
         (Some(a), Some(b)) => out.push(format!("{a} ≤ value ≤ {b}")),
         (Some(a), None) => out.push(format!("≥ {a}")),
         (None, Some(b)) => out.push(format!("≤ {b}")),
@@ -187,6 +236,19 @@ fn constraints(v: &Value) -> Vec<String> {
     }
     if v.get("uniqueItems") == Some(&Value::Bool(true)) {
         out.push("unique items".into());
+    }
+    if let Some(items) = v.get("items") {
+        let e = enum_values(items);
+        if !e.is_empty() {
+            let opts: Vec<String> = e
+                .iter()
+                .map(|x| match x {
+                    Value::String(s) => format!("\"{s}\""),
+                    o => o.to_string(),
+                })
+                .collect();
+            out.push(format!("each one of: {}", opts.join(", ")));
+        }
     }
     out
 }
@@ -216,12 +278,23 @@ fn type_ok(expected: &str, v: &Value) -> bool {
     expected == actual || (expected == "number" && actual == "integer")
 }
 
-fn check(root: &Value, schema: &Value, v: &Value, path: &str, errs: &mut Vec<String>, depth: usize) {
+fn check(
+    root: &Value,
+    schema: &Value,
+    v: &Value,
+    path: &str,
+    errs: &mut Vec<String>,
+    depth: usize,
+) {
     if depth > MAX_DEPTH {
         return;
     }
     let schema = resolve(root, schema, &mut HashSet::new());
-    let at = if path.is_empty() { "arguments".to_string() } else { format!("'{path}'") };
+    let at = if path.is_empty() {
+        "arguments".to_string()
+    } else {
+        format!("'{path}'")
+    };
 
     for key in ["anyOf", "oneOf"] {
         if let Some(alts) = schema.get(key).and_then(Value::as_array) {
@@ -231,7 +304,10 @@ fn check(root: &Value, schema: &Value, v: &Value, path: &str, errs: &mut Vec<Str
                 e.is_empty()
             });
             if !ok {
-                errs.push(format!("{at} does not match any allowed shape ({})", type_label(root, &schema, &mut HashSet::new())));
+                errs.push(format!(
+                    "{at} does not match any allowed shape ({})",
+                    type_label(root, &schema, &mut HashSet::new())
+                ));
             }
             return;
         }
@@ -243,7 +319,11 @@ fn check(root: &Value, schema: &Value, v: &Value, path: &str, errs: &mut Vec<Str
     };
     let nullable = schema.get("nullable") == Some(&Value::Bool(true));
     if !types.is_empty() && !types.iter().any(|t| type_ok(t, v)) && !(nullable && v.is_null()) {
-        errs.push(format!("{at} should be {} but is {}", types.join(" | "), json_type(v)));
+        errs.push(format!(
+            "{at} should be {} but is {}",
+            types.join(" | "),
+            json_type(v)
+        ));
         return;
     }
     if let Some(e) = schema.get("enum").and_then(Value::as_array)
@@ -277,7 +357,10 @@ fn check(root: &Value, schema: &Value, v: &Value, path: &str, errs: &mut Vec<Str
             errs.push(format!("{at} must be at most {max} characters"));
         }
     }
-    if let (Some(obj), Some(props)) = (v.as_object(), schema.get("properties").and_then(Value::as_object)) {
+    if let (Some(obj), Some(props)) = (
+        v.as_object(),
+        schema.get("properties").and_then(Value::as_object),
+    ) {
         check_object(root, &schema, obj, props, path, errs, depth);
     } else if let (Some(obj), None) = (v.as_object(), schema.get("properties")) {
         check_object(root, &schema, obj, &Map::new(), path, errs, depth);
@@ -298,8 +381,20 @@ fn check_object(
     errs: &mut Vec<String>,
     depth: usize,
 ) {
-    let join = |k: &str| if path.is_empty() { k.to_string() } else { format!("{path}.{k}") };
-    for r in schema.get("required").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+    let join = |k: &str| {
+        if path.is_empty() {
+            k.to_string()
+        } else {
+            format!("{path}.{k}")
+        }
+    };
+    for r in schema
+        .get("required")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
         if !obj.contains_key(r) {
             errs.push(format!("'{}' is required", join(r)));
         }
@@ -329,20 +424,35 @@ fn example(root: &Value, v: &Value, depth: usize, seen: &mut HashSet<String>) ->
     if let Some(e) = enum_values(&v).into_iter().next() {
         return e;
     }
-    if let Some(alt) = v.get("anyOf").or(v.get("oneOf")).and_then(Value::as_array).and_then(|a| a.iter().find(|x| x["type"] != "null")) {
+    if let Some(alt) = v
+        .get("anyOf")
+        .or(v.get("oneOf"))
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().find(|x| x["type"] != "null"))
+    {
         return example(root, alt, depth, seen);
     }
     let t = match v.get("type") {
         Some(Value::String(t)) => t.clone(),
-        Some(Value::Array(ts)) => ts.iter().filter_map(Value::as_str).find(|t| *t != "null").unwrap_or("null").to_string(),
+        Some(Value::Array(ts)) => ts
+            .iter()
+            .filter_map(Value::as_str)
+            .find(|t| *t != "null")
+            .unwrap_or("null")
+            .to_string(),
         _ if v.get("properties").is_some() => "object".into(),
         _ => "string".into(),
     };
     match t.as_str() {
         "object" if depth < MAX_DEPTH => {
             let mut m = Map::new();
-            let required: HashSet<&str> =
-                v.get("required").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+            let required: HashSet<&str> = v
+                .get("required")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
             if let Some(props) = v.get("properties").and_then(Value::as_object) {
                 for (k, p) in props {
                     if required.is_empty() || required.contains(k.as_str()) {
@@ -388,10 +498,26 @@ mod tests {
     #[test]
     fn rows_are_readable() {
         let rows = param_rows(&schema());
-        let get = |p: &str| rows.iter().find(|r| r.path == p).unwrap_or_else(|| panic!("missing {p}"));
-        assert_eq!(rows.iter().map(|r| r.path.as_str()).collect::<Vec<_>>(), [
-            "title", "priority", "labels", "assignee", "assignee.login", "assignee.id", "due", "limit", "steps", "steps[].n"
-        ]);
+        let get = |p: &str| {
+            rows.iter()
+                .find(|r| r.path == p)
+                .unwrap_or_else(|| panic!("missing {p}"))
+        };
+        assert_eq!(
+            rows.iter().map(|r| r.path.as_str()).collect::<Vec<_>>(),
+            [
+                "title",
+                "priority",
+                "labels",
+                "assignee",
+                "assignee.login",
+                "assignee.id",
+                "due",
+                "limit",
+                "steps",
+                "steps[].n"
+            ]
+        );
         assert!(get("title").required);
         assert_eq!(get("title").constraints, ["length 1–80"]);
         assert_eq!(get("priority").enum_values, [json!("low"), json!("high")]);
@@ -399,10 +525,15 @@ mod tests {
         assert_eq!(get("labels").type_label, "array<string>");
         assert_eq!(get("assignee").type_label, "object");
         assert_eq!(get("assignee").description.as_deref(), Some("Who owns it"));
-        assert_eq!((get("assignee.login").depth, get("assignee.login").required), (1, true));
+        assert_eq!(
+            (get("assignee.login").depth, get("assignee.login").required),
+            (1, true)
+        );
         assert_eq!(get("assignee.id").type_label, "integer | null");
         assert_eq!(get("due").type_label, "string (date) | null");
         assert_eq!(get("limit").constraints, ["1 ≤ value ≤ 100"]);
+        let kinds = json!({"type": "array", "items": {"type": "string", "enum": ["a", "b"]}});
+        assert_eq!(constraints(&kinds), ["each one of: \"a\", \"b\""]);
     }
 
     #[test]
@@ -418,18 +549,36 @@ mod tests {
     fn validation_messages() {
         let s = schema();
         assert!(validate(&s, &json!({"title": "x", "assignee": {"login": "a"}})).is_empty());
-        let errs = validate(&s, &json!({"title": "", "priority": "urgent", "limit": 500, "assignee": {}, "labels": [1]}));
-        assert!(errs.contains(&"'title' must be at least 1 characters".to_string()), "{errs:?}");
-        assert!(errs.iter().any(|e| e.starts_with("'priority' must be one of")));
+        let errs = validate(
+            &s,
+            &json!({"title": "", "priority": "urgent", "limit": 500, "assignee": {}, "labels": [1]}),
+        );
+        assert!(
+            errs.contains(&"'title' must be at least 1 characters".to_string()),
+            "{errs:?}"
+        );
+        assert!(
+            errs.iter()
+                .any(|e| e.starts_with("'priority' must be one of"))
+        );
         assert!(errs.contains(&"'limit' must be ≤ 100".to_string()));
         assert!(errs.contains(&"'assignee.login' is required".to_string()));
         assert!(errs.contains(&"'labels[0]' should be string but is integer".to_string()));
-        assert!(validate(&s, &json!({"title": "x", "assignee": {"login": "a", "id": "nope"}}))[0].contains("assignee.id"));
+        assert!(
+            validate(
+                &s,
+                &json!({"title": "x", "assignee": {"login": "a", "id": "nope"}})
+            )[0]
+            .contains("assignee.id")
+        );
     }
 
     #[test]
     fn example_args_fill_required_with_defaults() {
-        assert_eq!(example_args(&schema()), json!({"title": "", "assignee": {"login": ""}}));
+        assert_eq!(
+            example_args(&schema()),
+            json!({"title": "", "assignee": {"login": ""}})
+        );
         let s = json!({"type": "object", "properties": {"u": {"type": "string", "enum": ["c", "f"]}, "n": {"type": "integer", "minimum": 1}}});
         assert_eq!(example_args(&s), json!({"u": "c", "n": 1}));
     }

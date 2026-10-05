@@ -70,14 +70,28 @@ pub struct ProtocolLog {
 impl Default for ProtocolLog {
     fn default() -> Self {
         let (tx, _) = broadcast::channel(1024);
-        Self { entries: Arc::default(), seq: Arc::default(), tx }
+        Self {
+            entries: Arc::default(),
+            seq: Arc::default(),
+            tx,
+        }
     }
 }
 
 impl ProtocolLog {
-    pub fn push_frame(&self, direction: Direction, msg: &Value, method: Option<String>, latency_ms: Option<f64>) {
+    pub fn push_frame(
+        &self,
+        direction: Direction,
+        msg: &Value,
+        method: Option<String>,
+        latency_ms: Option<f64>,
+    ) {
         let kind = classify(msg);
-        let method = method.or_else(|| msg.get("method").and_then(Value::as_str).map(str::to_string));
+        let method = method.or_else(|| {
+            msg.get("method")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        });
         self.push(LogEntry {
             seq: 0,
             direction,
@@ -116,7 +130,13 @@ impl ProtocolLog {
     }
 
     pub fn since(&self, seq: u64) -> Vec<LogEntry> {
-        self.entries.lock().unwrap().iter().filter(|e| e.seq > seq).cloned().collect()
+        self.entries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.seq > seq)
+            .cloned()
+            .collect()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<LogEntry> {

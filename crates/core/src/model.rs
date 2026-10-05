@@ -74,7 +74,11 @@ pub struct KeyValue {
 
 impl KeyValue {
     pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
-        Self { name: name.into(), value: value.into(), ..Default::default() }
+        Self {
+            name: name.into(),
+            value: value.into(),
+            ..Default::default()
+        }
     }
 }
 
@@ -476,7 +480,9 @@ mod tests {
 
     #[test]
     fn auth_round_trips_with_insomnia_names() {
-        let a: Auth = serde_json::from_str(r#"{"type":"apikey","key":"X-Key","value":"v","addTo":"header"}"#).unwrap();
+        let a: Auth =
+            serde_json::from_str(r#"{"type":"apikey","key":"X-Key","value":"v","addTo":"header"}"#)
+                .unwrap();
         assert!(matches!(a, Auth::ApiKey { ref key, .. } if key == "X-Key"));
         let b: Auth = serde_json::from_str(r#"{"type":"bearer","token":"t"}"#).unwrap();
         assert_eq!(serde_json::to_value(&b).unwrap()["type"], "bearer");

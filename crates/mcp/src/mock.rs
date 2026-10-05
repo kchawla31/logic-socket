@@ -110,64 +110,103 @@ fn err(id: &Value, code: i64, message: &str) -> Value {
 
 /// Handle one inbound frame. `ask_roots` is handled by the stdio loop.
 pub async fn handle(msg: &Value) -> Reply {
-    let Some(method) = msg.get("method").and_then(Value::as_str) else { return Reply::default() };
-    let Some(id) = msg.get("id").filter(|i| !i.is_null()) else { return Reply::default() }; // notification
+    let Some(method) = msg.get("method").and_then(Value::as_str) else {
+        return Reply::default();
+    };
+    let Some(id) = msg.get("id").filter(|i| !i.is_null()) else {
+        return Reply::default();
+    }; // notification
     let p = msg.get("params").cloned().unwrap_or(json!({}));
     let response = match method {
-        "initialize" => ok(id, json!({
-            "protocolVersion": p["protocolVersion"].as_str().unwrap_or(crate::LATEST_PROTOCOL_VERSION),
-            "capabilities": {"tools": {"listChanged": false}, "resources": {}, "prompts": {}, "logging": {}},
-            "serverInfo": {"name": "irs-mock-mcp", "title": "Mock MCP server", "version": "1.0.0"},
-            "instructions": "Demo server for insomnia-rs. Try `get_weather` or `create_issue`."
-        })),
+        "initialize" => ok(
+            id,
+            json!({
+                "protocolVersion": p["protocolVersion"].as_str().unwrap_or(crate::LATEST_PROTOCOL_VERSION),
+                "capabilities": {"tools": {"listChanged": false}, "resources": {}, "prompts": {}, "logging": {}},
+                "serverInfo": {"name": "irs-mock-mcp", "title": "Mock MCP server", "version": "1.0.0"},
+                "instructions": "Demo server for insomnia-rs. Try `get_weather` or `create_issue`."
+            }),
+        ),
         "ping" => ok(id, json!({})),
         "tools/list" => ok(id, tools_page(p["cursor"].as_str())),
         "tools/call" => {
             let args = p.get("arguments").cloned().unwrap_or(json!({}));
             match p["name"].as_str().unwrap_or("") {
-                "echo" => ok(id, json!({
-                    "content": [{"type": "text", "text": args.to_string()}],
-                    "structuredContent": {"echo": args}
-                })),
+                "echo" => ok(
+                    id,
+                    json!({
+                        "content": [{"type": "text", "text": args.to_string()}],
+                        "structuredContent": {"echo": args}
+                    }),
+                ),
                 "get_weather" => {
                     let city = args["city"].as_str().unwrap_or("?");
-                    ok(id, json!({"content": [{"type": "text", "text": format!("{city}: 21°C, clear sky")}]}))
+                    ok(
+                        id,
+                        json!({"content": [{"type": "text", "text": format!("{city}: 21°C, clear sky")}]}),
+                    )
                 }
-                "fail" => ok(id, json!({"content": [{"type": "text", "text": "something went wrong"}], "isError": true})),
+                "fail" => ok(
+                    id,
+                    json!({"content": [{"type": "text", "text": "something went wrong"}], "isError": true}),
+                ),
                 "slow" => {
-                    tokio::time::sleep(Duration::from_millis(args["ms"].as_u64().unwrap_or(1500))).await;
+                    tokio::time::sleep(Duration::from_millis(args["ms"].as_u64().unwrap_or(1500)))
+                        .await;
                     ok(id, json!({"content": [{"type": "text", "text": "done"}]}))
                 }
                 "notify" => {
                     return Reply {
                         before: vec![json!({"jsonrpc": "2.0", "method": "notifications/message",
                             "params": {"level": "info", "logger": "mock", "data": "working on it"}})],
-                        response: Some(ok(id, json!({"content": [{"type": "text", "text": "notified"}]}))),
+                        response: Some(ok(
+                            id,
+                            json!({"content": [{"type": "text", "text": "notified"}]}),
+                        )),
                     };
                 }
-                "create_issue" | "delete_repo" | "search" => {
-                    ok(id, json!({"content": [{"type": "text", "text": format!("ok: {args}")}]}))
-                }
+                "create_issue" | "delete_repo" | "search" => ok(
+                    id,
+                    json!({"content": [{"type": "text", "text": format!("ok: {args}")}]}),
+                ),
                 other => err(id, -32602, &format!("Unknown tool: {other}")),
             }
         }
-        "resources/list" => ok(id, json!({"resources": [
-            {"uri": "file:///readme.md", "name": "readme", "title": "README", "mimeType": "text/markdown"},
-            {"uri": "mem://config", "name": "config", "mimeType": "application/json", "size": 42}
-        ]})),
-        "resources/templates/list" => ok(id, json!({"resourceTemplates": [
-            {"uriTemplate": "repo://{owner}/{name}/issues", "name": "issues", "description": "Issues of a repository"}
-        ]})),
-        "resources/read" => ok(id, json!({"contents": [{"uri": p["uri"], "mimeType": "text/plain", "text": format!("contents of {}", p["uri"].as_str().unwrap_or(""))}]})),
-        "prompts/list" => ok(id, json!({"prompts": [
-            {"name": "review_code", "title": "Review code", "description": "Ask for a code review",
-             "arguments": [{"name": "code", "required": true, "description": "The code"}, {"name": "focus"}]}
-        ]})),
-        "prompts/get" => ok(id, json!({"messages": [{"role": "user", "content": {"type": "text",
-            "text": format!("Please review: {}", p["arguments"]["code"].as_str().unwrap_or(""))}}]})),
+        "resources/list" => ok(
+            id,
+            json!({"resources": [
+                {"uri": "file:///readme.md", "name": "readme", "title": "README", "mimeType": "text/markdown"},
+                {"uri": "mem://config", "name": "config", "mimeType": "application/json", "size": 42}
+            ]}),
+        ),
+        "resources/templates/list" => ok(
+            id,
+            json!({"resourceTemplates": [
+                {"uriTemplate": "repo://{owner}/{name}/issues", "name": "issues", "description": "Issues of a repository"}
+            ]}),
+        ),
+        "resources/read" => ok(
+            id,
+            json!({"contents": [{"uri": p["uri"], "mimeType": "text/plain", "text": format!("contents of {}", p["uri"].as_str().unwrap_or(""))}]}),
+        ),
+        "prompts/list" => ok(
+            id,
+            json!({"prompts": [
+                {"name": "review_code", "title": "Review code", "description": "Ask for a code review",
+                 "arguments": [{"name": "code", "required": true, "description": "The code"}, {"name": "focus"}]}
+            ]}),
+        ),
+        "prompts/get" => ok(
+            id,
+            json!({"messages": [{"role": "user", "content": {"type": "text",
+            "text": format!("Please review: {}", p["arguments"]["code"].as_str().unwrap_or(""))}}]}),
+        ),
         _ => err(id, -32601, &format!("Method not found: {method}")),
     };
-    Reply { before: vec![], response: Some(response) }
+    Reply {
+        before: vec![],
+        response: Some(response),
+    }
 }
 
 // ------------------------------------------------------------------ HTTP
@@ -181,12 +220,17 @@ pub struct HttpState {
 impl HttpState {
     /// Require `Authorization: Bearer <token>` on every request.
     pub fn with_token(token: impl Into<String>) -> Self {
-        Self { required_token: Some(token.into()), ..Default::default() }
+        Self {
+            required_token: Some(token.into()),
+            ..Default::default()
+        }
     }
 }
 
 pub fn http_router(state: HttpState) -> Router {
-    Router::new().route("/mcp", post(http_post).delete(http_delete)).with_state(state)
+    Router::new()
+        .route("/mcp", post(http_post).delete(http_delete))
+        .with_state(state)
 }
 
 /// Bind on 127.0.0.1:`port` (0 = random) and serve in the background.
@@ -201,7 +245,10 @@ pub async fn spawn_http(state: HttpState, port: u16) -> std::io::Result<String> 
 
 async fn http_post(State(st): State<HttpState>, headers: HeaderMap, body: String) -> Response {
     if let Some(tok) = &st.required_token {
-        let ok = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) == Some(&format!("Bearer {tok}"));
+        let ok = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            == Some(&format!("Bearer {tok}"));
         if !ok {
             return (StatusCode::UNAUTHORIZED, "missing or invalid bearer token").into_response();
         }
@@ -210,7 +257,10 @@ async fn http_post(State(st): State<HttpState>, headers: HeaderMap, body: String
         return (StatusCode::BAD_REQUEST, "invalid JSON").into_response();
     };
     let is_init = msg["method"] == "initialize";
-    let sid = headers.get("mcp-session-id").and_then(|v| v.to_str().ok()).map(str::to_string);
+    let sid = headers
+        .get("mcp-session-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
     if !is_init {
         match &sid {
             Some(s) if st.sessions.lock().unwrap().contains_key(s) => {}
@@ -219,11 +269,16 @@ async fn http_post(State(st): State<HttpState>, headers: HeaderMap, body: String
         }
     }
     let reply = handle(&msg).await;
-    let Some(resp) = reply.response else { return StatusCode::ACCEPTED.into_response() };
+    let Some(resp) = reply.response else {
+        return StatusCode::ACCEPTED.into_response();
+    };
 
     let mut builder = Response::builder();
     if is_init {
-        let new_sid = format!("sess-{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default());
+        let new_sid = format!(
+            "sess-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        );
         st.sessions.lock().unwrap().insert(new_sid.clone(), ());
         builder = builder.header("mcp-session-id", new_sid);
     }
@@ -237,9 +292,15 @@ async fn http_post(State(st): State<HttpState>, headers: HeaderMap, body: String
         for n in reply.before.iter().chain(std::iter::once(&resp)) {
             sse.push_str(&format!("event: message\ndata: {n}\n\n"));
         }
-        return builder.header(header::CONTENT_TYPE, "text/event-stream").body(Body::from(sse)).unwrap();
+        return builder
+            .header(header::CONTENT_TYPE, "text/event-stream")
+            .body(Body::from(sse))
+            .unwrap();
     }
-    builder.header(header::CONTENT_TYPE, "application/json").body(Body::from(resp.to_string())).unwrap()
+    builder
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(resp.to_string()))
+        .unwrap()
 }
 
 async fn http_delete(State(st): State<HttpState>, headers: HeaderMap) -> StatusCode {

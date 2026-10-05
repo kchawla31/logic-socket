@@ -105,7 +105,10 @@ pub fn parse(cmd: &str) -> Result<Request, CurlError> {
     if it.next().as_deref() != Some("curl") {
         return Err(CurlError::NotCurl);
     }
-    let mut req = Request { name: String::new(), ..Default::default() };
+    let mut req = Request {
+        name: String::new(),
+        ..Default::default()
+    };
     let mut url: Option<String> = None;
     let mut method: Option<String> = None;
     let mut data: Vec<String> = vec![];
@@ -153,7 +156,11 @@ pub fn parse(cmd: &str) -> Result<Request, CurlError> {
                             file_name: Some(path.split(';').next().unwrap_or(path).into()),
                             ..Default::default()
                         },
-                        _ => BodyParam { name: k.into(), value: x.into(), ..Default::default() },
+                        _ => BodyParam {
+                            name: k.into(),
+                            value: x.into(),
+                            ..Default::default()
+                        },
                     };
                     form.push(p);
                 }
@@ -161,7 +168,11 @@ pub fn parse(cmd: &str) -> Result<Request, CurlError> {
             "-u" | "--user" => {
                 let v = val();
                 let (u, p) = v.split_once(':').unwrap_or((&v, ""));
-                req.authentication = Auth::Basic { username: u.into(), password: p.into(), disabled: false };
+                req.authentication = Auth::Basic {
+                    username: u.into(),
+                    password: p.into(),
+                    disabled: false,
+                };
             }
             "-b" | "--cookie" => req.headers.push(KeyValue::new("Cookie", val())),
             "-A" | "--user-agent" => req.headers.push(KeyValue::new("User-Agent", val())),
@@ -170,8 +181,8 @@ pub fn parse(cmd: &str) -> Result<Request, CurlError> {
             "-G" | "--get" => get_mode = true,
             "-I" | "--head" => head = true,
             // flags with a value we ignore
-            "-o" | "--output" | "-m" | "--max-time" | "--connect-timeout" | "-w" | "--write-out" | "--proxy" | "-x"
-            | "--retry" | "-c" | "--cookie-jar" => {
+            "-o" | "--output" | "-m" | "--max-time" | "--connect-timeout" | "-w"
+            | "--write-out" | "--proxy" | "-x" | "--retry" | "-c" | "--cookie-jar" => {
                 val();
             }
             f if f.starts_with('-') => {} // boolean flags: -L, -k, -s, -v, --compressed, ...
@@ -192,7 +203,8 @@ pub fn parse(cmd: &str) -> Result<Request, CurlError> {
     if let Some(q) = query {
         for pair in q.split('&').filter(|p| !p.is_empty()) {
             let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
-            req.parameters.push(KeyValue::new(url_decode(k), url_decode(v)));
+            req.parameters
+                .push(KeyValue::new(url_decode(k), url_decode(v)));
         }
     }
 
@@ -203,18 +215,29 @@ pub fn parse(cmd: &str) -> Result<Request, CurlError> {
         .map(|h| h.value.split(';').next().unwrap_or("").trim().to_string());
 
     if get_mode && !data.is_empty() {
-        for d in data.drain(..).flat_map(|d| d.split('&').map(str::to_string).collect::<Vec<_>>()) {
+        for d in data
+            .drain(..)
+            .flat_map(|d| d.split('&').map(str::to_string).collect::<Vec<_>>())
+        {
             let (k, v) = d.split_once('=').unwrap_or((&d, ""));
-            req.parameters.push(KeyValue::new(url_decode(k), url_decode(v)));
+            req.parameters
+                .push(KeyValue::new(url_decode(k), url_decode(v)));
         }
     }
     if !form.is_empty() {
-        req.body = Body { mime_type: Some(mime::MULTIPART.into()), params: form, ..Default::default() };
-        req.headers.retain(|h| !h.name.eq_ignore_ascii_case("content-type"));
+        req.body = Body {
+            mime_type: Some(mime::MULTIPART.into()),
+            params: form,
+            ..Default::default()
+        };
+        req.headers
+            .retain(|h| !h.name.eq_ignore_ascii_case("content-type"));
     } else if !data.is_empty() {
         let text = data.join("&");
         let mime_type = match content_type.as_deref() {
-            Some(mime::FORM) | None if !text.trim_start().starts_with(['{', '[']) => mime::FORM.to_string(),
+            Some(mime::FORM) | None if !text.trim_start().starts_with(['{', '[']) => {
+                mime::FORM.to_string()
+            }
             None => mime::JSON.to_string(),
             Some(ct) => ct.to_string(),
         };
@@ -224,28 +247,53 @@ pub fn parse(cmd: &str) -> Result<Request, CurlError> {
                 .filter(|p| !p.is_empty())
                 .map(|p| {
                     let (k, v) = p.split_once('=').unwrap_or((p, ""));
-                    BodyParam { name: url_decode(k), value: url_decode(v), ..Default::default() }
+                    BodyParam {
+                        name: url_decode(k),
+                        value: url_decode(v),
+                        ..Default::default()
+                    }
                 })
                 .collect();
-            req.body = Body { mime_type: Some(mime_type), params, ..Default::default() };
+            req.body = Body {
+                mime_type: Some(mime_type),
+                params,
+                ..Default::default()
+            };
         } else {
-            req.body = Body { mime_type: Some(mime_type), text: Some(text), ..Default::default() };
+            req.body = Body {
+                mime_type: Some(mime_type),
+                text: Some(text),
+                ..Default::default()
+            };
         }
-        req.headers.retain(|h| !h.name.eq_ignore_ascii_case("content-type"));
+        req.headers
+            .retain(|h| !h.name.eq_ignore_ascii_case("content-type"));
     }
 
     // Authorization: Bearer / Basic headers become first-class auth.
-    if let Some(pos) = req.headers.iter().position(|h| h.name.eq_ignore_ascii_case("authorization")) {
+    if let Some(pos) = req
+        .headers
+        .iter()
+        .position(|h| h.name.eq_ignore_ascii_case("authorization"))
+    {
         let v = req.headers[pos].value.clone();
         if let Some(t) = v.strip_prefix("Bearer ") {
-            req.authentication = Auth::Bearer { token: t.trim().into(), prefix: None, disabled: false };
+            req.authentication = Auth::Bearer {
+                token: t.trim().into(),
+                prefix: None,
+                disabled: false,
+            };
             req.headers.remove(pos);
         } else if let Some(b) = v.strip_prefix("Basic ")
             && let Ok(dec) = base64::engine::general_purpose::STANDARD.decode(b.trim())
             && let Ok(s) = String::from_utf8(dec)
         {
             let (u, p) = s.split_once(':').unwrap_or((&s, ""));
-            req.authentication = Auth::Basic { username: u.into(), password: p.into(), disabled: false };
+            req.authentication = Auth::Basic {
+                username: u.into(),
+                password: p.into(),
+                disabled: false,
+            };
             req.headers.remove(pos);
         }
     }
@@ -263,13 +311,19 @@ pub fn parse(cmd: &str) -> Result<Request, CurlError> {
 fn short_name(url: &str) -> String {
     let path = url.split("://").nth(1).unwrap_or(url);
     let path = path.split_once('/').map(|(_, p)| p).unwrap_or("");
-    if path.is_empty() { "/".into() } else { format!("/{path}") }
+    if path.is_empty() {
+        "/".into()
+    } else {
+        format!("/{path}")
+    }
 }
 
 fn url_encode(s: &str) -> String {
     s.bytes()
         .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
             _ => format!("%{b:02X}"),
         })
         .collect()
@@ -282,7 +336,10 @@ fn url_decode(s: &str) -> String {
     while i < bytes.len() {
         if bytes[i] == b'%'
             && i + 2 < bytes.len()
-            && let Ok(b) = u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("zz"), 16)
+            && let Ok(b) = u8::from_str_radix(
+                std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("zz"),
+                16,
+            )
         {
             out.push(b);
             i += 3;
@@ -308,9 +365,19 @@ mod tests {
         let r = parse(cmd).unwrap();
         assert_eq!(r.method, "POST");
         assert_eq!(r.url, "https://api.example.com/v1/items");
-        assert_eq!(r.parameters, vec![KeyValue::new("page", "2"), KeyValue::new("q", "a b")]);
+        assert_eq!(
+            r.parameters,
+            vec![KeyValue::new("page", "2"), KeyValue::new("q", "a b")]
+        );
         assert_eq!(r.headers, vec![KeyValue::new("accept", "application/json")]);
-        assert_eq!(r.authentication, Auth::Bearer { token: "tok123".into(), prefix: None, disabled: false });
+        assert_eq!(
+            r.authentication,
+            Auth::Bearer {
+                token: "tok123".into(),
+                prefix: None,
+                disabled: false
+            }
+        );
         assert_eq!(r.body.mime_type.as_deref(), Some(mime::JSON));
         assert_eq!(r.body.text.as_deref(), Some(r#"{"name":"it's"}"#));
         assert_eq!(r.name, "POST /v1/items");
@@ -318,9 +385,18 @@ mod tests {
 
     #[test]
     fn form_multipart_user_and_method() {
-        let r = parse(r#"curl -X PUT -u alice:pw "http://x.io/up" -F "file=@/tmp/a.png" -F 'note=hi'"#).unwrap();
+        let r =
+            parse(r#"curl -X PUT -u alice:pw "http://x.io/up" -F "file=@/tmp/a.png" -F 'note=hi'"#)
+                .unwrap();
         assert_eq!(r.method, "PUT");
-        assert_eq!(r.authentication, Auth::Basic { username: "alice".into(), password: "pw".into(), disabled: false });
+        assert_eq!(
+            r.authentication,
+            Auth::Basic {
+                username: "alice".into(),
+                password: "pw".into(),
+                disabled: false
+            }
+        );
         assert_eq!(r.body.mime_type.as_deref(), Some(mime::MULTIPART));
         assert_eq!(r.body.params[0].file_name.as_deref(), Some("/tmp/a.png"));
         assert_eq!(r.body.params[1].value, "hi");
@@ -331,7 +407,10 @@ mod tests {
         assert_eq!(r.body.params[1].value, "b&c");
 
         let r = parse("curl -G http://x.io/s --data-urlencode 'q=a b'").unwrap();
-        assert_eq!((r.method.as_str(), r.parameters[0].value.as_str()), ("GET", "a b"));
+        assert_eq!(
+            (r.method.as_str(), r.parameters[0].value.as_str()),
+            ("GET", "a b")
+        );
     }
 
     #[test]

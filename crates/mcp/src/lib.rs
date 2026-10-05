@@ -26,7 +26,11 @@ pub enum McpError {
     #[error("transport error: {0}")]
     Transport(String),
     #[error("server error {code}: {message}")]
-    Rpc { code: i64, message: String, data: Option<Value> },
+    Rpc {
+        code: i64,
+        message: String,
+        data: Option<Value>,
+    },
     #[error("'{method}' timed out after {ms} ms")]
     Timeout { method: String, ms: u64 },
     #[error("connection closed: {0}")]
@@ -66,7 +70,8 @@ pub struct Notification {
     pub timestamp_ms: i64,
 }
 
-type Pending = Arc<Mutex<HashMap<i64, (String, Instant, oneshot::Sender<Result<Value, McpError>>)>>>;
+type Pending =
+    Arc<Mutex<HashMap<i64, (String, Instant, oneshot::Sender<Result<Value, McpError>>)>>>;
 
 pub struct Client {
     transport: Arc<Transport>,
@@ -84,13 +89,19 @@ impl Client {
         Self::connect_with_log(opts, ProtocolLog::default()).await
     }
 
-    pub async fn connect_with_log(opts: ConnectOptions, log: ProtocolLog) -> Result<Client, McpError> {
+    pub async fn connect_with_log(
+        opts: ConnectOptions,
+        log: ProtocolLog,
+    ) -> Result<Client, McpError> {
         let (tx, rx) = mpsc::unbounded_channel();
         match &opts.transport {
-            TransportConfig::Stdio { command, args, .. } => {
-                log.push_text(Direction::Info, format!("starting stdio server: {command} {}", args.join(" ")))
+            TransportConfig::Stdio { command, args, .. } => log.push_text(
+                Direction::Info,
+                format!("starting stdio server: {command} {}", args.join(" ")),
+            ),
+            TransportConfig::Http { url, .. } => {
+                log.push_text(Direction::Info, format!("connecting to {url}"))
             }
-            TransportConfig::Http { url, .. } => log.push_text(Direction::Info, format!("connecting to {url}")),
         }
         let transport = match Transport::start(&opts.transport, tx).await {
             Ok(t) => Arc::new(t),
@@ -109,7 +120,14 @@ impl Client {
                 None => json!({"uri": uri}),
             })
             .collect();
-        tokio::spawn(dispatch(rx, transport.clone(), pending.clone(), log.clone(), notifications.clone(), roots));
+        tokio::spawn(dispatch(
+            rx,
+            transport.clone(),
+            pending.clone(),
+            log.clone(),
+            notifications.clone(),
+            roots,
+        ));
 
         let mut client = Client {
             transport,
@@ -121,7 +139,12 @@ impl Client {
             init: InitializeResult {
                 protocol_version: String::new(),
                 capabilities: Value::Null,
-                server_info: Implementation { name: String::new(), version: String::new(), title: None, extra: Default::default() },
+                server_info: Implementation {
+                    name: String::new(),
+                    version: String::new(),
+                    title: None,
+                    extra: Default::default(),
+                },
                 instructions: None,
             },
         };
@@ -137,7 +160,9 @@ impl Client {
                 return Err(e);
             }
         };
-        client.transport.set_protocol_version(&init.protocol_version);
+        client
+            .transport
+            .set_protocol_version(&init.protocol_version);
         client.init = init;
         client.notify("notifications/initialized", None).await?;
         Ok(client)
@@ -171,7 +196,10 @@ impl Client {
             msg["params"] = params;
         }
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().unwrap().insert(id, (method.to_string(), Instant::now(), tx));
+        self.pending
+            .lock()
+            .unwrap()
+            .insert(id, (method.to_string(), Instant::now(), tx));
         self.log.push_frame(Direction::Out, &msg, None, None);
         if let Err(e) = self.transport.send(&msg).await {
             self.pending.lock().unwrap().remove(&id);
@@ -184,17 +212,35 @@ impl Client {
             Err(_) => {
                 self.pending.lock().unwrap().remove(&id);
                 let ms = self.timeout.as_millis() as u64;
-                self.log.push_text(Direction::Error, format!("{method} (id {id}) timed out after {ms} ms"));
+                self.log.push_text(
+                    Direction::Error,
+                    format!("{method} (id {id}) timed out after {ms} ms"),
+                );
                 // Tell the server we gave up (spec: notifications/cancelled).
-                let _ = self.notify("notifications/cancelled", Some(json!({"requestId": id, "reason": "timeout"}))).await;
-                Err(McpError::Timeout { method: method.to_string(), ms })
+                let _ = self
+                    .notify(
+                        "notifications/cancelled",
+                        Some(json!({"requestId": id, "reason": "timeout"})),
+                    )
+                    .await;
+                Err(McpError::Timeout {
+                    method: method.to_string(),
+                    ms,
+                })
             }
         }
     }
 
-    pub async fn request_typed<T: DeserializeOwned>(&self, method: &str, params: Value) -> Result<T, McpError> {
+    pub async fn request_typed<T: DeserializeOwned>(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> Result<T, McpError> {
         let v = self.request(method, params).await?;
-        serde_json::from_value(v).map_err(|e| McpError::Decode { method: method.into(), detail: e.to_string() })
+        serde_json::from_value(v).map_err(|e| McpError::Decode {
+            method: method.into(),
+            detail: e.to_string(),
+        })
     }
 
     pub async fn notify(&self, method: &str, params: Option<Value>) -> Result<(), McpError> {
@@ -213,7 +259,11 @@ impl Client {
     }
 
     /// Follow `nextCursor` until exhausted (capped at 100 pages).
-    async fn list_all<T: DeserializeOwned>(&self, method: &str, field: &str) -> Result<Listed<T>, McpError> {
+    async fn list_all<T: DeserializeOwned>(
+        &self,
+        method: &str,
+        field: &str,
+    ) -> Result<Listed<T>, McpError> {
         let start = Instant::now();
         let mut items = vec![];
         let mut cursor: Option<String> = None;
@@ -226,15 +276,25 @@ impl Client {
             let page = self.request(method, params).await?;
             pages += 1;
             let arr = page.get(field).cloned().unwrap_or(Value::Array(vec![]));
-            let mut batch: Vec<T> = serde_json::from_value(arr)
-                .map_err(|e| McpError::Decode { method: method.into(), detail: format!("{field}: {e}") })?;
+            let mut batch: Vec<T> = serde_json::from_value(arr).map_err(|e| McpError::Decode {
+                method: method.into(),
+                detail: format!("{field}: {e}"),
+            })?;
             items.append(&mut batch);
-            cursor = page.get("nextCursor").and_then(Value::as_str).filter(|c| !c.is_empty()).map(str::to_string);
+            cursor = page
+                .get("nextCursor")
+                .and_then(Value::as_str)
+                .filter(|c| !c.is_empty())
+                .map(str::to_string);
             if cursor.is_none() || pages >= 100 {
                 break;
             }
         }
-        Ok(Listed { items, pages, elapsed_ms: start.elapsed().as_secs_f64() * 1000.0 })
+        Ok(Listed {
+            items,
+            pages,
+            elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
+        })
     }
 
     pub async fn list_tools(&self) -> Result<Listed<Tool>, McpError> {
@@ -255,7 +315,8 @@ impl Client {
         if !self.has_capability("resources") {
             return Err(McpError::Unsupported("resources"));
         }
-        self.list_all("resources/templates/list", "resourceTemplates").await
+        self.list_all("resources/templates/list", "resourceTemplates")
+            .await
     }
 
     pub async fn list_prompts(&self) -> Result<Listed<Prompt>, McpError> {
@@ -265,9 +326,18 @@ impl Client {
         self.list_all("prompts/list", "prompts").await
     }
 
-    pub async fn call_tool(&self, name: &str, arguments: Value) -> Result<CallToolResult, McpError> {
-        let args = if arguments.is_null() { json!({}) } else { arguments };
-        self.request_typed("tools/call", json!({ "name": name, "arguments": args })).await
+    pub async fn call_tool(
+        &self,
+        name: &str,
+        arguments: Value,
+    ) -> Result<CallToolResult, McpError> {
+        let args = if arguments.is_null() {
+            json!({})
+        } else {
+            arguments
+        };
+        self.request_typed("tools/call", json!({ "name": name, "arguments": args }))
+            .await
     }
 
     pub async fn read_resource(&self, uri: &str) -> Result<Value, McpError> {
@@ -275,8 +345,13 @@ impl Client {
     }
 
     pub async fn get_prompt(&self, name: &str, arguments: Value) -> Result<Value, McpError> {
-        let args = if arguments.is_null() { json!({}) } else { arguments };
-        self.request("prompts/get", json!({ "name": name, "arguments": args })).await
+        let args = if arguments.is_null() {
+            json!({})
+        } else {
+            arguments
+        };
+        self.request("prompts/get", json!({ "name": name, "arguments": args }))
+            .await
     }
 
     pub async fn close(&self) {
@@ -308,12 +383,19 @@ async fn dispatch(
             }
             Inbound::Message(msg) => match log::classify(&msg) {
                 FrameKind::Response | FrameKind::Error => {
-                    let id = msg["id"].as_i64().or_else(|| msg["id"].as_str().and_then(|s| s.parse().ok()));
+                    let id = msg["id"]
+                        .as_i64()
+                        .or_else(|| msg["id"].as_str().and_then(|s| s.parse().ok()));
                     let entry = id.and_then(|id| pending.lock().unwrap().remove(&id));
                     match entry {
                         Some((method, started, tx)) => {
                             let latency = started.elapsed().as_secs_f64() * 1000.0;
-                            log.push_frame(Direction::In, &msg, Some(method), Some((latency * 100.0).round() / 100.0));
+                            log.push_frame(
+                                Direction::In,
+                                &msg,
+                                Some(method),
+                                Some((latency * 100.0).round() / 100.0),
+                            );
                             let result = match msg.get("error") {
                                 Some(err) => Err(McpError::Rpc {
                                     code: err["code"].as_i64().unwrap_or(0),
@@ -340,7 +422,9 @@ async fn dispatch(
                     let method = msg["method"].as_str().unwrap_or("");
                     let reply = match method {
                         "ping" => json!({"jsonrpc": "2.0", "id": msg["id"], "result": {}}),
-                        "roots/list" => json!({"jsonrpc": "2.0", "id": msg["id"], "result": {"roots": roots}}),
+                        "roots/list" => {
+                            json!({"jsonrpc": "2.0", "id": msg["id"], "result": {"roots": roots}})
+                        }
                         _ => json!({"jsonrpc": "2.0", "id": msg["id"], "error": {
                             "code": -32601,
                             "message": format!("insomnia-rs does not handle '{method}' yet (sampling/elicitation arrive with LLM support)"),

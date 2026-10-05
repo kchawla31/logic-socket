@@ -40,7 +40,10 @@ pub struct Layer {
 
 impl Layer {
     pub fn new(name: impl Into<String>, vars: VarMap) -> Self {
-        Self { name: name.into(), vars }
+        Self {
+            name: name.into(),
+            vars,
+        }
     }
 }
 
@@ -65,9 +68,11 @@ impl Context {
                     continue;
                 }
                 let merged = match (val, ctx.vars.get(key)) {
-                    (Value::String(s), _) if is_self_recursive(s, key) => {
-                        Value::String(renderer.render_str(s, &ctx, Mode::Keep).unwrap_or_else(|_| s.clone()))
-                    }
+                    (Value::String(s), _) if is_self_recursive(s, key) => Value::String(
+                        renderer
+                            .render_str(s, &ctx, Mode::Keep)
+                            .unwrap_or_else(|_| s.clone()),
+                    ),
                     (Value::Object(new), Some(Value::Object(old))) => {
                         let mut o = old.clone();
                         merge_objects(&mut o, new);
@@ -88,7 +93,9 @@ impl Context {
                     continue;
                 }
                 let cur = ctx.vars[key].clone();
-                let next = renderer.render_value(&cur, &ctx, Mode::Keep).unwrap_or_else(|_| cur.clone());
+                let next = renderer
+                    .render_value(&cur, &ctx, Mode::Keep)
+                    .unwrap_or_else(|_| cur.clone());
                 if next == cur {
                     settled.insert(key.clone());
                 } else {
@@ -124,7 +131,9 @@ impl Context {
     /// Source layer of the top-level key in `path`.
     pub fn source_of(&self, path: &str) -> Option<&str> {
         let path = path.strip_prefix("_.").unwrap_or(path);
-        self.sources.get(path.split('.').next()?).map(String::as_str)
+        self.sources
+            .get(path.split('.').next()?)
+            .map(String::as_str)
     }
 
     fn to_template_value(&self) -> minijinja::Value {
@@ -189,7 +198,10 @@ impl Renderer {
             if value.is_none() || value.is_undefined() {
                 return Ok(());
             }
-            if matches!(value.kind(), minijinja::value::ValueKind::Map | minijinja::value::ValueKind::Seq) {
+            if matches!(
+                value.kind(),
+                minijinja::value::ValueKind::Map | minijinja::value::ValueKind::Seq
+            ) {
                 // Objects render as JSON (more useful than Nunjucks' "[object Object]").
                 let json = serde_json::to_string(&value).map_err(|e| {
                     minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string())
@@ -203,7 +215,12 @@ impl Renderer {
     }
 
     /// Render one string. Strings without template syntax are returned as-is.
-    pub fn render_str(&self, input: &str, ctx: &Context, mode: Mode) -> Result<String, RenderError> {
+    pub fn render_str(
+        &self,
+        input: &str,
+        ctx: &Context,
+        mode: Mode,
+    ) -> Result<String, RenderError> {
         if !has_template_syntax(input) {
             return Ok(input.to_string());
         }
@@ -212,7 +229,9 @@ impl Renderer {
                 // A variable whose value is a tag (`{{ id }}` → `{% uuid %}`) renders twice,
                 // but only when the original input had no tags of its own (see render.ts).
                 if !input.contains("{%") && out.contains("{%") {
-                    return self.render_inner(&out, ctx).or_else(|e| keep_or(mode, input, e));
+                    return self
+                        .render_inner(&out, ctx)
+                        .or_else(|e| keep_or(mode, input, e));
                 }
                 Ok(out)
             }
@@ -222,11 +241,16 @@ impl Renderer {
 
     fn render_inner(&self, input: &str, ctx: &Context) -> Result<String, RenderError> {
         let src = tags::rewrite(input).map_err(RenderError::Template)?;
-        let tmpl = self.env.template_from_str(&src).map_err(|e| RenderError::Template(fmt_err(&e)))?;
+        let tmpl = self
+            .env
+            .template_from_str(&src)
+            .map_err(|e| RenderError::Template(fmt_err(&e)))?;
         let missing: Vec<String> = tmpl
             .undeclared_variables(true)
             .into_iter()
-            .filter(|v| !v.starts_with("__tag_") && self.env.globals().all(|(g, _)| g != v.as_str()))
+            .filter(|v| {
+                !v.starts_with("__tag_") && self.env.globals().all(|(g, _)| g != v.as_str())
+            })
             .filter(|v| v != "_" && ctx.lookup(v).is_none())
             .map(|v| v.strip_prefix("_.").unwrap_or(&v).to_string())
             .collect::<BTreeSet<_>>()
@@ -235,14 +259,19 @@ impl Renderer {
         if !missing.is_empty() {
             return Err(RenderError::Unresolved(missing));
         }
-        tmpl.render(ctx.to_template_value()).map_err(|e| RenderError::Template(fmt_err(&e)))
+        tmpl.render(ctx.to_template_value())
+            .map_err(|e| RenderError::Template(fmt_err(&e)))
     }
 
     /// Render every string inside a JSON value. Objects with `"disabled": true` are skipped.
     pub fn render_value(&self, v: &Value, ctx: &Context, mode: Mode) -> Result<Value, RenderError> {
         Ok(match v {
             Value::String(s) => Value::String(self.render_str(s, ctx, mode)?),
-            Value::Array(a) => Value::Array(a.iter().map(|x| self.render_value(x, ctx, mode)).collect::<Result<_, _>>()?),
+            Value::Array(a) => Value::Array(
+                a.iter()
+                    .map(|x| self.render_value(x, ctx, mode))
+                    .collect::<Result<_, _>>()?,
+            ),
             Value::Object(o) if o.get("disabled") == Some(&Value::Bool(true)) => v.clone(),
             Value::Object(o) => Value::Object(
                 o.iter()
@@ -255,8 +284,12 @@ impl Renderer {
 
     /// List the variable references in `input` with their resolution (for the UI).
     pub fn references(&self, input: &str, ctx: &Context) -> Vec<VarRef> {
-        let Ok(src) = tags::rewrite(input) else { return vec![] };
-        let Ok(tmpl) = self.env.template_from_str(&src) else { return vec![] };
+        let Ok(src) = tags::rewrite(input) else {
+            return vec![];
+        };
+        let Ok(tmpl) = self.env.template_from_str(&src) else {
+            return vec![];
+        };
         let mut names: Vec<String> = tmpl
             .undeclared_variables(true)
             .into_iter()
@@ -293,7 +326,9 @@ fn fmt_err(e: &minijinja::Error) -> String {
 }
 
 pub fn has_template_syntax(s: &str) -> bool {
-    (s.contains("{{") && s.contains("}}")) || (s.contains("{%") && s.contains("%}")) || (s.contains("{#") && s.contains("#}"))
+    (s.contains("{{") && s.contains("}}"))
+        || (s.contains("{%") && s.contains("%}"))
+        || (s.contains("{#") && s.contains("#}"))
 }
 
 #[cfg(test)]
@@ -307,17 +342,33 @@ mod tests {
 
     fn ctx(layers: Vec<(&str, Value)>) -> (Renderer, Context) {
         let r = Renderer::new();
-        let layers: Vec<Layer> = layers.into_iter().map(|(n, v)| Layer::new(n, vars(v))).collect();
+        let layers: Vec<Layer> = layers
+            .into_iter()
+            .map(|(n, v)| Layer::new(n, vars(v)))
+            .collect();
         let c = Context::build(&r, &layers);
         (r, c)
     }
 
     #[test]
     fn both_variable_syntaxes() {
-        let (r, c) = ctx(vec![("base", json!({"host": "api.io", "n": 3, "obj": {"a": [1, {"b": "deep"}]}}))]);
-        assert_eq!(r.render_str("https://{{ _.host }}/{{host}}?n={{ n }}", &c, Mode::Throw).unwrap(), "https://api.io/api.io?n=3");
-        assert_eq!(r.render_str("{{ _.obj.a[1].b }}", &c, Mode::Throw).unwrap(), "deep");
-        assert_eq!(r.render_str("{{ obj }}", &c, Mode::Throw).unwrap(), r#"{"a":[1,{"b":"deep"}]}"#);
+        let (r, c) = ctx(vec![(
+            "base",
+            json!({"host": "api.io", "n": 3, "obj": {"a": [1, {"b": "deep"}]}}),
+        )]);
+        assert_eq!(
+            r.render_str("https://{{ _.host }}/{{host}}?n={{ n }}", &c, Mode::Throw)
+                .unwrap(),
+            "https://api.io/api.io?n=3"
+        );
+        assert_eq!(
+            r.render_str("{{ _.obj.a[1].b }}", &c, Mode::Throw).unwrap(),
+            "deep"
+        );
+        assert_eq!(
+            r.render_str("{{ obj }}", &c, Mode::Throw).unwrap(),
+            r#"{"a":[1,{"b":"deep"}]}"#
+        );
     }
 
     #[test]
@@ -334,7 +385,10 @@ mod tests {
 
     #[test]
     fn nested_objects_merge() {
-        let (_, c) = ctx(vec![("Base", json!({"auth": {"user": "u", "pass": "p"}})), ("Sub", json!({"auth": {"pass": "x"}}))]);
+        let (_, c) = ctx(vec![
+            ("Base", json!({"auth": {"user": "u", "pass": "p"}})),
+            ("Sub", json!({"auth": {"pass": "x"}})),
+        ]);
         assert_eq!(c.lookup("auth"), Some(&json!({"user": "u", "pass": "x"})));
     }
 
@@ -359,16 +413,27 @@ mod tests {
     #[test]
     fn unresolved_variables_are_named() {
         let (r, c) = ctx(vec![("Base", json!({"a": 1}))]);
-        let err = r.render_str("{{ a }} {{ _.missing }} {{ other.x }}", &c, Mode::Throw).unwrap_err();
-        assert_eq!(err, RenderError::Unresolved(vec!["missing".into(), "other.x".into()]));
-        assert_eq!(r.render_str("{{ nope }}", &c, Mode::Keep).unwrap(), "{{ nope }}");
+        let err = r
+            .render_str("{{ a }} {{ _.missing }} {{ other.x }}", &c, Mode::Throw)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            RenderError::Unresolved(vec!["missing".into(), "other.x".into()])
+        );
+        assert_eq!(
+            r.render_str("{{ nope }}", &c, Mode::Keep).unwrap(),
+            "{{ nope }}"
+        );
     }
 
     #[test]
     fn null_renders_empty_and_plain_strings_untouched() {
         let (r, c) = ctx(vec![("Base", json!({"n": null}))]);
         assert_eq!(r.render_str("[{{ n }}]", &c, Mode::Throw).unwrap(), "[]");
-        assert_eq!(r.render_str("no {braces} here", &c, Mode::Throw).unwrap(), "no {braces} here");
+        assert_eq!(
+            r.render_str("no {braces} here", &c, Mode::Throw).unwrap(),
+            "no {braces} here"
+        );
     }
 
     #[test]
@@ -382,7 +447,10 @@ mod tests {
 
     #[test]
     fn variable_holding_a_tag_is_rendered_twice() {
-        let (r, c) = ctx(vec![("Base", json!({"id": "{% base64 'encode', 'normal', 'hi' %}"}))]);
+        let (r, c) = ctx(vec![(
+            "Base",
+            json!({"id": "{% base64 'encode', 'normal', 'hi' %}"}),
+        )]);
         assert_eq!(r.render_str("{{ id }}", &c, Mode::Throw).unwrap(), "aGk=");
     }
 

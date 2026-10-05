@@ -9,9 +9,16 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    let flag = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
+    let flag = |name: &str| {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
     if let Some(port) = flag("--http") {
-        let state = flag("--token").map(HttpState::with_token).unwrap_or_default();
+        let state = flag("--token")
+            .map(HttpState::with_token)
+            .unwrap_or_default();
         let url = spawn_http(state, port.parse().unwrap_or(3333)).await?;
         eprintln!("irs-mock-mcp listening on {url}");
         tokio::signal::ctrl_c().await?;
@@ -31,7 +38,11 @@ async fn main() -> std::io::Result<()> {
             continue;
         };
         if msg["method"] == "tools/call" && msg["params"]["name"] == "ask_roots" {
-            write(&json!({"jsonrpc": "2.0", "id": "srv-1", "method": "roots/list"}), &mut out).await?;
+            write(
+                &json!({"jsonrpc": "2.0", "id": "srv-1", "method": "roots/list"}),
+                &mut out,
+            )
+            .await?;
             let mut roots = Value::Null;
             while let Some(l) = lines.next_line().await? {
                 let v: Value = serde_json::from_str(&l).unwrap_or(Value::Null);

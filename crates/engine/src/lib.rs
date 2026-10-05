@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use irs_core::{
-    Auth, CookieJar, Doc, Environment, Folder, KeyValue, RawDoc, Request, Response, Settings, Store, StoreError, Toggle,
-    Workspace,
+    Auth, CookieJar, Doc, Environment, Folder, KeyValue, RawDoc, Request, Response, Settings,
+    Store, StoreError, Toggle, Workspace,
 };
 use irs_templating::{Context, Layer, Mode, RenderError, Renderer, VarRef};
 
@@ -25,6 +25,31 @@ pub enum EngineError {
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;
+
+/// Shared by the CLI and desktop app: `$IRS_DATA_DIR`, else the platform
+/// app-data directory (`~/Library/Application Support/insomnia-rs` on macOS).
+pub fn default_data_dir() -> PathBuf {
+    if let Some(d) = std::env::var_os("IRS_DATA_DIR").filter(|d| !d.is_empty()) {
+        return PathBuf::from(d);
+    }
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    if cfg!(target_os = "macos") {
+        home.join("Library/Application Support/insomnia-rs")
+    } else if cfg!(windows) {
+        std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or(home)
+            .join("insomnia-rs")
+    } else {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".local/share"))
+            .join("insomnia-rs")
+    }
+}
 
 /// Bodies larger than this are stored as files next to the database.
 const INLINE_BODY_LIMIT: usize = 1024 * 1024;
@@ -48,7 +73,11 @@ pub struct Prepared {
 
 impl Engine {
     pub fn new(store: Store, data_dir: Option<PathBuf>) -> Self {
-        Self { store, renderer: Arc::new(Renderer::new()), data_dir }
+        Self {
+            store,
+            renderer: Arc::new(Renderer::new()),
+            data_dir,
+        }
     }
 
     /// Open (or create) the database in `data_dir`.
@@ -82,10 +111,21 @@ impl Engine {
 
     /// The workspace's base environment, created on first use.
     pub fn base_environment(&self, workspace_id: &str) -> Result<Doc<Environment>> {
-        if let Some(e) = self.store.children::<Environment>(workspace_id)?.into_iter().next() {
+        if let Some(e) = self
+            .store
+            .children::<Environment>(workspace_id)?
+            .into_iter()
+            .next()
+        {
             return Ok(e);
         }
-        Ok(self.store.insert(Some(workspace_id), Environment { name: "Base Environment".into(), ..Default::default() })?)
+        Ok(self.store.insert(
+            Some(workspace_id),
+            Environment {
+                name: "Base Environment".into(),
+                ..Default::default()
+            },
+        )?)
     }
 
     pub fn sub_environments(&self, workspace_id: &str) -> Result<Vec<Doc<Environment>>> {
@@ -94,10 +134,21 @@ impl Engine {
     }
 
     pub fn cookie_jar(&self, workspace_id: &str) -> Result<Doc<CookieJar>> {
-        if let Some(j) = self.store.children::<CookieJar>(workspace_id)?.into_iter().next() {
+        if let Some(j) = self
+            .store
+            .children::<CookieJar>(workspace_id)?
+            .into_iter()
+            .next()
+        {
             return Ok(j);
         }
-        Ok(self.store.insert(Some(workspace_id), CookieJar { name: "Default Jar".into(), ..Default::default() })?)
+        Ok(self.store.insert(
+            Some(workspace_id),
+            CookieJar {
+                name: "Default Jar".into(),
+                ..Default::default()
+            },
+        )?)
     }
 
     /// Environment layers for `id` (a request, folder or workspace), lowest
@@ -135,7 +186,10 @@ impl Engine {
         for d in chain.iter().rev().filter(|d| d.meta.kind == "Folder") {
             let f: Doc<Folder> = d.typed()?;
             if !f.environment.is_empty() {
-                layers.push(Layer::new(format!("Folder: {}", f.name), f.environment.clone()));
+                layers.push(Layer::new(
+                    format!("Folder: {}", f.name),
+                    f.environment.clone(),
+                ));
             }
         }
         Ok(layers)
@@ -146,9 +200,16 @@ impl Engine {
     }
 
     /// Render arbitrary text in the context of `id` (for live previews).
-    pub fn preview(&self, id: &str, text: &str) -> Result<(std::result::Result<String, RenderError>, Vec<VarRef>)> {
+    pub fn preview(
+        &self,
+        id: &str,
+        text: &str,
+    ) -> Result<(std::result::Result<String, RenderError>, Vec<VarRef>)> {
         let ctx = self.context(id)?;
-        Ok((self.renderer.render_str(text, &ctx, Mode::Throw), self.renderer.references(text, &ctx)))
+        Ok((
+            self.renderer.render_str(text, &ctx, Mode::Throw),
+            self.renderer.references(text, &ctx),
+        ))
     }
 
     /// Render + apply folder inheritance. `extra` layers (iteration data,
@@ -178,7 +239,11 @@ impl Engine {
         merge_headers(&mut headers, &req.headers);
 
         let auth = if req.authentication.is_inherit() {
-            folders.iter().map(|f| f.authentication.clone()).find(|a| !a.is_inherit()).unwrap_or(Auth::None)
+            folders
+                .iter()
+                .map(|f| f.authentication.clone())
+                .find(|a| !a.is_inherit())
+                .unwrap_or(Auth::None)
         } else {
             req.authentication.clone()
         };
@@ -186,7 +251,10 @@ impl Engine {
         let r = |field: &str, s: &str| -> Result<String> {
             self.renderer
                 .render_str(s, &ctx, Mode::Throw)
-                .map_err(|source| EngineError::Render { field: field.to_string(), source })
+                .map_err(|source| EngineError::Render {
+                    field: field.to_string(),
+                    source,
+                })
         };
         let kv = |section: &str, list: &[KeyValue]| -> Result<Vec<KeyValue>> {
             list.iter()
@@ -307,13 +375,25 @@ impl Engine {
         Ok((resp, jar_changed.then_some(jar)))
     }
 
-    fn persist(&self, request_id: &str, mut resp: Response, jar: Option<Doc<CookieJar>>) -> Result<Doc<Response>> {
+    fn persist(
+        &self,
+        request_id: &str,
+        mut resp: Response,
+        jar: Option<Doc<CookieJar>>,
+    ) -> Result<Doc<Response>> {
         let max_history = self.store.settings()?.max_history_per_request.max(1);
-        let big_body = resp.body_b64.as_ref().is_some_and(|b| b.len() > INLINE_BODY_LIMIT * 4 / 3);
+        let big_body = resp
+            .body_b64
+            .as_ref()
+            .is_some_and(|b| b.len() > INLINE_BODY_LIMIT * 4 / 3);
         let mut file_to_write: Option<(PathBuf, Vec<u8>)> = None;
         if big_body && let Some(dir) = &self.data_dir {
-            let bytes = base64::engine::general_purpose::STANDARD.decode(resp.body_b64.take().unwrap()).unwrap_or_default();
-            let path = dir.join("responses").join(format!("{}.bin", irs_core::new_id("body")));
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(resp.body_b64.take().unwrap())
+                .unwrap_or_default();
+            let path = dir
+                .join("responses")
+                .join(format!("{}.bin", irs_core::new_id("body")));
             resp.body_path = Some(path.to_string_lossy().into_owned());
             file_to_write = Some((path, bytes));
         }
@@ -342,9 +422,14 @@ impl Engine {
     /// Response body bytes (inline or from file).
     pub fn response_body(&self, resp: &Response) -> Vec<u8> {
         if let Some(b) = &resp.body_b64 {
-            return base64::engine::general_purpose::STANDARD.decode(b).unwrap_or_default();
+            return base64::engine::general_purpose::STANDARD
+                .decode(b)
+                .unwrap_or_default();
         }
-        resp.body_path.as_ref().and_then(|p| std::fs::read(p).ok()).unwrap_or_default()
+        resp.body_path
+            .as_ref()
+            .and_then(|p| std::fs::read(p).ok())
+            .unwrap_or_default()
     }
 
     pub fn responses(&self, request_id: &str) -> Result<Vec<Doc<Response>>> {
@@ -354,7 +439,11 @@ impl Engine {
     }
 
     /// Send many requests concurrently (bounded). Results keep input order.
-    pub async fn send_many(&self, ids: &[String], concurrency: usize) -> Vec<Result<Doc<Response>>> {
+    pub async fn send_many(
+        &self,
+        ids: &[String],
+        concurrency: usize,
+    ) -> Vec<Result<Doc<Response>>> {
         let sem = Arc::new(tokio::sync::Semaphore::new(concurrency.max(1)));
         let tasks = ids.iter().map(|id| {
             let sem = sem.clone();
@@ -383,7 +472,10 @@ impl Engine {
 }
 
 fn merge_headers(into: &mut Vec<KeyValue>, from: &[KeyValue]) {
-    for h in from.iter().filter(|h| !h.disabled && !h.name.trim().is_empty()) {
+    for h in from
+        .iter()
+        .filter(|h| !h.disabled && !h.name.trim().is_empty())
+    {
         into.retain(|x| !x.name.eq_ignore_ascii_case(&h.name));
         into.push(h.clone());
     }
@@ -391,17 +483,30 @@ fn merge_headers(into: &mut Vec<KeyValue>, from: &[KeyValue]) {
 
 fn render_auth(auth: &Auth, r: &dyn Fn(&str, &str) -> Result<String>) -> Result<Auth> {
     Ok(match auth {
-        Auth::Basic { username, password, disabled } => Auth::Basic {
+        Auth::Basic {
+            username,
+            password,
+            disabled,
+        } => Auth::Basic {
             username: r("basic auth username", username)?,
             password: r("basic auth password", password)?,
             disabled: *disabled,
         },
-        Auth::Bearer { token, prefix, disabled } => Auth::Bearer {
+        Auth::Bearer {
+            token,
+            prefix,
+            disabled,
+        } => Auth::Bearer {
             token: r("bearer token", token)?,
             prefix: prefix.as_ref().map(|p| r("bearer prefix", p)).transpose()?,
             disabled: *disabled,
         },
-        Auth::ApiKey { key, value, add_to, disabled } => Auth::ApiKey {
+        Auth::ApiKey {
+            key,
+            value,
+            add_to,
+            disabled,
+        } => Auth::ApiKey {
             key: r("API key name", key)?,
             value: r("API key value", value)?,
             add_to: add_to.clone(),

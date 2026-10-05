@@ -27,8 +27,17 @@ pub enum Inbound {
 
 #[derive(Debug, Clone)]
 pub enum TransportConfig {
-    Stdio { command: String, args: Vec<String>, env: HashMap<String, String>, cwd: Option<String> },
-    Http { url: String, headers: Vec<(String, String)>, validate_certificates: bool },
+    Stdio {
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+        cwd: Option<String>,
+    },
+    Http {
+        url: String,
+        headers: Vec<(String, String)>,
+        validate_certificates: bool,
+    },
 }
 
 pub enum Transport {
@@ -37,14 +46,33 @@ pub enum Transport {
 }
 
 impl Transport {
-    pub async fn start(cfg: &TransportConfig, inbound: UnboundedSender<Inbound>) -> Result<Self, McpError> {
+    pub async fn start(
+        cfg: &TransportConfig,
+        inbound: UnboundedSender<Inbound>,
+    ) -> Result<Self, McpError> {
         match cfg {
-            TransportConfig::Stdio { command, args, env, cwd } => {
-                Ok(Transport::Stdio(StdioTransport::spawn(command, args, env, cwd.as_deref(), inbound)?))
-            }
-            TransportConfig::Http { url, headers, validate_certificates } => {
-                Ok(Transport::Http(HttpTransport::new(url, headers, *validate_certificates, inbound)?))
-            }
+            TransportConfig::Stdio {
+                command,
+                args,
+                env,
+                cwd,
+            } => Ok(Transport::Stdio(StdioTransport::spawn(
+                command,
+                args,
+                env,
+                cwd.as_deref(),
+                inbound,
+            )?)),
+            TransportConfig::Http {
+                url,
+                headers,
+                validate_certificates,
+            } => Ok(Transport::Http(HttpTransport::new(
+                url,
+                headers,
+                *validate_certificates,
+                inbound,
+            )?)),
         }
     }
 
@@ -101,7 +129,9 @@ impl StdioTransport {
         if let Some(dir) = cwd.filter(|d| !d.is_empty()) {
             cmd.current_dir(dir);
         }
-        let mut child = cmd.spawn().map_err(|e| McpError::Transport(format!("failed to start '{command}': {e}")))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| McpError::Transport(format!("failed to start '{command}': {e}")))?;
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
         let stdin = child.stdin.take();
@@ -138,25 +168,38 @@ impl StdioTransport {
                 let _ = tx.send(Inbound::Stderr(line));
             }
         });
-        Ok(Self { stdin: tokio::sync::Mutex::new(stdin), child: tokio::sync::Mutex::new(Some(child)) })
+        Ok(Self {
+            stdin: tokio::sync::Mutex::new(stdin),
+            child: tokio::sync::Mutex::new(Some(child)),
+        })
     }
 
     async fn send(&self, msg: &Value) -> Result<(), McpError> {
         let mut guard = self.stdin.lock().await;
-        let stdin = guard.as_mut().ok_or_else(|| McpError::Transport("stdin closed".into()))?;
+        let stdin = guard
+            .as_mut()
+            .ok_or_else(|| McpError::Transport("stdin closed".into()))?;
         let mut line = serde_json::to_vec(msg).map_err(|e| McpError::Transport(e.to_string()))?;
         line.push(b'\n');
-        stdin.write_all(&line).await.map_err(|e| McpError::Transport(format!("write to server failed: {e}")))?;
-        stdin.flush().await.map_err(|e| McpError::Transport(e.to_string()))
+        stdin
+            .write_all(&line)
+            .await
+            .map_err(|e| McpError::Transport(format!("write to server failed: {e}")))?;
+        stdin
+            .flush()
+            .await
+            .map_err(|e| McpError::Transport(e.to_string()))
     }
 
     async fn close(&self) {
         // Closing stdin lets well-behaved servers exit; then make sure.
         self.stdin.lock().await.take();
-        if let Some(mut child) = self.child.lock().await.take() {
-            if tokio::time::timeout(Duration::from_millis(500), child.wait()).await.is_err() {
-                let _ = child.kill().await;
-            }
+        if let Some(mut child) = self.child.lock().await.take()
+            && tokio::time::timeout(Duration::from_millis(500), child.wait())
+                .await
+                .is_err()
+        {
+            let _ = child.kill().await;
         }
     }
 }
@@ -179,7 +222,8 @@ impl HttpTransport {
         validate_certificates: bool,
         inbound: UnboundedSender<Inbound>,
     ) -> Result<Self, McpError> {
-        reqwest::Url::parse(url).map_err(|e| McpError::Transport(format!("invalid URL '{url}': {e}")))?;
+        reqwest::Url::parse(url)
+            .map_err(|e| McpError::Transport(format!("invalid URL '{url}': {e}")))?;
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(!validate_certificates)
             .connect_timeout(Duration::from_secs(15))
@@ -210,7 +254,10 @@ impl HttpTransport {
     }
 
     async fn send(&self, msg: &Value) -> Result<(), McpError> {
-        let id = msg.get("id").cloned().filter(|_| msg.get("method").is_some());
+        let id = msg
+            .get("id")
+            .cloned()
+            .filter(|_| msg.get("method").is_some());
         let resp = self
             .request(reqwest::Method::POST)
             .header("accept", "application/json, text/event-stream")
@@ -220,10 +267,16 @@ impl HttpTransport {
             .await
             .map_err(|e| McpError::Transport(format!("POST {} failed: {e}", self.url)))?;
 
-        if let Some(sid) = resp.headers().get(SESSION_HEADER).and_then(|v| v.to_str().ok()) {
+        if let Some(sid) = resp
+            .headers()
+            .get(SESSION_HEADER)
+            .and_then(|v| v.to_str().ok())
+        {
             let mut cur = self.session_id.lock().unwrap();
             if cur.as_deref() != Some(sid) {
-                let _ = self.inbound.send(Inbound::Info(format!("session id: {sid}")));
+                let _ = self
+                    .inbound
+                    .send(Inbound::Info(format!("session id: {sid}")));
                 *cur = Some(sid.to_string());
             }
         }
@@ -239,10 +292,16 @@ impl HttpTransport {
             let body = resp.text().await.unwrap_or_default();
             let hint = match status.as_u16() {
                 401 | 403 => " (server requires authentication — add an Authorization header)",
-                404 if self.session_id.lock().unwrap().is_some() => " (session expired — reconnect)",
+                404 if self.session_id.lock().unwrap().is_some() => {
+                    " (session expired — reconnect)"
+                }
                 _ => "",
             };
-            let text = format!("HTTP {}{hint}: {}", status, body.chars().take(500).collect::<String>());
+            let text = format!(
+                "HTTP {}{hint}: {}",
+                status,
+                body.chars().take(500).collect::<String>()
+            );
             return match id {
                 // Surface the failure as the JSON-RPC error of the pending request.
                 Some(id) => {
@@ -282,7 +341,10 @@ impl HttpTransport {
                 }
             });
         } else {
-            let body = resp.text().await.map_err(|e| McpError::Transport(e.to_string()))?;
+            let body = resp
+                .text()
+                .await
+                .map_err(|e| McpError::Transport(e.to_string()))?;
             forward_json(&self.inbound, &body);
         }
         Ok(())
@@ -290,7 +352,11 @@ impl HttpTransport {
 
     async fn close(&self) {
         if self.session_id.lock().unwrap().is_some() {
-            let _ = tokio::time::timeout(Duration::from_secs(2), self.request(reqwest::Method::DELETE).send()).await;
+            let _ = tokio::time::timeout(
+                Duration::from_secs(2),
+                self.request(reqwest::Method::DELETE).send(),
+            )
+            .await;
         }
     }
 }
@@ -306,7 +372,10 @@ fn forward_json(tx: &UnboundedSender<Inbound>, data: &str) {
             let _ = tx.send(Inbound::Message(v));
         }
         Err(e) => {
-            let _ = tx.send(Inbound::Info(format!("unparseable server payload ({e}): {}", &data[..data.len().min(200)])));
+            let _ = tx.send(Inbound::Info(format!(
+                "unparseable server payload ({e}): {}",
+                &data[..data.len().min(200)]
+            )));
         }
     }
 }
@@ -358,7 +427,10 @@ mod tests {
     fn sse_parser_handles_split_chunks_multiline_and_crlf() {
         let mut p = SseParser::default();
         assert!(p.feed(b"event: message\r\ndata: {\"a\":").is_empty());
-        assert_eq!(p.feed(b"1}\r\n\r\n: comment\n\ndata: x\ndata: y\n\nevent: ping\ndata: z\n\n"), vec!["{\"a\":1}", "x\ny"]);
+        assert_eq!(
+            p.feed(b"1}\r\n\r\n: comment\n\ndata: x\ndata: y\n\nevent: ping\ndata: z\n\n"),
+            vec!["{\"a\":1}", "x\ny"]
+        );
         assert!(p.feed(b"data: tail").is_empty());
         assert_eq!(p.finish(), vec!["tail"]);
     }

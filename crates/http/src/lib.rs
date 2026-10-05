@@ -73,7 +73,10 @@ pub struct HttpResponse {
 
 impl HttpResponse {
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.iter().find(|h| h.name.eq_ignore_ascii_case(name)).map(|h| h.value.as_str())
+        self.headers
+            .iter()
+            .find(|h| h.name.eq_ignore_ascii_case(name))
+            .map(|h| h.value.as_str())
     }
     pub fn text(&self) -> String {
         String::from_utf8_lossy(&self.body).into_owned()
@@ -84,7 +87,10 @@ impl HttpResponse {
 #[derive(Debug, Clone)]
 enum WireBody {
     None,
-    Bytes { content_type: Option<String>, data: Vec<u8> },
+    Bytes {
+        content_type: Option<String>,
+        data: Vec<u8>,
+    },
     Multipart(Vec<irs_core::BodyParam>),
 }
 
@@ -100,7 +106,10 @@ pub fn build_url(req: &Request, encode: bool) -> Result<Url, HttpError> {
             let mut rest = raw.as_str();
             while let Some(i) = rest.find(&needle) {
                 let end = i + needle.len();
-                let boundary = rest[end..].chars().next().is_none_or(|c| matches!(c, '/' | '?' | '#'));
+                let boundary = rest[end..]
+                    .chars()
+                    .next()
+                    .is_none_or(|c| matches!(c, '/' | '?' | '#'));
                 out.push_str(&rest[..i]);
                 if boundary {
                     out.push('/');
@@ -117,8 +126,13 @@ pub fn build_url(req: &Request, encode: bool) -> Result<Url, HttpError> {
     if !raw.contains("://") {
         raw = format!("http://{raw}");
     }
-    let mut url = Url::parse(&raw).map_err(|e| HttpError::InvalidUrl(req.url.clone(), e.to_string()))?;
-    let extra: Vec<&KeyValue> = req.parameters.iter().filter(|p| !p.disabled && !p.name.is_empty()).collect();
+    let mut url =
+        Url::parse(&raw).map_err(|e| HttpError::InvalidUrl(req.url.clone(), e.to_string()))?;
+    let extra: Vec<&KeyValue> = req
+        .parameters
+        .iter()
+        .filter(|p| !p.disabled && !p.name.is_empty())
+        .collect();
     if !extra.is_empty() {
         if encode {
             let mut qp = url.query_pairs_mut();
@@ -140,23 +154,48 @@ pub fn build_url(req: &Request, encode: bool) -> Result<Url, HttpError> {
 }
 
 fn url_encode_component(s: &str) -> String {
-    url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>().replace('+', "%20")
+    url::form_urlencoded::byte_serialize(s.as_bytes())
+        .collect::<String>()
+        .replace('+', "%20")
 }
 
 /// Headers to send (enabled, non-empty names) plus auth headers. Returns any
 /// auth query parameters / cookies separately.
-fn apply_auth(auth: &Auth, headers: &mut Vec<(String, String)>, url: &mut Url, cookie_extra: &mut Vec<String>) {
-    let has = |hs: &Vec<(String, String)>, n: &str| hs.iter().any(|(k, _)| k.eq_ignore_ascii_case(n));
+fn apply_auth(
+    auth: &Auth,
+    headers: &mut Vec<(String, String)>,
+    url: &mut Url,
+    cookie_extra: &mut Vec<String>,
+) {
+    let has =
+        |hs: &Vec<(String, String)>, n: &str| hs.iter().any(|(k, _)| k.eq_ignore_ascii_case(n));
     match auth {
-        Auth::Basic { username, password, disabled: false } if !has(headers, "authorization") => {
-            let token = base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"));
+        Auth::Basic {
+            username,
+            password,
+            disabled: false,
+        } if !has(headers, "authorization") => {
+            let token =
+                base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"));
             headers.push(("Authorization".into(), format!("Basic {token}")));
         }
-        Auth::Bearer { token, prefix, disabled: false } if !has(headers, "authorization") && !token.is_empty() => {
-            let prefix = prefix.as_deref().filter(|p| !p.is_empty()).unwrap_or("Bearer");
+        Auth::Bearer {
+            token,
+            prefix,
+            disabled: false,
+        } if !has(headers, "authorization") && !token.is_empty() => {
+            let prefix = prefix
+                .as_deref()
+                .filter(|p| !p.is_empty())
+                .unwrap_or("Bearer");
             headers.push(("Authorization".into(), format!("{prefix} {token}")));
         }
-        Auth::ApiKey { key, value, add_to, disabled: false } if !key.is_empty() => match add_to.as_deref() {
+        Auth::ApiKey {
+            key,
+            value,
+            add_to,
+            disabled: false,
+        } if !key.is_empty() => match add_to.as_deref() {
             Some("queryParams") => {
                 url.query_pairs_mut().append_pair(key, value);
             }
@@ -169,10 +208,15 @@ fn apply_auth(auth: &Auth, headers: &mut Vec<(String, String)>, url: &mut Url, c
 
 fn wire_body(body: &Body) -> Result<WireBody, HttpError> {
     let mime_type = body.mime_type.clone().filter(|m| !m.is_empty());
-    let read = |path: &str| std::fs::read(path).map_err(|e| HttpError::File(path.to_string(), e.to_string()));
+    let read = |path: &str| {
+        std::fs::read(path).map_err(|e| HttpError::File(path.to_string(), e.to_string()))
+    };
     Ok(match mime_type.as_deref() {
         None => match &body.text {
-            Some(t) if !t.is_empty() => WireBody::Bytes { content_type: None, data: t.clone().into_bytes() },
+            Some(t) if !t.is_empty() => WireBody::Bytes {
+                content_type: None,
+                data: t.clone().into_bytes(),
+            },
             _ => WireBody::None,
         },
         Some(mime::FORM) => {
@@ -180,11 +224,23 @@ fn wire_body(body: &Body) -> Result<WireBody, HttpError> {
             for p in body.params.iter().filter(|p| !p.disabled) {
                 ser.append_pair(&p.name, &p.value);
             }
-            WireBody::Bytes { content_type: Some(mime::FORM.into()), data: ser.finish().into_bytes() }
+            WireBody::Bytes {
+                content_type: Some(mime::FORM.into()),
+                data: ser.finish().into_bytes(),
+            }
         }
-        Some(mime::MULTIPART) => WireBody::Multipart(body.params.iter().filter(|p| !p.disabled).cloned().collect()),
+        Some(mime::MULTIPART) => WireBody::Multipart(
+            body.params
+                .iter()
+                .filter(|p| !p.disabled)
+                .cloned()
+                .collect(),
+        ),
         Some(mime::FILE) => match &body.file_name {
-            Some(f) if !f.is_empty() => WireBody::Bytes { content_type: Some(mime::FILE.into()), data: read(f)? },
+            Some(f) if !f.is_empty() => WireBody::Bytes {
+                content_type: Some(mime::FILE.into()),
+                data: read(f)?,
+            },
             _ => WireBody::None,
         },
         Some(mime::GRAPHQL) => WireBody::Bytes {
@@ -225,9 +281,17 @@ fn http_version(v: reqwest::Version) -> &'static str {
 
 /// Send a fully rendered request. `jar` is read for outgoing cookies and
 /// updated with any `Set-Cookie` headers (including on redirect hops).
-pub async fn send(req: &Request, auth: &Auth, opts: &Options, jar: &mut Vec<Cookie>) -> Result<HttpResponse, HttpError> {
+pub async fn send(
+    req: &Request,
+    auth: &Auth,
+    opts: &Options,
+    jar: &mut Vec<Cookie>,
+) -> Result<HttpResponse, HttpError> {
     let start = Instant::now();
-    let mut tl = Timeline { start, entries: vec![] };
+    let mut tl = Timeline {
+        start,
+        entries: vec![],
+    };
     let method = reqwest::Method::from_bytes(req.method.trim().to_uppercase().as_bytes())
         .map_err(|_| HttpError::InvalidMethod(req.method.clone()))?;
     let mut url = build_url(req, req.settings.encode_url)?;
@@ -242,7 +306,9 @@ pub async fn send(req: &Request, auth: &Auth, opts: &Options, jar: &mut Vec<Cook
     apply_auth(auth, &mut headers, &mut url, &mut auth_cookies);
     if let Some(ua) = &opts.user_agent
         && !req.settings.disable_user_agent
-        && !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
+        && !headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
     {
         headers.push(("User-Agent".into(), ua.clone()));
     }
@@ -259,23 +325,34 @@ pub async fn send(req: &Request, auth: &Auth, opts: &Options, jar: &mut Vec<Cook
     let mut body = body;
     let mut redirects = 0usize;
     tl.push("info", format!("Preparing request to {url}"));
-    tl.push("info", format!("Current time is {}", chrono::Utc::now().to_rfc3339()));
+    tl.push(
+        "info",
+        format!("Current time is {}", chrono::Utc::now().to_rfc3339()),
+    );
 
     loop {
         let mut rb = client.request(method.clone(), url.clone());
         let mut sent_headers = headers.clone();
         let mut cookie_parts = auth_cookies.clone();
-        if opts.send_cookies && let Some(c) = cookies::header_for(jar, &url) {
+        if opts.send_cookies
+            && let Some(c) = cookies::header_for(jar, &url)
+        {
             cookie_parts.push(c);
         }
-        if !cookie_parts.is_empty() && !sent_headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("cookie")) {
+        if !cookie_parts.is_empty()
+            && !sent_headers
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("cookie"))
+        {
             sent_headers.push(("Cookie".into(), cookie_parts.join("; ")));
         }
         match &body {
             WireBody::None => {}
             WireBody::Bytes { content_type, data } => {
                 if let Some(ct) = content_type
-                    && !sent_headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                    && !sent_headers
+                        .iter()
+                        .any(|(k, _)| k.eq_ignore_ascii_case("content-type"))
                 {
                     sent_headers.push(("Content-Type".into(), ct.clone()));
                 }
@@ -286,8 +363,11 @@ pub async fn send(req: &Request, auth: &Auth, opts: &Options, jar: &mut Vec<Cook
                 for p in params {
                     if p.kind.as_deref() == Some("file") {
                         let path = p.file_name.clone().unwrap_or_default();
-                        let data = std::fs::read(&path).map_err(|e| HttpError::File(path.clone(), e.to_string()))?;
-                        let fname = std::path::Path::new(&path).file_name().map(|s| s.to_string_lossy().into_owned());
+                        let data = std::fs::read(&path)
+                            .map_err(|e| HttpError::File(path.clone(), e.to_string()))?;
+                        let fname = std::path::Path::new(&path)
+                            .file_name()
+                            .map(|s| s.to_string_lossy().into_owned());
                         let mut part = reqwest::multipart::Part::bytes(data);
                         if let Some(f) = fname {
                             part = part.file_name(f);
@@ -307,10 +387,16 @@ pub async fn send(req: &Request, auth: &Auth, opts: &Options, jar: &mut Vec<Cook
         }
         let wire = rb.build().map_err(|e| HttpError::Network(e.to_string()))?;
 
-        tl.push("header-out", format!("{} {} HTTP/1.1", wire.method(), request_target(wire.url())));
+        tl.push(
+            "header-out",
+            format!("{} {} HTTP/1.1", wire.method(), request_target(wire.url())),
+        );
         tl.push("header-out", format!("Host: {}", host_header(wire.url())));
         for (k, v) in wire.headers() {
-            tl.push("header-out", format!("{}: {}", k, v.to_str().unwrap_or("<binary>")));
+            tl.push(
+                "header-out",
+                format!("{}: {}", k, v.to_str().unwrap_or("<binary>")),
+            );
         }
         if let Some(b) = wire.body().and_then(|b| b.as_bytes()) {
             let shown = &b[..b.len().min(opts.timeline_body_limit)];
@@ -328,7 +414,14 @@ pub async fn send(req: &Request, auth: &Auth, opts: &Options, jar: &mut Vec<Cook
         let ttfb = sent_at.elapsed();
         let status = resp.status();
         let version = http_version(resp.version());
-        tl.push("header-in", format!("{version} {} {}", status.as_u16(), status.canonical_reason().unwrap_or("")));
+        tl.push(
+            "header-in",
+            format!(
+                "{version} {} {}",
+                status.as_u16(),
+                status.canonical_reason().unwrap_or("")
+            ),
+        );
         let resp_headers: Vec<KeyValue> = resp
             .headers()
             .iter()
@@ -338,29 +431,44 @@ pub async fn send(req: &Request, auth: &Auth, opts: &Options, jar: &mut Vec<Cook
             tl.push("header-in", format!("{}: {}", h.name, h.value));
         }
         if opts.store_cookies {
-            for h in resp_headers.iter().filter(|h| h.name.eq_ignore_ascii_case("set-cookie")) {
+            for h in resp_headers
+                .iter()
+                .filter(|h| h.name.eq_ignore_ascii_case("set-cookie"))
+            {
                 if let Some(c) = cookies::parse_set_cookie(&h.value, &url) {
-                    tl.push("info", format!("Stored cookie \"{}\" for domain {}", c.name, c.domain));
+                    tl.push(
+                        "info",
+                        format!("Stored cookie \"{}\" for domain {}", c.name, c.domain),
+                    );
                     cookies::store(jar, c);
                 }
             }
         }
 
-        let location = resp.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()).map(str::to_string);
+        let location = resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
         if status.is_redirection() && opts.follow_redirects && location.is_some() {
             if redirects >= opts.max_redirects {
                 return Err(HttpError::TooManyRedirects(opts.max_redirects));
             }
             let next = url
                 .join(location.as_deref().unwrap_or_default())
-                .map_err(|e| HttpError::InvalidUrl(location.clone().unwrap_or_default(), e.to_string()))?;
+                .map_err(|e| {
+                    HttpError::InvalidUrl(location.clone().unwrap_or_default(), e.to_string())
+                })?;
             redirects += 1;
             tl.push("info", format!("Following redirect #{redirects} to {next}"));
             // 301/302/303 switch to GET without a body (browser/curl behavior); 307/308 keep both.
             if matches!(status.as_u16(), 301..=303) && method != reqwest::Method::HEAD {
                 method = reqwest::Method::GET;
                 body = WireBody::None;
-                headers.retain(|(k, _)| !k.eq_ignore_ascii_case("content-type") && !k.eq_ignore_ascii_case("content-length"));
+                headers.retain(|(k, _)| {
+                    !k.eq_ignore_ascii_case("content-type")
+                        && !k.eq_ignore_ascii_case("content-length")
+                });
             }
             if next.host_str() != url.host_str() {
                 headers.retain(|(k, _)| !k.eq_ignore_ascii_case("authorization"));
@@ -371,7 +479,11 @@ pub async fn send(req: &Request, auth: &Auth, opts: &Options, jar: &mut Vec<Cook
 
         let dl_start = Instant::now();
         let bytes = resp.bytes().await.map_err(|e| {
-            if e.is_timeout() { HttpError::Timeout(opts.timeout.as_millis() as u64) } else { HttpError::Network(error_chain(&e)) }
+            if e.is_timeout() {
+                HttpError::Timeout(opts.timeout.as_millis() as u64)
+            } else {
+                HttpError::Network(error_chain(&e))
+            }
         })?;
         let download = dl_start.elapsed();
         tl.push("data-in", format!("Received {} B", bytes.len()));

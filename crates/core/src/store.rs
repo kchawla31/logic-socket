@@ -18,7 +18,11 @@ pub enum StoreError {
     #[error("{kind} {id} not found")]
     NotFound { kind: &'static str, id: String },
     #[error("document {id} is a {actual}, expected {expected}")]
-    WrongType { id: String, expected: &'static str, actual: String },
+    WrongType {
+        id: String,
+        expected: &'static str,
+        actual: String,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, StoreError>;
@@ -41,15 +45,25 @@ impl RawDoc {
                 actual: self.meta.kind.clone(),
             });
         }
-        Ok(Doc { meta: self.meta.clone(), body: serde_json::from_value(self.data.clone())? })
+        Ok(Doc {
+            meta: self.meta.clone(),
+            body: serde_json::from_value(self.data.clone())?,
+        })
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "op")]
 pub enum Change {
-    Upsert { id: String, kind: String, parent_id: Option<String> },
-    Delete { id: String, kind: String },
+    Upsert {
+        id: String,
+        kind: String,
+        parent_id: Option<String>,
+    },
+    Delete {
+        id: String,
+        kind: String,
+    },
 }
 
 type Listener = Box<dyn Fn(&[Change]) + Send + Sync>;
@@ -102,14 +116,27 @@ impl Store {
 
     fn init(conn: Connection) -> Result<Self> {
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);")?;
-        let current: i64 =
-            conn.query_row("SELECT COALESCE(MAX(version), 0) FROM schema_version", [], |r| r.get(0))?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);",
+        )?;
+        let current: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+            [],
+            |r| r.get(0),
+        )?;
         for (i, sql) in MIGRATIONS.iter().enumerate().skip(current as usize) {
             conn.execute_batch(sql)?;
-            conn.execute("INSERT INTO schema_version (version) VALUES (?1)", [i as i64 + 1])?;
+            conn.execute(
+                "INSERT INTO schema_version (version) VALUES (?1)",
+                [i as i64 + 1],
+            )?;
         }
-        Ok(Self { inner: Arc::new(Inner { conn: Mutex::new(conn), listeners: Mutex::new(vec![]) }) })
+        Ok(Self {
+            inner: Arc::new(Inner {
+                conn: Mutex::new(conn),
+                listeners: Mutex::new(vec![]),
+            }),
+        })
     }
 
     /// Register a listener called once per committed write (or batch).
@@ -131,7 +158,10 @@ impl Store {
         let (out, changes) = {
             let mut conn = self.inner.conn.lock().unwrap();
             let txn = conn.transaction()?;
-            let mut tx = Tx { conn: &txn, changes: vec![] };
+            let mut tx = Tx {
+                conn: &txn,
+                changes: vec![],
+            };
             let out = f(&mut tx)?;
             let changes = std::mem::take(&mut tx.changes);
             txn.commit()?;
@@ -160,7 +190,10 @@ impl Store {
 
     pub fn get<T: Model>(&self, id: &str) -> Result<Doc<T>> {
         self.raw(id)?
-            .ok_or_else(|| StoreError::NotFound { kind: T::TYPE, id: id.to_string() })?
+            .ok_or_else(|| StoreError::NotFound {
+                kind: T::TYPE,
+                id: id.to_string(),
+            })?
             .typed()
     }
 
@@ -169,10 +202,16 @@ impl Store {
     }
 
     pub fn children<T: Model>(&self, parent_id: &str) -> Result<Vec<Doc<T>>> {
-        self.read(|c| query(c, "WHERE parent_id = ?1 AND type = ?2", params![parent_id, T::TYPE]))?
-            .iter()
-            .map(RawDoc::typed)
-            .collect()
+        self.read(|c| {
+            query(
+                c,
+                "WHERE parent_id = ?1 AND type = ?2",
+                params![parent_id, T::TYPE],
+            )
+        })?
+        .iter()
+        .map(RawDoc::typed)
+        .collect()
     }
 
     pub fn all_children(&self, parent_id: &str) -> Result<Vec<RawDoc>> {
@@ -244,7 +283,12 @@ impl Tx<'_> {
     }
 
     /// Insert with a caller-chosen id (used by importers and tests).
-    pub fn insert_with_id<T: Model>(&mut self, id: &str, parent_id: Option<&str>, body: T) -> Result<Doc<T>> {
+    pub fn insert_with_id<T: Model>(
+        &mut self,
+        id: &str,
+        parent_id: Option<&str>,
+        body: T,
+    ) -> Result<Doc<T>> {
         let now = now_ms();
         let meta = Meta {
             id: id.to_string(),
@@ -270,7 +314,10 @@ impl Tx<'_> {
     /// Move a document under a new parent and/or position.
     pub fn move_to(&mut self, id: &str, parent_id: Option<&str>, sort_key: f64) -> Result<()> {
         let Some(mut d) = raw(self.conn, id)? else {
-            return Err(StoreError::NotFound { kind: "Document", id: id.into() });
+            return Err(StoreError::NotFound {
+                kind: "Document",
+                id: id.into(),
+            });
         };
         d.meta.parent_id = parent_id.map(str::to_string);
         d.meta.sort_key = sort_key;
@@ -280,27 +327,40 @@ impl Tx<'_> {
 
     /// Delete a document and all its descendants. Returns the number removed.
     pub fn delete(&mut self, id: &str) -> Result<usize> {
-        let Some(root) = raw(self.conn, id)? else { return Ok(0) };
+        let Some(root) = raw(self.conn, id)? else {
+            return Ok(0);
+        };
         let mut all = descendants(self.conn, id)?;
         all.push(root);
         for d in &all {
-            self.conn.execute("DELETE FROM docs WHERE id = ?1", [&d.meta.id])?;
-            self.changes.push(Change::Delete { id: d.meta.id.clone(), kind: d.meta.kind.clone() });
+            self.conn
+                .execute("DELETE FROM docs WHERE id = ?1", [&d.meta.id])?;
+            self.changes.push(Change::Delete {
+                id: d.meta.id.clone(),
+                kind: d.meta.kind.clone(),
+            });
         }
         Ok(all.len())
     }
 
     pub fn get<T: Model>(&self, id: &str) -> Result<Doc<T>> {
         raw(self.conn, id)?
-            .ok_or_else(|| StoreError::NotFound { kind: T::TYPE, id: id.to_string() })?
+            .ok_or_else(|| StoreError::NotFound {
+                kind: T::TYPE,
+                id: id.to_string(),
+            })?
             .typed()
     }
 
     pub fn children<T: Model>(&self, parent_id: &str) -> Result<Vec<Doc<T>>> {
-        query(self.conn, "WHERE parent_id = ?1 AND type = ?2", params![parent_id, T::TYPE])?
-            .iter()
-            .map(RawDoc::typed)
-            .collect()
+        query(
+            self.conn,
+            "WHERE parent_id = ?1 AND type = ?2",
+            params![parent_id, T::TYPE],
+        )?
+        .iter()
+        .map(RawDoc::typed)
+        .collect()
     }
 
     fn write(&mut self, meta: &Meta, data: &Value) -> Result<()> {
@@ -309,7 +369,15 @@ impl Tx<'_> {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(id) DO UPDATE SET type = excluded.type, parent_id = excluded.parent_id,
                sort_key = excluded.sort_key, modified = excluded.modified, data = excluded.data",
-            params![meta.id, meta.kind, meta.parent_id, meta.sort_key, meta.created, meta.modified, data.to_string()],
+            params![
+                meta.id,
+                meta.kind,
+                meta.parent_id,
+                meta.sort_key,
+                meta.created,
+                meta.modified,
+                data.to_string()
+            ],
         )?;
         self.changes.push(Change::Upsert {
             id: meta.id.clone(),
@@ -322,7 +390,11 @@ impl Tx<'_> {
 
 fn next_sort_key(c: &Connection, parent_id: Option<&str>) -> Result<f64> {
     let max: Option<f64> = c
-        .query_row("SELECT MAX(sort_key) FROM docs WHERE parent_id IS ?1", [parent_id], |r| r.get(0))
+        .query_row(
+            "SELECT MAX(sort_key) FROM docs WHERE parent_id IS ?1",
+            [parent_id],
+            |r| r.get(0),
+        )
         .optional()?
         .flatten();
     Ok(max.map(|m| m + 1.0).unwrap_or(0.0))
@@ -345,8 +417,16 @@ fn row_to_raw(r: &rusqlite::Row<'_>) -> rusqlite::Result<(Meta, String)> {
 const COLS: &str = "SELECT id, type, parent_id, sort_key, created, modified, data FROM docs ";
 
 fn raw(c: &Connection, id: &str) -> Result<Option<RawDoc>> {
-    let row = c.query_row(&format!("{COLS} WHERE id = ?1"), [id], row_to_raw).optional()?;
-    row.map(|(meta, data)| Ok(RawDoc { meta, data: serde_json::from_str(&data)? })).transpose()
+    let row = c
+        .query_row(&format!("{COLS} WHERE id = ?1"), [id], row_to_raw)
+        .optional()?;
+    row.map(|(meta, data)| {
+        Ok(RawDoc {
+            meta,
+            data: serde_json::from_str(&data)?,
+        })
+    })
+    .transpose()
 }
 
 fn query(c: &Connection, where_: &str, p: impl rusqlite::Params) -> Result<Vec<RawDoc>> {
@@ -354,7 +434,10 @@ fn query(c: &Connection, where_: &str, p: impl rusqlite::Params) -> Result<Vec<R
     let rows = stmt.query_map(p, row_to_raw)?;
     rows.map(|r| {
         let (meta, data) = r?;
-        Ok(RawDoc { meta, data: serde_json::from_str(&data)? })
+        Ok(RawDoc {
+            meta,
+            data: serde_json::from_str(&data)?,
+        })
     })
     .collect()
 }
@@ -378,22 +461,49 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn ws(store: &Store) -> Doc<Workspace> {
-        store.insert(None, Workspace { name: "W".into(), ..Default::default() }).unwrap()
+        store
+            .insert(
+                None,
+                Workspace {
+                    name: "W".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
     }
 
     #[test]
     fn crud_and_hierarchy() {
         let s = Store::open_in_memory().unwrap();
         let w = ws(&s);
-        let f = s.insert(Some(w.id()), Folder { name: "F".into(), ..Default::default() }).unwrap();
-        let mut r = s.insert(Some(f.id()), Request { url: "http://x".into(), ..Default::default() }).unwrap();
+        let f = s
+            .insert(
+                Some(w.id()),
+                Folder {
+                    name: "F".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let mut r = s
+            .insert(
+                Some(f.id()),
+                Request {
+                    url: "http://x".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         r.method = "POST".into();
         s.update(&r).unwrap();
 
         let back: Doc<Request> = s.get(r.id()).unwrap();
         assert_eq!(back.method, "POST");
         let anc = s.ancestors(r.id()).unwrap();
-        assert_eq!(anc.iter().map(|d| d.meta.kind.as_str()).collect::<Vec<_>>(), ["Folder", "Workspace"]);
+        assert_eq!(
+            anc.iter().map(|d| d.meta.kind.as_str()).collect::<Vec<_>>(),
+            ["Folder", "Workspace"]
+        );
         assert_eq!(s.descendants(w.id()).unwrap().len(), 2);
 
         assert_eq!(s.delete(w.id()).unwrap(), 3);
@@ -404,7 +514,10 @@ mod tests {
     fn wrong_type_is_an_error() {
         let s = Store::open_in_memory().unwrap();
         let w = ws(&s);
-        assert!(matches!(s.get::<Request>(w.id()), Err(StoreError::WrongType { .. })));
+        assert!(matches!(
+            s.get::<Request>(w.id()),
+            Err(StoreError::WrongType { .. })
+        ));
     }
 
     #[test]
@@ -419,7 +532,13 @@ mod tests {
         let w = ws(&s);
         s.batch(|tx| {
             for i in 0..50 {
-                tx.insert(Some(w.id()), Request { name: format!("r{i}"), ..Default::default() })?;
+                tx.insert(
+                    Some(w.id()),
+                    Request {
+                        name: format!("r{i}"),
+                        ..Default::default()
+                    },
+                )?;
             }
             Ok(())
         })
@@ -428,7 +547,10 @@ mod tests {
 
         let err = s.batch(|tx| {
             tx.insert(Some(w.id()), Request::default())?;
-            Err::<(), _>(StoreError::NotFound { kind: "x", id: "y".into() })
+            Err::<(), _>(StoreError::NotFound {
+                kind: "x",
+                id: "y".into(),
+            })
         });
         assert!(err.is_err());
         assert_eq!(s.children::<Request>(w.id()).unwrap().len(), 50);
@@ -439,9 +561,21 @@ mod tests {
         let s = Store::open_in_memory().unwrap();
         let w = ws(&s);
         for n in ["a", "b", "c"] {
-            s.insert(Some(w.id()), Request { name: n.into(), ..Default::default() }).unwrap();
+            s.insert(
+                Some(w.id()),
+                Request {
+                    name: n.into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         }
-        let names: Vec<_> = s.children::<Request>(w.id()).unwrap().into_iter().map(|r| r.body.name).collect();
+        let names: Vec<_> = s
+            .children::<Request>(w.id())
+            .unwrap()
+            .into_iter()
+            .map(|r| r.body.name)
+            .collect();
         assert_eq!(names, ["a", "b", "c"]);
     }
 
