@@ -876,6 +876,19 @@ dependencies = [
 [[package]]
 name = "irs-engine"
 version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "futures",
+ "irs-core",
+ "irs-http",
+ "irs-templating",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
 
 [[package]]
 name = "irs-http"
@@ -897,6 +910,16 @@ dependencies = [
 [[package]]
 name = "irs-mcp"
 version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
 
 [[package]]
 name = "irs-templating"

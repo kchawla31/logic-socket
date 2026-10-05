@@ -4,4 +4,16 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "irs-mock-mcp"
+path = "src/bin/irs-mock-mcp.rs"
+
 [dependencies]
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+futures.workspace = true
+chrono.workspace = true
+axum.workspace = true
