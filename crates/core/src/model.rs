@@ -346,8 +346,124 @@ pub struct McpServer {
     pub roots: Vec<McpRoot>,
     pub authentication: Auth,
     pub ssl_validation: Option<bool>,
+    pub sampling: McpSampling,
 }
 model!(McpServer, "McpServer", "mcp");
+
+// ---------------------------------------------------------------- LLM
+
+/// Where a provider's API key comes from. Keys are never stored in the database.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum KeySource {
+    /// Not needed (e.g. local Ollama).
+    None,
+    /// OS keychain entry `insomnia-rs` / `<provider id>`.
+    Keychain,
+    /// Process environment variable, e.g. `ANTHROPIC_API_KEY`.
+    Env { var: String },
+    /// Template rendered against the workspace environment, e.g. `{{ _.openai_key }}`.
+    Template { template: String },
+}
+
+impl Default for KeySource {
+    fn default() -> Self {
+        KeySource::Keychain
+    }
+}
+
+/// A configured AI provider (global, not tied to a workspace).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LlmProvider {
+    pub name: String,
+    /// `anthropic` | `openai` | `ollama` | `openai-compatible`
+    pub kind: String,
+    pub base_url: String,
+    pub key_source: KeySource,
+    pub default_model: String,
+    pub headers: Vec<KeyValue>,
+}
+model!(LlmProvider, "LlmProvider", "llmp");
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LlmPromptMessage {
+    /// `user` | `assistant`
+    pub role: String,
+    /// Supports `{{ variables }}`.
+    pub text: String,
+}
+
+/// An "AI request": a prompt, a model, and optional MCP servers as tools.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LlmRequest {
+    pub name: String,
+    pub description: String,
+    pub provider_id: Option<String>,
+    pub model: String,
+    pub system: String,
+    pub messages: Vec<LlmPromptMessage>,
+    pub max_tokens: u32,
+    pub temperature: Option<f32>,
+    /// MCP servers whose tools the model may call.
+    pub mcp_server_ids: Vec<String>,
+    pub max_turns: u32,
+    /// `none` | `read-only` | `all`
+    pub auto_approve: String,
+}
+model!(LlmRequest, "LlmRequest", "llm");
+
+impl Default for LlmRequest {
+    fn default() -> Self {
+        Self {
+            name: "New AI Request".into(),
+            description: String::new(),
+            provider_id: None,
+            model: String::new(),
+            system: String::new(),
+            messages: vec![LlmPromptMessage { role: "user".into(), text: String::new() }],
+            max_tokens: 4096,
+            temperature: None,
+            mcp_server_ids: vec![],
+            max_turns: 8,
+            auto_approve: "read-only".into(),
+        }
+    }
+}
+
+/// One execution of an [`LlmRequest`] (stored as its child, like HTTP responses).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LlmRun {
+    pub provider_name: String,
+    pub model: String,
+    /// Full conversation (provider-neutral blocks as JSON).
+    pub transcript: Vec<serde_json::Value>,
+    /// Tool calls with their results, in order.
+    pub tool_calls: Vec<serde_json::Value>,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub turns: u32,
+    pub stop_reason: String,
+    pub ttft_ms: Option<f64>,
+    pub total_ms: f64,
+    pub error: Option<String>,
+    /// Exact JSON sent to the provider per turn (no API keys).
+    pub request_bodies: Vec<serde_json::Value>,
+}
+model!(LlmRun, "LlmRun", "llmr");
+
+/// Let the server ask our LLM for completions (MCP `sampling/createMessage`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct McpSampling {
+    pub enabled: bool,
+    pub provider_id: Option<String>,
+    pub model: Option<String>,
+    pub max_tokens: u32,
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]

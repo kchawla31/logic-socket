@@ -85,6 +85,14 @@ impl Engine {
             },
         };
         let mut opts = ConnectOptions::new(transport);
+        if server.sampling.enabled
+            && let Some(pid) = &server.sampling.provider_id
+        {
+            let (provider, cfg) = self.provider_config(pid, Some(server_id))?;
+            let model = server.sampling.model.clone().filter(|m| !m.is_empty()).unwrap_or(provider.default_model.clone());
+            let max_tokens = if server.sampling.max_tokens == 0 { 1024 } else { server.sampling.max_tokens };
+            opts.sampling = Some(std::sync::Arc::new(irs_llm::agent::LlmSampler { cfg, model, max_tokens }));
+        }
         opts.root_uris = server
             .roots
             .iter()

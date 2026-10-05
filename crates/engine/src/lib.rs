@@ -2,6 +2,7 @@
 //! load request + ancestors + environments → render → send → persist.
 
 pub mod curl;
+pub mod llm;
 pub mod mcp;
 pub mod pipeline;
 
@@ -26,6 +27,8 @@ pub enum EngineError {
     Render { field: String, source: RenderError },
     #[error("{0} is not inside a workspace")]
     NoWorkspace(String),
+    #[error("{0}")]
+    Llm(String),
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;
@@ -63,6 +66,7 @@ pub struct Engine {
     pub store: Store,
     pub(crate) renderer: Arc<Renderer>,
     data_dir: Option<PathBuf>,
+    pub(crate) secrets: Arc<dyn llm::SecretStore>,
 }
 
 /// A request after rendering and inheritance, ready for `irs_http::send`.
@@ -76,12 +80,18 @@ pub struct Prepared {
 }
 
 impl Engine {
+    /// Engines backed by a data directory keep API keys in the OS keychain
+    /// (set `IRS_SECRET_STORE=memory` to disable, e.g. in CI); in-memory engines keep them in memory.
     pub fn new(store: Store, data_dir: Option<PathBuf>) -> Self {
-        Self {
-            store,
-            renderer: Arc::new(Renderer::new()),
-            data_dir,
-        }
+        let use_keychain = data_dir.is_some() && std::env::var("IRS_SECRET_STORE").as_deref() != Ok("memory");
+        let secrets: Arc<dyn llm::SecretStore> =
+            if use_keychain { Arc::new(llm::KeychainStore) } else { Arc::new(llm::MemoryStore::default()) };
+        Self { store, renderer: Arc::new(Renderer::new()), data_dir, secrets }
+    }
+
+    pub fn with_secrets(mut self, secrets: Arc<dyn llm::SecretStore>) -> Self {
+        self.secrets = secrets;
+        self
     }
 
     /// Open (or create) the database in `data_dir`.

@@ -1,5 +1,6 @@
 //! `irs` — insomnia-rs command line.
 
+mod llm_cmd;
 mod mcp_cmd;
 mod out;
 mod run_cmd;
@@ -62,6 +63,9 @@ enum Cmd {
     /// Run a collection or folder (scripts, tests, iterations) — like `inso run collection`
     #[command(subcommand)]
     Run(run_cmd::RunCmd),
+    /// AI: providers, chat with MCP tools, saved AI requests
+    #[command(subcommand)]
+    Llm(llm_cmd::LlmCmd),
 }
 
 #[derive(Subcommand, Debug)]
@@ -206,6 +210,7 @@ async fn run(cli: Cli) -> Result<()> {
     match cli.cmd {
         Cmd::Mcp(c) => mcp_cmd::run(&engine, c).await,
         Cmd::Run(c) => run_cmd::run(&engine, c).await,
+        Cmd::Llm(c) => llm_cmd::run(&engine, c).await,
         Cmd::Send {
             request,
             env,

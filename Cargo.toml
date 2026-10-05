@@ -49,6 +49,7 @@ tempfile = "3"
 axum = "0.8"
 rquickjs = { version = "0.14", features = ["futures", "parallel"] }
 csv = "1"
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 
 [profile.release]
 lto = "thin"
