@@ -1,5 +1,5 @@
 import { Command as CommandIcon, Folder, Layers, Moon, Plug, Plus, Send, Settings as SettingsIcon, Sun, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type Command, CommandPalette } from './components/CommandPalette';
 import { Button, DialogProvider, Empty, IconButton, Kbd, Select, Split, ToastProvider, useDialog, useToast } from './components/ui';
@@ -103,16 +103,18 @@ function Shell() {
     };
   }, [refresh, toast]);
 
-  // Per-workspace tabs persistence.
+  // Per-workspace tabs persistence. Only save once the workspace's tabs were restored.
+  const restoredFor = useRef<string | null>(null);
   useEffect(() => {
     if (!wsId) return;
     store('irs-ws', wsId);
     const saved = load<{ tabs: Tab[]; active: string | null }>(`irs-tabs-${wsId}`, { tabs: [], active: null });
     setTabs(saved.tabs);
     setActive(saved.active);
+    restoredFor.current = wsId;
   }, [wsId]);
   useEffect(() => {
-    if (wsId) store(`irs-tabs-${wsId}`, { tabs, active });
+    if (wsId && restoredFor.current === wsId) store(`irs-tabs-${wsId}`, { tabs, active });
   }, [tabs, active, wsId]);
 
   const nodes = useMemo(() => flatten(tree), [tree]);
@@ -327,7 +329,7 @@ function Shell() {
                 })}
               </div>
             )}
-            <div className="min-h-0 flex-1">
+            <div className="flex min-h-0 flex-1 flex-col">
               {activeTab?.kind === 'request' && <RequestView key={activeTab.id} id={activeTab.id} onRenamed={() => refresh()} />}
               {activeTab?.kind === 'folder' && <FolderView key={activeTab.id} id={activeTab.id} />}
               {activeTab?.kind === 'mcp' && <McpView key={activeTab.id} id={activeTab.id} />}

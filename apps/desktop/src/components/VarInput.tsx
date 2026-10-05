@@ -152,8 +152,9 @@ export function VarInput({
         <div
           ref={overlay}
           aria-hidden
-          className={cn('pointer-events-none absolute inset-0 overflow-hidden px-2.5 leading-8 whitespace-pre', font)}
+          className={cn('pointer-events-none absolute inset-0 flex items-center overflow-hidden px-2.5 whitespace-pre', font)}
         >
+          <span className="leading-normal">
           {segments.map((s, i) =>
             s.kind === 'text' ? (
               <span key={i}>{s.text}</span>
@@ -173,6 +174,7 @@ export function VarInput({
               </span>
             ),
           )}
+          </span>
         </div>
       )}
       <input

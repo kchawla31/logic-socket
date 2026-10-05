@@ -78,6 +78,7 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
           <Search className="size-4 text-muted" />
           <input
             ref={input}
+            autoFocus
             value={q}
             onChange={e => (setQ(e.target.value), setSel(0))}
             onKeyDown={e => {

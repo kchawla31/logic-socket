@@ -6,14 +6,15 @@ use std::sync::Arc;
 
 use base64::Engine as _;
 use irs_core::{
-    CookieJar, Doc, Environment, Folder, McpServer, McpTransport, RawDoc, Request, Response, Settings, Workspace,
+    CookieJar, Doc, Environment, Folder, McpServer, McpTransport, RawDoc, Request, Response,
+    Settings, Workspace,
 };
 use irs_engine::Engine;
 use irs_mcp::schema::{self, ParamRow};
 use irs_mcp::{Client, Hints, InitializeResult, LogEntry, Notification, ProtocolLog, Tool};
 use serde::Serialize;
 use serde_json::{Value, json};
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, State};
 use tokio::sync::Mutex;
 
 type CmdResult<T> = Result<T, String>;
@@ -30,7 +31,12 @@ pub struct AppState {
 
 impl AppState {
     fn log_for(&self, server_id: &str) -> ProtocolLog {
-        self.logs.lock().unwrap().entry(server_id.to_string()).or_default().clone()
+        self.logs
+            .lock()
+            .unwrap()
+            .entry(server_id.to_string())
+            .or_default()
+            .clone()
     }
 }
 
@@ -98,12 +104,25 @@ fn tree_get(state: State<'_, AppState>, workspace_id: String) -> CmdResult<Vec<T
 #[tauri::command]
 fn workspace_list(state: State<'_, AppState>) -> CmdResult<Vec<Doc<Workspace>>> {
     let all = state.engine.store.all_of::<Workspace>().map_err(e)?;
-    Ok(all.into_iter().filter(|w| w.scope != irs_core::WorkspaceScope::Environment).collect())
+    Ok(all
+        .into_iter()
+        .filter(|w| w.scope != irs_core::WorkspaceScope::Environment)
+        .collect())
 }
 
 #[tauri::command]
 fn workspace_create(state: State<'_, AppState>, name: String) -> CmdResult<Doc<Workspace>> {
-    let w = state.engine.store.insert(None, Workspace { name, ..Default::default() }).map_err(e)?;
+    let w = state
+        .engine
+        .store
+        .insert(
+            None,
+            Workspace {
+                name,
+                ..Default::default()
+            },
+        )
+        .map_err(e)?;
     state.engine.base_environment(w.id()).map_err(e)?;
     Ok(w)
 }
@@ -117,7 +136,12 @@ fn workspace_update(state: State<'_, AppState>, doc: Doc<Workspace>) -> CmdResul
 
 #[tauri::command]
 fn doc_get(state: State<'_, AppState>, id: String) -> CmdResult<RawDoc> {
-    state.engine.store.raw(&id).map_err(e)?.ok_or_else(|| format!("{id} not found"))
+    state
+        .engine
+        .store
+        .raw(&id)
+        .map_err(e)?
+        .ok_or_else(|| format!("{id} not found"))
 }
 
 #[tauri::command]
@@ -133,11 +157,28 @@ fn item_rename(state: State<'_, AppState>, id: String, name: String) -> CmdResul
 }
 
 #[tauri::command]
-fn item_move(state: State<'_, AppState>, id: String, parent_id: String, sort_key: f64) -> CmdResult<()> {
-    if id == parent_id || state.engine.store.ancestors(&parent_id).map_err(e)?.iter().any(|a| a.meta.id == id) {
+fn item_move(
+    state: State<'_, AppState>,
+    id: String,
+    parent_id: String,
+    sort_key: f64,
+) -> CmdResult<()> {
+    if id == parent_id
+        || state
+            .engine
+            .store
+            .ancestors(&parent_id)
+            .map_err(e)?
+            .iter()
+            .any(|a| a.meta.id == id)
+    {
         return Err("cannot move an item into itself".into());
     }
-    state.engine.store.batch(|tx| tx.move_to(&id, Some(&parent_id), sort_key)).map_err(e)
+    state
+        .engine
+        .store
+        .batch(|tx| tx.move_to(&id, Some(&parent_id), sort_key))
+        .map_err(e)
 }
 
 #[tauri::command]
@@ -148,21 +189,54 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
     data["name"] = Value::String(format!("{} (copy)", data["name"].as_str().unwrap_or("")));
     let store = &state.engine.store;
     let new_id = match d.meta.kind.as_str() {
-        "Request" => store.insert(parent.as_deref(), serde_json::from_value::<Request>(data).map_err(e)?).map_err(e)?.meta.id,
-        "McpServer" => store.insert(parent.as_deref(), serde_json::from_value::<McpServer>(data).map_err(e)?).map_err(e)?.meta.id,
+        "Request" => {
+            store
+                .insert(
+                    parent.as_deref(),
+                    serde_json::from_value::<Request>(data).map_err(e)?,
+                )
+                .map_err(e)?
+                .meta
+                .id
+        }
+        "McpServer" => {
+            store
+                .insert(
+                    parent.as_deref(),
+                    serde_json::from_value::<McpServer>(data).map_err(e)?,
+                )
+                .map_err(e)?
+                .meta
+                .id
+        }
         "Folder" => {
             // Deep copy: folder + all requests/folders/servers under it.
             fn copy(store: &irs_core::Store, src: &str, dst: &str) -> CmdResult<()> {
                 for c in store.all_children(src).map_err(e)? {
                     match c.meta.kind.as_str() {
                         "Request" => {
-                            store.insert(Some(dst), serde_json::from_value::<Request>(c.data).map_err(e)?).map_err(e)?;
+                            store
+                                .insert(
+                                    Some(dst),
+                                    serde_json::from_value::<Request>(c.data).map_err(e)?,
+                                )
+                                .map_err(e)?;
                         }
                         "McpServer" => {
-                            store.insert(Some(dst), serde_json::from_value::<McpServer>(c.data).map_err(e)?).map_err(e)?;
+                            store
+                                .insert(
+                                    Some(dst),
+                                    serde_json::from_value::<McpServer>(c.data).map_err(e)?,
+                                )
+                                .map_err(e)?;
                         }
                         "Folder" => {
-                            let f = store.insert(Some(dst), serde_json::from_value::<Folder>(c.data).map_err(e)?).map_err(e)?;
+                            let f = store
+                                .insert(
+                                    Some(dst),
+                                    serde_json::from_value::<Folder>(c.data).map_err(e)?,
+                                )
+                                .map_err(e)?;
                             copy(store, &c.meta.id, f.id())?;
                         }
                         _ => {}
@@ -170,7 +244,12 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                 }
                 Ok(())
             }
-            let f = store.insert(parent.as_deref(), serde_json::from_value::<Folder>(data).map_err(e)?).map_err(e)?;
+            let f = store
+                .insert(
+                    parent.as_deref(),
+                    serde_json::from_value::<Folder>(data).map_err(e)?,
+                )
+                .map_err(e)?;
             copy(store, &id, f.id())?;
             f.meta.id
         }
@@ -182,8 +261,16 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
 // ------------------------------------------------------------------ requests / folders / servers
 
 #[tauri::command]
-fn request_create(state: State<'_, AppState>, parent_id: String, request: Option<Request>) -> CmdResult<Doc<Request>> {
-    state.engine.store.insert(Some(&parent_id), request.unwrap_or_default()).map_err(e)
+fn request_create(
+    state: State<'_, AppState>,
+    parent_id: String,
+    request: Option<Request>,
+) -> CmdResult<Doc<Request>> {
+    state
+        .engine
+        .store
+        .insert(Some(&parent_id), request.unwrap_or_default())
+        .map_err(e)
 }
 
 #[tauri::command]
@@ -192,8 +279,22 @@ fn request_update(state: State<'_, AppState>, doc: Doc<Request>) -> CmdResult<Do
 }
 
 #[tauri::command]
-fn folder_create(state: State<'_, AppState>, parent_id: String, name: String) -> CmdResult<Doc<Folder>> {
-    state.engine.store.insert(Some(&parent_id), Folder { name, ..Default::default() }).map_err(e)
+fn folder_create(
+    state: State<'_, AppState>,
+    parent_id: String,
+    name: String,
+) -> CmdResult<Doc<Folder>> {
+    state
+        .engine
+        .store
+        .insert(
+            Some(&parent_id),
+            Folder {
+                name,
+                ..Default::default()
+            },
+        )
+        .map_err(e)
 }
 
 #[tauri::command]
@@ -202,10 +303,16 @@ fn folder_update(state: State<'_, AppState>, doc: Doc<Folder>) -> CmdResult<Doc<
 }
 
 #[tauri::command]
-fn mcp_server_create(state: State<'_, AppState>, parent_id: String, name: String) -> CmdResult<Doc<McpServer>> {
+fn mcp_server_create(
+    state: State<'_, AppState>,
+    parent_id: String,
+    name: String,
+) -> CmdResult<Doc<McpServer>> {
     let s = McpServer {
         name,
-        transport: McpTransport::StreamableHttp { url: "http://localhost:3333/mcp".into() },
+        transport: McpTransport::StreamableHttp {
+            url: "http://localhost:3333/mcp".into(),
+        },
         ..Default::default()
     };
     state.engine.store.insert(Some(&parent_id), s).map_err(e)
@@ -280,7 +387,13 @@ fn response_get(state: State<'_, AppState>, id: String) -> CmdResult<ResponseVie
 
 #[tauri::command]
 fn response_clear(state: State<'_, AppState>, request_id: String) -> CmdResult<()> {
-    let ids: Vec<String> = state.engine.responses(&request_id).map_err(e)?.into_iter().map(|r| r.meta.id).collect();
+    let ids: Vec<String> = state
+        .engine
+        .responses(&request_id)
+        .map_err(e)?
+        .into_iter()
+        .map(|r| r.meta.id)
+        .collect();
     state
         .engine
         .store
@@ -305,7 +418,11 @@ struct EnvList {
 
 #[tauri::command]
 fn env_list(state: State<'_, AppState>, workspace_id: String) -> CmdResult<EnvList> {
-    let ws = state.engine.store.get::<Workspace>(&workspace_id).map_err(e)?;
+    let ws = state
+        .engine
+        .store
+        .get::<Workspace>(&workspace_id)
+        .map_err(e)?;
     Ok(EnvList {
         base: state.engine.base_environment(&workspace_id).map_err(e)?,
         subs: state.engine.sub_environments(&workspace_id).map_err(e)?,
@@ -314,9 +431,23 @@ fn env_list(state: State<'_, AppState>, workspace_id: String) -> CmdResult<EnvLi
 }
 
 #[tauri::command]
-fn env_create(state: State<'_, AppState>, workspace_id: String, name: String) -> CmdResult<Doc<Environment>> {
+fn env_create(
+    state: State<'_, AppState>,
+    workspace_id: String,
+    name: String,
+) -> CmdResult<Doc<Environment>> {
     let base = state.engine.base_environment(&workspace_id).map_err(e)?;
-    state.engine.store.insert(Some(base.id()), Environment { name, ..Default::default() }).map_err(e)
+    state
+        .engine
+        .store
+        .insert(
+            Some(base.id()),
+            Environment {
+                name,
+                ..Default::default()
+            },
+        )
+        .map_err(e)
 }
 
 #[tauri::command]
@@ -325,8 +456,16 @@ fn env_update(state: State<'_, AppState>, doc: Doc<Environment>) -> CmdResult<Do
 }
 
 #[tauri::command]
-fn env_set_active(state: State<'_, AppState>, workspace_id: String, env_id: Option<String>) -> CmdResult<()> {
-    let mut ws = state.engine.store.get::<Workspace>(&workspace_id).map_err(e)?;
+fn env_set_active(
+    state: State<'_, AppState>,
+    workspace_id: String,
+    env_id: Option<String>,
+) -> CmdResult<()> {
+    let mut ws = state
+        .engine
+        .store
+        .get::<Workspace>(&workspace_id)
+        .map_err(e)?;
     ws.active_environment_id = env_id;
     state.engine.store.update(&ws).map(|_| ()).map_err(e)
 }
@@ -343,8 +482,16 @@ struct Preview {
 fn render_preview(state: State<'_, AppState>, id: String, text: String) -> CmdResult<Preview> {
     let (r, refs) = state.engine.preview(&id, &text).map_err(e)?;
     Ok(match r {
-        Ok(s) => Preview { rendered: Some(s), error: None, refs },
-        Err(err) => Preview { rendered: None, error: Some(err.to_string()), refs },
+        Ok(s) => Preview {
+            rendered: Some(s),
+            error: None,
+            refs,
+        },
+        Err(err) => Preview {
+            rendered: None,
+            error: Some(err.to_string()),
+            refs,
+        },
     })
 }
 
@@ -400,7 +547,11 @@ struct McpStatus {
 }
 
 #[tauri::command]
-async fn mcp_connect(app: tauri::AppHandle, state: State<'_, AppState>, server_id: String) -> CmdResult<McpStatus> {
+async fn mcp_connect<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, AppState>,
+    server_id: String,
+) -> CmdResult<McpStatus> {
     if let Some(old) = state.mcp.lock().await.remove(&server_id) {
         old.close().await;
     }
@@ -415,7 +566,11 @@ async fn mcp_connect(app: tauri::AppHandle, state: State<'_, AppState>, server_i
         }
     });
     let client = Client::connect_with_log(opts, log).await.map_err(e)?;
-    let status = McpStatus { connected: true, server: Some(client.server().clone()), session_id: client.session_id() };
+    let status = McpStatus {
+        connected: true,
+        server: Some(client.server().clone()),
+        session_id: client.session_id(),
+    };
     state.mcp.lock().await.insert(server_id, Arc::new(client));
     Ok(status)
 }
@@ -431,13 +586,27 @@ async fn mcp_disconnect(state: State<'_, AppState>, server_id: String) -> CmdRes
 #[tauri::command]
 async fn mcp_status(state: State<'_, AppState>, server_id: String) -> CmdResult<McpStatus> {
     Ok(match state.mcp.lock().await.get(&server_id) {
-        Some(c) => McpStatus { connected: true, server: Some(c.server().clone()), session_id: c.session_id() },
-        None => McpStatus { connected: false, server: None, session_id: None },
+        Some(c) => McpStatus {
+            connected: true,
+            server: Some(c.server().clone()),
+            session_id: c.session_id(),
+        },
+        None => McpStatus {
+            connected: false,
+            server: None,
+            session_id: None,
+        },
     })
 }
 
 async fn client(state: &AppState, server_id: &str) -> CmdResult<Arc<Client>> {
-    state.mcp.lock().await.get(server_id).cloned().ok_or_else(|| "Not connected — press Connect first".to_string())
+    state
+        .mcp
+        .lock()
+        .await
+        .get(server_id)
+        .cloned()
+        .ok_or_else(|| "Not connected — press Connect first".to_string())
 }
 
 #[derive(Serialize)]
@@ -465,7 +634,11 @@ async fn mcp_list(state: State<'_, AppState>, server_id: String, kind: String) -
                     display_name: t.display_name().to_string(),
                     hints: t.hints(),
                     params: schema::param_rows(&t.input_schema),
-                    output_params: t.output_schema.as_ref().map(schema::param_rows).unwrap_or_default(),
+                    output_params: t
+                        .output_schema
+                        .as_ref()
+                        .map(schema::param_rows)
+                        .unwrap_or_default(),
                     example: schema::example_args(&t.input_schema),
                     tool: t,
                 })
@@ -473,7 +646,9 @@ async fn mcp_list(state: State<'_, AppState>, server_id: String, kind: String) -
             json!({ "items": items, "pages": l.pages, "elapsedMs": l.elapsed_ms })
         }
         "resources" => serde_json::to_value(c.list_resources().await.map_err(e)?).map_err(e)?,
-        "templates" => serde_json::to_value(c.list_resource_templates().await.map_err(e)?).map_err(e)?,
+        "templates" => {
+            serde_json::to_value(c.list_resource_templates().await.map_err(e)?).map_err(e)?
+        }
         "prompts" => serde_json::to_value(c.list_prompts().await.map_err(e)?).map_err(e)?,
         other => return Err(format!("unknown list kind {other}")),
     };
@@ -481,7 +656,12 @@ async fn mcp_list(state: State<'_, AppState>, server_id: String, kind: String) -
 }
 
 #[tauri::command]
-async fn mcp_call_tool(state: State<'_, AppState>, server_id: String, name: String, args: Value) -> CmdResult<Value> {
+async fn mcp_call_tool(
+    state: State<'_, AppState>,
+    server_id: String,
+    name: String,
+    args: Value,
+) -> CmdResult<Value> {
     let c = client(&state, &server_id).await?;
     let t = std::time::Instant::now();
     let r = c.call_tool(&name, args).await.map_err(e)?;
@@ -489,13 +669,30 @@ async fn mcp_call_tool(state: State<'_, AppState>, server_id: String, name: Stri
 }
 
 #[tauri::command]
-async fn mcp_read_resource(state: State<'_, AppState>, server_id: String, uri: String) -> CmdResult<Value> {
-    client(&state, &server_id).await?.read_resource(&uri).await.map_err(e)
+async fn mcp_read_resource(
+    state: State<'_, AppState>,
+    server_id: String,
+    uri: String,
+) -> CmdResult<Value> {
+    client(&state, &server_id)
+        .await?
+        .read_resource(&uri)
+        .await
+        .map_err(e)
 }
 
 #[tauri::command]
-async fn mcp_get_prompt(state: State<'_, AppState>, server_id: String, name: String, args: Value) -> CmdResult<Value> {
-    client(&state, &server_id).await?.get_prompt(&name, args).await.map_err(e)
+async fn mcp_get_prompt(
+    state: State<'_, AppState>,
+    server_id: String,
+    name: String,
+    args: Value,
+) -> CmdResult<Value> {
+    client(&state, &server_id)
+        .await?
+        .get_prompt(&name, args)
+        .await
+        .map_err(e)
 }
 
 #[tauri::command]
@@ -519,7 +716,10 @@ fn mcp_log_clear(state: State<'_, AppState>, server_id: String) {
 }
 
 #[tauri::command]
-async fn mcp_notifications(state: State<'_, AppState>, server_id: String) -> CmdResult<Vec<Notification>> {
+async fn mcp_notifications(
+    state: State<'_, AppState>,
+    server_id: String,
+) -> CmdResult<Vec<Notification>> {
     Ok(match state.mcp.lock().await.get(&server_id) {
         Some(c) => c.notifications(),
         None => vec![],
@@ -532,14 +732,37 @@ fn seed_if_empty(engine: &Engine) -> irs_core::store::Result<()> {
     if !engine.store.all_of::<Workspace>()?.is_empty() {
         return Ok(());
     }
-    let ws = engine.store.insert(None, Workspace { name: "My Collection".into(), ..Default::default() })?;
-    let mut base = engine.base_environment(ws.id()).map_err(|_| irs_core::StoreError::NotFound { kind: "Environment", id: "base".into() })?;
-    base.data.insert("base_url".into(), "https://httpbin.org".into());
+    let ws = engine.store.insert(
+        None,
+        Workspace {
+            name: "My Collection".into(),
+            ..Default::default()
+        },
+    )?;
+    let mut base =
+        engine
+            .base_environment(ws.id())
+            .map_err(|_| irs_core::StoreError::NotFound {
+                kind: "Environment",
+                id: "base".into(),
+            })?;
+    base.data
+        .insert("base_url".into(), "https://httpbin.org".into());
     engine.store.update(&base)?;
-    let folder = engine.store.insert(Some(ws.id()), Folder { name: "Examples".into(), ..Default::default() })?;
+    let folder = engine.store.insert(
+        Some(ws.id()),
+        Folder {
+            name: "Examples".into(),
+            ..Default::default()
+        },
+    )?;
     engine.store.insert(
         Some(folder.id()),
-        Request { name: "Get JSON".into(), url: "{{ _.base_url }}/json".into(), ..Default::default() },
+        Request {
+            name: "Get JSON".into(),
+            url: "{{ _.base_url }}/json".into(),
+            ..Default::default()
+        },
     )?;
     engine.store.insert(
         Some(folder.id()),
@@ -558,17 +781,19 @@ fn seed_if_empty(engine: &Engine) -> irs_core::store::Result<()> {
     Ok(())
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .setup(|app| {
-            let engine = Engine::open(irs_engine::default_data_dir())?;
-            let _ = seed_if_empty(&engine);
+/// Register state, events and commands. Shared by `run` and the IPC tests.
+pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> tauri::Builder<R> {
+    builder
+        .manage(AppState {
+            engine: engine.clone(),
+            mcp: Mutex::default(),
+            logs: Default::default(),
+        })
+        .setup(move |app| {
             let handle = app.handle().clone();
             engine.store.subscribe(move |changes| {
                 let _ = handle.emit("db-changed", changes);
             });
-            app.manage(AppState { engine, mcp: Mutex::default(), logs: Default::default() });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -615,6 +840,17 @@ pub fn run() {
             mcp_log_clear,
             mcp_notifications,
         ])
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let engine = Engine::open(irs_engine::default_data_dir())
+        .expect("could not open the insomnia-rs database");
+    let _ = seed_if_empty(&engine);
+    build(tauri::Builder::default(), engine)
         .run(tauri::generate_context!())
         .expect("error while running insomnia-rs");
 }
+
+#[cfg(test)]
+mod ipc_tests;

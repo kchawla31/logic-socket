@@ -16,24 +16,53 @@ impl Engine {
         let r = |field: &str, s: &str| {
             self.renderer()
                 .render_str(s, &ctx, Mode::Throw)
-                .map_err(|source| EngineError::Render { field: field.to_string(), source })
+                .map_err(|source| EngineError::Render {
+                    field: field.to_string(),
+                    source,
+                })
         };
         let mut headers = vec![];
-        for h in server.headers.iter().filter(|h| !h.disabled && !h.name.trim().is_empty()) {
-            headers.push((r("header name", &h.name)?, r(&format!("header '{}'", h.name), &h.value)?));
+        for h in server
+            .headers
+            .iter()
+            .filter(|h| !h.disabled && !h.name.trim().is_empty())
+        {
+            headers.push((
+                r("header name", &h.name)?,
+                r(&format!("header '{}'", h.name), &h.value)?,
+            ));
         }
         match &server.authentication {
-            Auth::Bearer { token, prefix, disabled: false } if !token.is_empty() => {
-                let p = prefix.as_deref().filter(|p| !p.is_empty()).unwrap_or("Bearer");
-                headers.push(("Authorization".into(), format!("{p} {}", r("bearer token", token)?)));
+            Auth::Bearer {
+                token,
+                prefix,
+                disabled: false,
+            } if !token.is_empty() => {
+                let p = prefix
+                    .as_deref()
+                    .filter(|p| !p.is_empty())
+                    .unwrap_or("Bearer");
+                headers.push((
+                    "Authorization".into(),
+                    format!("{p} {}", r("bearer token", token)?),
+                ));
             }
-            Auth::ApiKey { key, value, add_to: None, disabled: false } if !key.is_empty() => {
+            Auth::ApiKey {
+                key,
+                value,
+                add_to: None,
+                disabled: false,
+            } if !key.is_empty() => {
                 headers.push((r("API key name", key)?, r("API key value", value)?));
             }
             _ => {}
         }
         let mut env = HashMap::new();
-        for e in server.env.iter().filter(|e| !e.disabled && !e.name.trim().is_empty()) {
+        for e in server
+            .env
+            .iter()
+            .filter(|e| !e.disabled && !e.name.trim().is_empty())
+        {
             env.insert(e.name.clone(), r(&format!("env '{}'", e.name), &e.value)?);
         }
         let transport = match &server.transport {
@@ -44,13 +73,23 @@ impl Engine {
             },
             McpTransport::Stdio { command, args, cwd } => TransportConfig::Stdio {
                 command: r("command", command)?,
-                args: args.iter().map(|a| r("argument", a)).collect::<Result<_>>()?,
+                args: args
+                    .iter()
+                    .map(|a| r("argument", a))
+                    .collect::<Result<_>>()?,
                 env,
-                cwd: cwd.as_deref().map(|c| r("working directory", c)).transpose()?,
+                cwd: cwd
+                    .as_deref()
+                    .map(|c| r("working directory", c))
+                    .transpose()?,
             },
         };
         let mut opts = ConnectOptions::new(transport);
-        opts.root_uris = server.roots.iter().map(|x| (x.uri.clone(), x.name.clone())).collect();
+        opts.root_uris = server
+            .roots
+            .iter()
+            .map(|x| (x.uri.clone(), x.name.clone()))
+            .collect();
         Ok(opts)
     }
 }
@@ -73,9 +112,15 @@ mod tests {
             .insert(
                 Some(ws.id()),
                 McpServer {
-                    transport: McpTransport::StreamableHttp { url: "http://{{ host }}/mcp".into() },
+                    transport: McpTransport::StreamableHttp {
+                        url: "http://{{ host }}/mcp".into(),
+                    },
                     headers: vec![KeyValue::new("X-A", "1")],
-                    authentication: Auth::Bearer { token: "{{ tok }}".into(), prefix: None, disabled: false },
+                    authentication: Auth::Bearer {
+                        token: "{{ tok }}".into(),
+                        prefix: None,
+                        disabled: false,
+                    },
                     ..Default::default()
                 },
             )
@@ -84,7 +129,13 @@ mod tests {
         match o.transport {
             TransportConfig::Http { url, headers, .. } => {
                 assert_eq!(url, "http://localhost:9/mcp");
-                assert_eq!(headers, vec![("X-A".into(), "1".into()), ("Authorization".into(), "Bearer abc".into())]);
+                assert_eq!(
+                    headers,
+                    vec![
+                        ("X-A".into(), "1".into()),
+                        ("Authorization".into(), "Bearer abc".into())
+                    ]
+                );
             }
             other => panic!("{other:?}"),
         }

@@ -1,0 +1,315 @@
+//! IPC contract tests: invoke commands with exactly the JSON payloads that
+//! `src/lib/api.ts` sends, through Tauri's mock runtime.
+
+use serde_json::{Value, json};
+use tauri::test::{INVOKE_KEY, get_ipc_response, mock_builder, mock_context, noop_assets};
+use tauri::webview::InvokeRequest;
+use tauri::{WebviewWindow, WebviewWindowBuilder};
+
+use super::*;
+
+struct Harness {
+    _app: tauri::App<tauri::test::MockRuntime>,
+    w: WebviewWindow<tauri::test::MockRuntime>,
+}
+
+impl Harness {
+    fn new() -> Self {
+        let app = build(mock_builder(), Engine::in_memory())
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let w = WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        Self { _app: app, w }
+    }
+
+    fn call(&self, cmd: &str, args: Value) -> Result<Value, Value> {
+        get_ipc_response(
+            &self.w,
+            InvokeRequest {
+                cmd: cmd.into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "tauri://localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::Json(args),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.to_string(),
+            },
+        )
+        .map(|b| b.deserialize::<Value>().unwrap())
+    }
+
+    fn ok(&self, cmd: &str, args: Value) -> Value {
+        self.call(cmd, args)
+            .unwrap_or_else(|e| panic!("{cmd} failed: {e}"))
+    }
+}
+
+#[test]
+fn workspace_tree_and_request_round_trip() {
+    let h = Harness::new();
+    let ws = h.ok("workspace_create", json!({"name": "API"}));
+    let ws_id = ws["id"].as_str().unwrap();
+    assert_eq!(ws["type"], "Workspace");
+    assert_eq!(
+        h.ok("workspace_list", json!({})).as_array().unwrap().len(),
+        1
+    );
+
+    let folder = h.ok("folder_create", json!({"parentId": ws_id, "name": "Users"}));
+    let req = h.ok(
+        "request_create",
+        json!({"parentId": folder["id"], "request": null}),
+    );
+    assert_eq!(req["method"], "GET");
+    assert_eq!(req["authentication"]["type"], "inherit");
+
+    // The UI loads with doc_get then saves the edited object with request_update.
+    let mut doc = h.ok("doc_get", json!({"id": req["id"]}));
+    doc["url"] = json!("{{ _.base }}/users/:id");
+    doc["pathParameters"] = json!([{"name": "id", "value": "7"}]);
+    doc["headers"] = json!([{"name": "X-A", "value": "1"}]);
+    doc["body"] = json!({"mimeType": "application/json", "text": "{}", "params": []});
+    doc["authentication"] = json!({"type": "bearer", "token": "{{ _.tok }}"});
+    let saved = h.ok("request_update", json!({"doc": doc}));
+    assert_eq!(saved["url"], "{{ _.base }}/users/:id");
+    assert_eq!(saved["parentId"], folder["id"]);
+
+    let tree = h.ok("tree_get", json!({"workspaceId": ws_id}));
+    assert_eq!(tree[0]["kind"], "folder");
+    assert_eq!(tree[0]["children"][0]["method"], "GET");
+    assert!(tree[0]["sortKey"].is_number());
+
+    h.ok("item_rename", json!({"id": req["id"], "name": "Get user"}));
+    assert_eq!(
+        h.ok("doc_get", json!({"id": req["id"]}))["name"],
+        "Get user"
+    );
+    let dup = h.ok("item_duplicate", json!({"id": folder["id"]}));
+    let tree = h.ok("tree_get", json!({"workspaceId": ws_id}));
+    assert_eq!(tree.as_array().unwrap().len(), 2);
+    assert_eq!(tree[1]["children"][0]["name"], "Get user");
+    h.ok(
+        "item_move",
+        json!({"id": req["id"], "parentId": ws_id, "sortKey": 99.0}),
+    );
+    assert!(
+        h.call(
+            "item_move",
+            json!({"id": folder["id"], "parentId": folder["id"], "sortKey": 1.0})
+        )
+        .is_err()
+    );
+    assert_eq!(h.ok("item_delete", json!({"id": dup})), json!(2));
+}
+
+#[test]
+fn environments_preview_and_curl() {
+    let h = Harness::new();
+    let ws = h.ok("workspace_create", json!({"name": "API"}));
+    let ws_id = ws["id"].as_str().unwrap();
+    let envs = h.ok("env_list", json!({"workspaceId": ws_id}));
+    let mut base = envs["base"].clone();
+    base["data"] = json!({"base": "http://example.test", "tok": "secret"});
+    h.ok("env_update", json!({"doc": base}));
+    let sub = h.ok(
+        "env_create",
+        json!({"workspaceId": ws_id, "name": "Staging"}),
+    );
+    h.ok(
+        "env_set_active",
+        json!({"workspaceId": ws_id, "envId": sub["id"]}),
+    );
+    assert_eq!(
+        h.ok("env_list", json!({"workspaceId": ws_id}))["activeId"],
+        sub["id"]
+    );
+
+    let p = h.ok(
+        "render_preview",
+        json!({"id": ws_id, "text": "{{ _.base }}/x/{{ nope }}"}),
+    );
+    assert_eq!(p["error"], "unresolved variable: nope");
+    assert_eq!(p["refs"].as_array().unwrap().len(), 2);
+    let vars = h.ok("context_vars", json!({"id": ws_id}));
+    assert!(
+        vars.as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v["name"] == "tok" && v["source"] == "Base Environment")
+    );
+
+    let parsed = h.ok(
+        "curl_parse",
+        json!({"text": "curl -X POST https://x.io/a -d '{\"k\":1}'"}),
+    );
+    assert_eq!(
+        (
+            parsed["method"].as_str(),
+            parsed["body"]["mimeType"].as_str()
+        ),
+        (Some("POST"), Some("application/json"))
+    );
+    let created = h.ok(
+        "request_create",
+        json!({"parentId": ws_id, "request": parsed}),
+    );
+    assert_eq!(created["url"], "https://x.io/a");
+
+    let mut s = h.ok("settings_get", json!({}));
+    s["timeoutMs"] = json!(1234);
+    assert_eq!(
+        h.ok("settings_update", json!({"doc": s}))["timeoutMs"],
+        1234
+    );
+}
+
+#[test]
+fn send_error_response_is_returned_as_view() {
+    let h = Harness::new();
+    let ws = h.ok("workspace_create", json!({"name": "API"}));
+    let req = h.ok(
+        "request_create",
+        json!({"parentId": ws["id"], "request": {"url": "http://127.0.0.1:1/x", "name": "r"}}),
+    );
+    let resp = h.ok("request_send", json!({"requestId": req["id"]}));
+    assert!(resp["error"].as_str().unwrap().contains("error"));
+    assert_eq!(resp["bodyText"], "");
+    let list = h.ok("response_list", json!({"requestId": req["id"]}));
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    h.ok("response_get", json!({"id": list[0]["id"]}));
+    h.ok("response_clear", json!({"requestId": req["id"]}));
+    assert!(
+        h.ok("response_list", json!({"requestId": req["id"]}))
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn mcp_inspector_commands_against_mock_server() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let url = rt
+        .block_on(irs_mcp::mock::spawn_http(Default::default(), 0))
+        .unwrap();
+
+    let h = Harness::new();
+    let ws = h.ok("workspace_create", json!({"name": "API"}));
+    let s = h.ok(
+        "mcp_server_create",
+        json!({"parentId": ws["id"], "name": "Mock"}),
+    );
+    let id = s["id"].clone();
+    let mut doc = h.ok("doc_get", json!({"id": id}));
+    doc["transport"] = json!({"kind": "streamable-http", "url": url});
+    h.ok("mcp_server_update", json!({"doc": doc}));
+
+    assert!(
+        h.call("mcp_list", json!({"serverId": id, "kind": "tools"}))
+            .unwrap_err()
+            .as_str()
+            .unwrap()
+            .contains("Not connected")
+    );
+    let st = h.ok("mcp_connect", json!({"serverId": id}));
+    assert_eq!(st["connected"], true);
+    assert_eq!(st["server"]["serverInfo"]["name"], "irs-mock-mcp");
+    assert!(st["sessionId"].as_str().unwrap().starts_with("sess-"));
+
+    let tools = h.ok("mcp_list", json!({"serverId": id, "kind": "tools"}));
+    assert_eq!(
+        (
+            tools["items"].as_array().unwrap().len(),
+            tools["pages"].as_u64()
+        ),
+        (9, Some(2))
+    );
+    let create = tools["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "create_issue")
+        .unwrap();
+    assert_eq!(create["displayName"], "create_issue");
+    assert_eq!(create["hints"]["destructive"], false);
+    assert!(
+        create["params"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["path"] == "assignee.login" && p["required"] == true)
+    );
+    assert_eq!(create["example"]["repo"], "");
+    assert!(
+        create["inputSchema"]["properties"].is_object(),
+        "flattened tool keeps raw schema"
+    );
+
+    let errs = h.ok(
+        "mcp_validate",
+        json!({"schema": create["inputSchema"], "args": {"repo": 1}}),
+    );
+    assert!(errs.as_array().unwrap().len() >= 2);
+
+    let r = h.ok(
+        "mcp_call_tool",
+        json!({"serverId": id, "name": "echo", "args": {"message": "hi"}}),
+    );
+    assert_eq!(r["result"]["structuredContent"]["echo"]["message"], "hi");
+    assert!(r["latencyMs"].as_f64().unwrap() >= 0.0);
+    h.ok(
+        "mcp_call_tool",
+        json!({"serverId": id, "name": "notify", "args": {}}),
+    );
+    assert_eq!(
+        h.ok("mcp_notifications", json!({"serverId": id}))
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    for kind in ["resources", "templates", "prompts"] {
+        assert!(
+            !h.ok("mcp_list", json!({"serverId": id, "kind": kind}))["items"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+    h.ok(
+        "mcp_read_resource",
+        json!({"serverId": id, "uri": "mem://config"}),
+    );
+    h.ok(
+        "mcp_get_prompt",
+        json!({"serverId": id, "name": "review_code", "args": {"code": "x"}}),
+    );
+    assert!(h.ok("mcp_ping", json!({"serverId": id})).as_f64().is_some());
+
+    let log = h.ok("mcp_log", json!({"serverId": id}));
+    let entries = log.as_array().unwrap();
+    assert!(entries.iter().any(|e| e["kind"] == "response"
+        && e["latencyMs"].is_number()
+        && e["method"] == "tools/list"));
+    assert!(
+        entries
+            .iter()
+            .all(|e| e["seq"].is_number() && e["timestampMs"].is_number())
+    );
+
+    h.ok("mcp_disconnect", json!({"serverId": id}));
+    assert_eq!(
+        h.ok("mcp_status", json!({"serverId": id}))["connected"],
+        false
+    );
+    h.ok("mcp_log_clear", json!({"serverId": id}));
+    assert!(
+        h.ok("mcp_log", json!({"serverId": id}))
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}

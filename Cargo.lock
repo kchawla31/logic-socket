@@ -1842,7 +1842,9 @@ dependencies = [
 name = "insomnia-rs-desktop"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "base64 0.22.1",
+ "futures",
  "irs-core",
  "irs-engine",
  "irs-mcp",
@@ -1852,6 +1854,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tokio",
+ "tower-http",
 ]
 
 [[package]]

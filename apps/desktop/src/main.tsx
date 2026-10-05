@@ -5,8 +5,15 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from './App';
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+async function start() {
+  if (import.meta.env.VITE_WEB_BRIDGE) {
+    (await import('./lib/webBridge')).installWebBridge();
+  }
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
+
+start();

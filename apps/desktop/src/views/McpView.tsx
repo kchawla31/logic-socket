@@ -89,10 +89,11 @@ export function McpView({ id }: { id: string }) {
       if (s.connected) loadPrimitives();
       else setShowConfig(true);
     });
-    api.mcpLog(id).then(setLog);
+    api.mcpLog(id).then(initial => setLog(l => [...initial, ...l.filter(x => !initial.some(i => i.seq === x.seq))].sort((a, b) => a.seq - b.seq)));
     const un = onMcpLog((sid, entry) => {
       if (sid !== id) return;
-      setLog(l => [...l, entry]);
+      // The initial mcp_log fetch and live events can overlap; seq is unique.
+      setLog(l => (l.some(x => x.seq === entry.seq) ? l : [...l, entry]));
       if (entry.kind === 'notification' && entry.direction === 'in') api.mcpNotifications(id).then(setNotifications);
     });
     return () => {
@@ -510,9 +511,9 @@ function ProtocolLog({ entries, onClear }: { entries: LogEntry[]; onClear: () =>
   }, [shown.length, follow]);
   const sel = entries.find(e => e.seq === selected);
   return (
-    <Split direction="row" initial={560} min={320} storageKey="irs-split-log">
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-app p-2">
+    <Split direction="row" initial={620} min={360} storageKey="irs-split-log">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-app p-2">
           {['all', 'request', 'response', 'notification', 'error', 'transport'].map(f => (
             <button
               key={f}
@@ -522,7 +523,7 @@ function ProtocolLog({ entries, onClear }: { entries: LogEntry[]; onClear: () =>
               {f}
             </button>
           ))}
-          <Input className="ml-1 h-7 w-40 text-[12px]" placeholder="Search frames" value={q} onChange={e => setQ(e.target.value)} />
+          <Input className="h-7 w-36 text-[12px]" placeholder="Search frames" value={q} onChange={e => setQ(e.target.value)} />
           <div className="flex-1" />
           <label className="flex items-center gap-1 text-[12px] text-muted">
             <input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)} /> Follow
