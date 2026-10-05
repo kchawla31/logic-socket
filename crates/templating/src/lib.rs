@@ -6,6 +6,7 @@
 //!   are rewritten to function calls before rendering.
 //! - Unresolved variables are reported by name.
 
+pub mod faker;
 mod tags;
 
 use std::collections::{BTreeSet, HashMap};
@@ -364,6 +365,13 @@ mod tests {
         assert_eq!(
             r.render_str("{{ _.obj.a[1].b }}", &c, Mode::Throw).unwrap(),
             "deep"
+        );
+        // Postman/Insomnia names with dashes use bracket notation
+        let (r2, c2) = ctx(vec![("base", json!({"api-key": "k1"}))]);
+        assert_eq!(
+            r2.render_str("{{ _['api-key'] }}", &c2, Mode::Throw)
+                .unwrap(),
+            "k1"
         );
         assert_eq!(
             r.render_str("{{ obj }}", &c, Mode::Throw).unwrap(),

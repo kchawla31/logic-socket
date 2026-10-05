@@ -11,6 +11,7 @@ members = [
   "crates/llm",
   "crates/realtime",
   "crates/grpc",
+  "crates/convert",
   "crates/cli",
   "apps/desktop/src-tauri",
 ]
@@ -31,6 +32,7 @@ irs-runner = { path = "crates/runner" }
 irs-llm = { path = "crates/llm" }
 irs-realtime = { path = "crates/realtime" }
 irs-grpc = { path = "crates/grpc" }
+irs-convert = { path = "crates/convert" }
 
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "multipart", "stream", "gzip", "brotli", "deflate", "zstd"] }

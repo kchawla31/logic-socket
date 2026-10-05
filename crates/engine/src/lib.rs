@@ -1,7 +1,7 @@
 //! Request pipeline shared by the CLI and the desktop app:
 //! load request + ancestors + environments → render → send → persist.
 
-pub mod curl;
+pub use irs_convert::curl;
 pub mod grpc;
 pub mod llm;
 pub mod mcp;

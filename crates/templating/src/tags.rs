@@ -9,7 +9,15 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use minijinja::{Environment, Error, ErrorKind};
 use sha2::Digest;
 
-const TAGS: &[&str] = &["uuid", "now", "base64", "hash", "timestamp", "urlencode"];
+const TAGS: &[&str] = &[
+    "uuid",
+    "now",
+    "base64",
+    "hash",
+    "timestamp",
+    "urlencode",
+    "faker",
+];
 
 const BUILTIN: &[&str] = &[
     "if",
@@ -152,6 +160,14 @@ pub fn register(env: &mut Environment<'static>) {
     env.add_function("__tag_urlencode", |value: String| -> String {
         url_encode(&value)
     });
+
+    env.add_function("__tag_faker", |name: String| -> Result<String, Error> {
+        crate::faker::generate(&name).ok_or_else(|| {
+            invalid(format!(
+                "faker: unknown '{name}' (try randomEmail, randomInt, randomFullName, guid…)"
+            ))
+        })
+    });
 }
 
 fn url_encode(s: &str) -> String {
@@ -221,6 +237,14 @@ mod tests {
         assert!(r("{% now 'iso-8601' %}").ends_with('Z'));
         assert_eq!(r("{% now 'custom', 'YYYY' %}").len(), 4);
         assert_eq!(r("{% urlencode 'a b&c' %}"), "a%20b%26c");
+        for name in crate::faker::NAMES {
+            assert!(
+                !r(&format!("{{% faker '{name}' %}}")).is_empty() || *name == "randomAlphaNumeric",
+                "{name}"
+            );
+        }
+        assert!(r("{% faker 'randomEmail' %}").contains("@example."));
+        assert!(r("{% faker 'randomInt' %}").parse::<u32>().unwrap() <= 1000);
     }
 
     #[test]

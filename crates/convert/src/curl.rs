@@ -329,6 +329,62 @@ fn url_encode(s: &str) -> String {
         .collect()
 }
 
+/// Import one or more `curl` commands (one per line, `\` continuations allowed)
+/// into a workspace with one request each.
+pub fn import_many(text: &str) -> crate::Result<crate::Imported> {
+    let mut cmds: Vec<String> = vec![];
+    for line in text.lines() {
+        let continues = cmds
+            .last()
+            .is_some_and(|c: &String| c.trim_end().ends_with('\\'));
+        if line.trim_start().starts_with("curl ") && !continues {
+            cmds.push(line.to_string());
+        } else if let Some(last) = cmds.last_mut() {
+            last.push('\n');
+            last.push_str(line);
+        }
+    }
+    let mut warnings = vec![];
+    let mut items = vec![];
+    for (i, c) in cmds.iter().enumerate() {
+        match parse(c) {
+            Ok(mut r) => {
+                if r.name.is_empty() {
+                    r.name = request_name(&r.method, &r.url);
+                }
+                items.push(crate::Item::new(crate::Node::Request(r)));
+            }
+            Err(e) => warnings.push(format!("command {}: {e}", i + 1)),
+        }
+    }
+    if items.is_empty() {
+        return Err(crate::ConvertError::invalid(
+            crate::Format::Curl,
+            "no valid curl command found",
+        ));
+    }
+    Ok(crate::Imported {
+        format: crate::Format::Curl,
+        workspaces: vec![crate::WorkspaceBundle {
+            workspace: irs_core::Workspace {
+                name: "cURL import".into(),
+                ..Default::default()
+            },
+            items,
+            ..Default::default()
+        }],
+        warnings,
+    })
+}
+
+/// "GET /users/:id" style name from a method and URL.
+pub fn request_name(method: &str, url: &str) -> String {
+    let path = url::Url::parse(url)
+        .map(|u| u.path().to_string())
+        .unwrap_or_else(|_| url.split('?').next().unwrap_or(url).to_string());
+    format!("{method} {}", if path.is_empty() { "/" } else { &path })
+}
+
 fn url_decode(s: &str) -> String {
     let bytes = s.replace('+', " ").into_bytes();
     let mut out = Vec::with_capacity(bytes.len());
