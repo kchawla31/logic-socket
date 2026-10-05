@@ -1,0 +1,11 @@
+[package]
+name = "irs-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "irs"
+path = "src/main.rs"
+
+[dependencies]
