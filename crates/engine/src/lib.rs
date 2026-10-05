@@ -2,12 +2,15 @@
 //! load request + ancestors + environments → render → send → persist.
 
 pub use irs_convert::curl;
+pub mod git;
 pub mod grpc;
 pub mod llm;
 pub mod mcp;
 pub mod oauth2;
 pub mod pipeline;
 pub mod realtime;
+pub mod transfer;
+pub mod vault;
 
 pub use pipeline::{Outcome, RunState};
 
@@ -191,22 +194,28 @@ impl Engine {
         if let Some(gid) = &ws.active_global_base_id
             && let Ok(g) = self.store.get::<Environment>(gid)
         {
-            layers.push(Layer::new(format!("Global: {}", g.name), g.data.clone()));
+            layers.push(Layer::new(
+                format!("Global: {}", g.name),
+                self.open_env_data(&g)?,
+            ));
             if let Some(sid) = &ws.active_global_sub_id
                 && let Ok(s) = self.store.get::<Environment>(sid)
                 && s.meta.parent_id.as_deref() == Some(g.id())
             {
-                layers.push(Layer::new(format!("Global: {}", s.name), s.data.clone()));
+                layers.push(Layer::new(
+                    format!("Global: {}", s.name),
+                    self.open_env_data(&s)?,
+                ));
             }
         }
 
         let base = self.base_environment(ws.id())?;
-        layers.push(Layer::new("Base Environment", base.data.clone()));
+        layers.push(Layer::new("Base Environment", self.open_env_data(&base)?));
         if let Some(sid) = &ws.active_environment_id
             && let Ok(sub) = self.store.get::<Environment>(sid)
             && sub.meta.parent_id.as_deref() == Some(base.id())
         {
-            layers.push(Layer::new(sub.name.clone(), sub.data.clone()));
+            layers.push(Layer::new(sub.name.clone(), self.open_env_data(&sub)?));
         }
 
         let mut chain: Vec<RawDoc> = self.store.ancestors(id)?;
@@ -470,12 +479,13 @@ impl Engine {
             let _ = std::fs::create_dir_all(path.parent().unwrap());
             let _ = std::fs::write(path, bytes);
         }
+        let sealed_envs = self.sealed(envs)?;
         let doc = self.store.batch(|tx| {
             let doc = tx.insert(Some(request_id), resp)?;
             if let Some(j) = &jar {
                 tx.update(j)?;
             }
-            for e in envs {
+            for e in &sealed_envs {
                 tx.update(e)?;
             }
             let mut history = tx.children::<Response>(request_id)?;
@@ -683,3 +693,25 @@ pub(crate) fn render_auth(auth: &Auth, r: &dyn Fn(&str, &str) -> Result<String>)
 
 #[cfg(test)]
 mod tests;
+
+/// A JSON value as the text a user would type (strings unquoted).
+pub(crate) fn scalar_string(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+impl Engine {
+    /// Copies of script-edited environments with secrets re-encrypted for storage.
+    pub(crate) fn sealed(&self, envs: &[Doc<Environment>]) -> Result<Vec<Doc<Environment>>> {
+        envs.iter()
+            .map(|e| {
+                let mut e = e.clone();
+                self.seal_env(&mut e.body)?;
+                Ok(e)
+            })
+            .collect()
+    }
+}

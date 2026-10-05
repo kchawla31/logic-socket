@@ -224,6 +224,17 @@ impl Engine {
             .as_ref()
             .or(ws.active_global_base_id.as_ref())
             .and_then(|id| self.store.get::<Environment>(id).ok());
+        // scripts work on decrypted values; `sealed()` re-encrypts before saving
+        let open = |d: Doc<Environment>| -> Result<Doc<Environment>> {
+            let data = self.open_env_data(&d)?;
+            Ok(Doc {
+                body: Environment { data, ..d.body },
+                meta: d.meta,
+            })
+        };
+        let base = open(base)?;
+        let sub = sub.map(open).transpose()?;
+        let global = global.map(open).transpose()?;
         let mut envs = Envs { base, sub, global };
         let mut jar: Doc<CookieJar> = self.cookie_jar(ws.id())?;
         let mut jar_changed = false;
@@ -368,8 +379,9 @@ impl Engine {
         }
         // Persist environment changes before rendering so `{{ vars }}` see them.
         if !pre_env_changes.is_empty() || jar_changed {
+            let sealed = self.sealed(&pre_env_changes)?;
             self.store.batch(|tx| {
-                for e in &pre_env_changes {
+                for e in &sealed {
                     tx.update(e)?;
                 }
                 if jar_changed {

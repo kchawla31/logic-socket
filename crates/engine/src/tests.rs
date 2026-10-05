@@ -1084,3 +1084,643 @@ mod oauth {
         assert!(e.oauth2_cached(&req).unwrap().is_none());
     }
 }
+
+mod phase5 {
+    use super::*;
+    use crate::transfer::{ExportFormat, ExportOptions, ImportMode, ImportOptions};
+    use irs_core::{LlmRequest, McpServer, McpTransport, OAuth2Token};
+
+    fn raw_value(e: &Engine, env_id: &str, key: &str) -> Value {
+        e.store.raw(env_id).unwrap().unwrap().data["data"][key].clone()
+    }
+
+    #[tokio::test]
+    async fn secrets_are_encrypted_at_rest_and_used_when_sending() {
+        let base = server().await;
+        let f = fixture(&base);
+        let staging = f.ws.active_environment_id.clone().unwrap();
+        f.e.set_env_var(&staging, "user", json!("s3cr3t-user"), true)
+            .unwrap();
+        let stored = raw_value(&f.e, &staging, "user");
+        assert!(
+            stored.as_str().unwrap().starts_with(vault::PREFIX),
+            "{stored}"
+        );
+        assert!(!stored.to_string().contains("s3cr3t"));
+        // rendering and sending see the plaintext
+        let resp = f.e.send(f.req.id()).await.unwrap();
+        assert_eq!(body_json(&f.e, &resp)["path"], "/users/s3cr3t-user");
+        assert_eq!(f.e.reveal_secret(&staging, "user").unwrap(), "s3cr3t-user");
+        // a UI save that sends plaintext for a secret key is sealed again
+        let mut d: Doc<Environment> = f.e.store.get(&staging).unwrap();
+        d.body.data.insert("user".into(), json!("typed-in"));
+        f.e.update_environment(&d).unwrap();
+        assert!(vault::is_sealed(&raw_value(&f.e, &staging, "user")));
+        // unmarking decrypts in place
+        f.e.set_env_var(&staging, "user", json!("typed-in"), false)
+            .unwrap();
+        assert_eq!(raw_value(&f.e, &staging, "user"), json!("typed-in"));
+        assert_eq!(f.e.vault_status().unwrap().sealed_values, 0);
+    }
+
+    #[tokio::test]
+    async fn scripts_read_and_write_secrets_through_the_vault() {
+        let base = server().await;
+        let f = fixture(&base);
+        let staging = f.ws.active_environment_id.clone().unwrap();
+        f.e.set_env_var(&staging, "user", json!("alice"), true)
+            .unwrap();
+        let mut r = f.e.store.get::<Request>(f.req.id()).unwrap();
+        r.pre_request_script = Some(
+            "insomnia.environment.set('user', insomnia.environment.get('user') + '-2');".into(),
+        );
+        f.e.store.update(&r).unwrap();
+        let resp = f.e.send(f.req.id()).await.unwrap();
+        assert_eq!(body_json(&f.e, &resp)["path"], "/users/alice-2");
+        assert!(
+            vault::is_sealed(&raw_value(&f.e, &staging, "user")),
+            "script write re-sealed"
+        );
+        assert_eq!(f.e.reveal_secret(&staging, "user").unwrap(), "alice-2");
+    }
+
+    #[test]
+    fn vault_key_moves_between_machines_and_wrong_keys_are_refused() {
+        let f = fixture("http://127.0.0.1:1");
+        let staging = f.ws.active_environment_id.clone().unwrap();
+        f.e.set_env_var(&staging, "user", json!("bob"), true)
+            .unwrap();
+        let key = f.e.vault_export_key().unwrap();
+        // same database, a machine without the key
+        let other =
+            f.e.clone()
+                .with_secrets(Arc::new(llm::MemoryStore::default()));
+        let e = other.prepare(f.req.id(), &[]).unwrap_err().to_string();
+        assert!(e.contains("vault key") && e.contains("'user'"), "{e}");
+        let wrong = base64::engine::general_purpose::STANDARD.encode([7u8; 32]);
+        assert!(
+            other
+                .vault_import_key(&wrong)
+                .unwrap_err()
+                .to_string()
+                .contains("different key")
+        );
+        other.vault_import_key(&key).unwrap();
+        assert_eq!(other.reveal_secret(&staging, "user").unwrap(), "bob");
+        assert_eq!(other.vault_reset().unwrap(), 1);
+        assert_eq!(raw_value(&other, &staging, "user"), json!(""));
+        assert!(!other.vault_status().unwrap().has_key);
+    }
+
+    #[test]
+    fn oauth2_tokens_are_sealed_in_the_database() {
+        let f = fixture("http://127.0.0.1:1");
+        f.e.store
+            .insert(
+                Some(f.folder.id()),
+                OAuth2Token {
+                    access_token: f.e.seal_value("tok-123").unwrap(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            f.e.oauth2_cached(f.folder.id())
+                .unwrap()
+                .unwrap()
+                .access_token,
+            "tok-123"
+        );
+        let raw = f.e.store.children::<OAuth2Token>(f.folder.id()).unwrap();
+        assert!(raw[0].access_token.starts_with(vault::PREFIX));
+    }
+
+    fn postman() -> String {
+        json!({
+            "info": {"name": "Shop", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+            "variable": [{"key": "base", "value": "https://shop.test"}],
+            "item": [
+                {"name": "Orders", "item": [
+                    {"name": "List", "request": {"method": "GET", "url": "{{base}}/orders?page=1", "header": []}},
+                    {"name": "Create", "request": {"method": "POST", "url": "{{base}}/orders",
+                        "body": {"mode": "raw", "raw": "{\"sku\":\"{{sku}}\"}", "options": {"raw": {"language": "json"}}}},
+                     "event": [{"listen": "test", "script": {"exec": ["pm.test('created', () => pm.response.to.have.status(201));"]}}]}
+                ]}
+            ]
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn import_copy_mode_creates_independent_workspaces() {
+        let e = Engine::in_memory();
+        let s = e
+            .import_text(&postman(), &ImportOptions::default())
+            .unwrap();
+        assert_eq!(
+            (s.requests, s.folders, s.workspaces.clone()),
+            (2, 1, vec!["Shop".to_string()])
+        );
+        let ws = &s.workspace_ids[0];
+        assert_eq!(
+            e.base_environment(ws).unwrap().data["base"],
+            json!("https://shop.test")
+        );
+        let create = e
+            .store
+            .all_of::<Request>()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.name == "Create")
+            .unwrap();
+        assert_eq!(
+            create.after_response_script.as_deref(),
+            Some("insomnia.test('created', () => insomnia.response.to.have.status(201));")
+        );
+        let p = e
+            .prepare(create.id(), &[Layer::new("x", vars(json!({"sku": "A1"})))])
+            .unwrap();
+        assert_eq!(p.request.url, "https://shop.test/orders");
+        assert_eq!(p.request.body.text.as_deref(), Some("{\"sku\":\"A1\"}"));
+        let again = e
+            .import_text(&postman(), &ImportOptions::default())
+            .unwrap();
+        assert_ne!(again.workspace_ids, s.workspace_ids);
+        assert_eq!(e.store.all_of::<Request>().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn replace_mode_round_trips_v5_keeping_local_state() {
+        let e = Engine::in_memory();
+        let ws = e
+            .import_text(&postman(), &ImportOptions::default())
+            .unwrap()
+            .workspace_ids
+            .remove(0);
+        // local-only state: a secret, a private env, an MCP server referenced by an AI request
+        let base = e.base_environment(&ws).unwrap();
+        e.set_env_var(base.id(), "api_key", json!("k-local"), true)
+            .unwrap();
+        let private = e
+            .store
+            .insert(
+                Some(base.id()),
+                Environment {
+                    name: "Mine".into(),
+                    is_private: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let mcp = e
+            .store
+            .insert(
+                Some(&ws),
+                McpServer {
+                    name: "Tools".into(),
+                    transport: McpTransport::StreamableHttp {
+                        url: "http://x/mcp".into(),
+                    },
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        e.store
+            .insert(
+                Some(&ws),
+                LlmRequest {
+                    name: "Ask".into(),
+                    mcp_server_ids: vec![mcp.meta.id.clone()],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let list = e
+            .store
+            .all_of::<Request>()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.name == "List")
+            .unwrap();
+        e.store
+            .insert(
+                Some(list.id()),
+                Response {
+                    status_code: 200,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let out = e
+            .export_workspace(&ws, ExportFormat::InsomniaV5, &ExportOptions::default())
+            .unwrap();
+        assert_eq!(out.file_name, "insomnia.shop.yaml");
+        assert!(
+            !out.content.contains("k-local"),
+            "secret values never leave the machine"
+        );
+        assert!(out.content.contains("api_key"), "secret names do");
+        assert!(
+            !out.content.contains("Mine"),
+            "private environments stay local"
+        );
+        assert_eq!(out.warnings.len(), 1);
+
+        // edit the file like a teammate would: rename one request, drop another
+        let edited = out
+            .content
+            .replace("name: List", "name: List orders")
+            .replace("name: Create", "name: Create order");
+        let mut v: serde_json::Value = serde_yaml_ng::from_str(&edited).unwrap();
+        v["collection"][0]["children"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|c| c["name"] != "Create order");
+        let edited = serde_yaml_ng::to_string(&v).unwrap();
+        let before = e.store.all_of::<Workspace>().unwrap().len();
+        let s = e
+            .import_text(
+                &edited,
+                &ImportOptions {
+                    mode: ImportMode::Replace,
+                    into_workspace: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            s.workspace_ids,
+            vec![ws.clone()],
+            "same workspace, updated in place"
+        );
+        assert_eq!(e.store.all_of::<Workspace>().unwrap().len(), before);
+        let names: Vec<String> = e
+            .store
+            .all_of::<Request>()
+            .unwrap()
+            .into_iter()
+            .map(|r| r.name.clone())
+            .collect();
+        assert_eq!(names, vec!["List orders".to_string()]);
+        let list2 = e.store.all_of::<Request>().unwrap().remove(0);
+        assert_eq!(list2.meta.id, list.meta.id, "ids are stable");
+        assert_eq!(e.responses(list.id()).unwrap().len(), 1, "history survives");
+        assert_eq!(
+            e.reveal_secret(base.id(), "api_key").unwrap(),
+            "k-local",
+            "local secret kept"
+        );
+        assert!(
+            e.store.get::<Environment>(private.id()).is_ok(),
+            "private env kept"
+        );
+        let ask = e.store.all_of::<LlmRequest>().unwrap().remove(0);
+        assert_eq!(ask.mcp_server_ids, vec![mcp.meta.id.clone()]);
+    }
+
+    #[test]
+    fn copy_mode_rekeys_mcp_references_and_merge_into_workspace() {
+        let e = Engine::in_memory();
+        let ws = e
+            .store
+            .insert(
+                None,
+                Workspace {
+                    name: "Src".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let mcp = e
+            .store
+            .insert(
+                Some(ws.id()),
+                McpServer {
+                    name: "Tools".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        e.store
+            .insert(
+                Some(ws.id()),
+                LlmRequest {
+                    name: "Ask".into(),
+                    mcp_server_ids: vec![mcp.meta.id.clone()],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let out = e
+            .export_workspace(ws.id(), ExportFormat::InsomniaV5, &ExportOptions::default())
+            .unwrap();
+        let copy = e
+            .import_text(&out.content, &ImportOptions::default())
+            .unwrap()
+            .workspace_ids
+            .remove(0);
+        let new_mcp = e.store.children::<McpServer>(&copy).unwrap().remove(0);
+        let new_ask = e.store.children::<LlmRequest>(&copy).unwrap().remove(0);
+        assert_ne!(new_mcp.meta.id, mcp.meta.id);
+        assert_eq!(new_ask.mcp_server_ids, vec![new_mcp.meta.id.clone()]);
+
+        // a Postman environment merged into an existing workspace becomes a sub-environment
+        let env = json!({"name": "Prod", "values": [{"key": "token", "value": "t0p", "type": "secret", "enabled": true}]}).to_string();
+        e.import_text(
+            &env,
+            &ImportOptions {
+                mode: ImportMode::Copy,
+                into_workspace: Some(ws.meta.id.clone()),
+            },
+        )
+        .unwrap();
+        let subs = e.sub_environments(ws.id()).unwrap();
+        assert_eq!(subs[0].name, "Prod");
+        assert!(
+            vault::is_sealed(&subs[0].data["token"]),
+            "imported secrets are sealed"
+        );
+    }
+
+    #[test]
+    fn postman_and_har_exports() {
+        let e = Engine::in_memory();
+        let ws = e
+            .import_text(&postman(), &ImportOptions::default())
+            .unwrap()
+            .workspace_ids
+            .remove(0);
+        let rt = e
+            .store
+            .insert(Some(&ws), irs_core::RealtimeRequest::default())
+            .unwrap();
+        let out = e
+            .export_workspace(&ws, ExportFormat::Postman, &ExportOptions::default())
+            .unwrap();
+        assert_eq!(out.file_name, "shop.postman_collection.json");
+        assert!(
+            out.warnings.iter().any(|w| w.contains("1 item")),
+            "{:?}",
+            out.warnings
+        );
+        let v: Value = serde_json::from_str(&out.content).unwrap();
+        assert_eq!(
+            v["item"][0]["item"][1]["event"][0]["script"]["exec"][0],
+            "pm.test('created', () => pm.response.to.have.status(201));"
+        );
+        let har = e
+            .export_workspace(&ws, ExportFormat::Har, &ExportOptions::default())
+            .unwrap();
+        assert!(har.content.contains("\"entries\""));
+        let _ = rt;
+    }
+
+    #[test]
+    fn code_generation_uses_the_rendered_request() {
+        let f = fixture("https://api.test");
+        let (code, notes) = f.e.code_request(f.req.id()).unwrap();
+        assert!(notes.is_empty());
+        assert_eq!(code.method, "POST");
+        assert_eq!(
+            code.url,
+            "https://api.test/users/staging-user?who=staging-user"
+        );
+        assert!(
+            code.headers
+                .contains(&("Authorization".into(), "Bearer folder-token".into()))
+        );
+        assert!(
+            code.headers
+                .contains(&("Content-Type".into(), "application/json".into()))
+        );
+        let curl = irs_convert::codegen::generate(&code, irs_convert::codegen::Target::Curl);
+        assert!(
+            curl.contains("--header 'Authorization: Bearer folder-token'"),
+            "{curl}"
+        );
+        assert!(curl.contains(r#"--data '{"u":"staging-user"}'"#), "{curl}");
+    }
+}
+
+mod git_sync {
+    use super::*;
+    use irs_core::GitRepo;
+
+    fn teammate(name: &str) -> Engine {
+        let _ = name;
+        Engine::in_memory().with_secrets(Arc::new(llm::MemoryStore::default()))
+    }
+
+    fn set_author(e: &Engine, repo: &Doc<GitRepo>, who: &str, remote: &str) -> Doc<GitRepo> {
+        let mut r = repo.clone();
+        r.body.author_name = who.into();
+        r.body.author_email = format!("{}@example.com", who.to_lowercase());
+        r.body.remote_url = remote.into();
+        e.git_update_repo(&r).unwrap()
+    }
+
+    fn rename(e: &Engine, from: &str, to: &str) {
+        let mut r = e
+            .store
+            .all_of::<Request>()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.name == from)
+            .unwrap();
+        r.body.name = to.into();
+        e.store.update(&r).unwrap();
+    }
+
+    fn names(e: &Engine) -> Vec<String> {
+        let mut n: Vec<String> = e
+            .store
+            .all_of::<Request>()
+            .unwrap()
+            .into_iter()
+            .map(|r| r.name.clone())
+            .collect();
+        n.sort();
+        n
+    }
+
+    #[test]
+    fn two_teammates_share_a_workspace_through_git() {
+        if std::process::Command::new("git")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("git not installed; skipping");
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let remote = tmp.path().join("remote.git");
+        assert!(
+            std::process::Command::new("git")
+                .args(["init", "--bare", "-b", "main"])
+                .arg(&remote)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let remote = remote.to_string_lossy().into_owned();
+
+        // Ana creates a workspace with a secret and shares it
+        let ana = teammate("Ana");
+        let ws = ana
+            .store
+            .insert(
+                None,
+                Workspace {
+                    name: "Shop API".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let base = ana.base_environment(ws.id()).unwrap();
+        ana.set_env_var(base.id(), "host", json!("https://shop.test"), false)
+            .unwrap();
+        ana.set_env_var(base.id(), "token", json!("ana-secret-token"), true)
+            .unwrap();
+        ana.store
+            .insert(
+                Some(ws.id()),
+                Request {
+                    name: "List orders".into(),
+                    url: "{{ _.host }}/orders".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        ana.store
+            .insert(
+                Some(ws.id()),
+                Request {
+                    name: "Get order".into(),
+                    url: "{{ _.host }}/orders/:id".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let (repo_a, _) = ana
+            .git_open(&tmp.path().join("ana").to_string_lossy(), None)
+            .unwrap();
+        let repo_a = set_author(&ana, &repo_a, "Ana", &remote);
+        let repo_a = ana.git_link(repo_a.id(), ws.id()).unwrap();
+        assert_eq!(repo_a.files[0].path, "insomnia.shop-api.yaml");
+        let st = ana.git_status(repo_a.id()).unwrap();
+        assert_eq!(st.branch, "main");
+        assert_eq!(st.changes.len(), 1);
+        assert_eq!(
+            (
+                st.changes[0].status.as_str(),
+                st.changes[0].workspace.as_deref()
+            ),
+            ("untracked", Some("Shop API"))
+        );
+        ana.git_commit(repo_a.id(), "Add Shop API", &[]).unwrap();
+        ana.git_push(repo_a.id()).unwrap();
+        let file = std::fs::read_to_string(tmp.path().join("ana/insomnia.shop-api.yaml")).unwrap();
+        assert!(
+            !file.contains("ana-secret-token") && !file.contains("vault:v1"),
+            "no secret in the repo:\n{file}"
+        );
+        assert!(file.contains("secretKeys"));
+
+        // Ben clones it: same ids, secret name without its value
+        let ben = teammate("Ben");
+        let (repo_b, res) = ben
+            .git_clone(&remote, &tmp.path().join("ben").to_string_lossy(), None)
+            .unwrap();
+        assert_eq!(res.workspaces, vec!["Shop API".to_string()]);
+        let repo_b = set_author(&ben, &repo_b, "Ben", &remote);
+        assert_eq!(repo_b.files[0].workspace_id, ws.meta.id);
+        assert_eq!(names(&ben), ["Get order", "List orders"]);
+        let ben_base = ben.base_environment(ws.id()).unwrap();
+        assert_eq!(ben_base.data["token"], json!(""));
+        assert!(ben_base.secret_keys.contains(&"token".to_string()));
+        assert!(
+            ben.git_status(repo_b.id()).unwrap().changes.is_empty(),
+            "fresh clone is clean (no phantom diffs)"
+        );
+        ben.set_env_var(ben_base.id(), "token", json!("ben-own-token"), true)
+            .unwrap();
+        assert!(
+            ben.git_status(repo_b.id()).unwrap().changes.is_empty(),
+            "setting a secret value changes nothing in Git"
+        );
+
+        // Ben renames a request and pushes; Ana pulls
+        rename(&ben, "Get order", "Get order by id");
+        let diff = ben.git_diff(repo_b.id(), "insomnia.shop-api.yaml").unwrap();
+        assert!(
+            diff.contains("+    name: Get order by id")
+                || diff.contains("+  - name: Get order by id")
+                || diff.contains("Get order by id"),
+            "{diff}"
+        );
+        ben.git_commit(repo_b.id(), "Rename", &[]).unwrap();
+        ben.git_push(repo_b.id()).unwrap();
+        let pulled = ana.git_pull(repo_a.id()).unwrap();
+        assert!(pulled.conflicts.is_empty());
+        assert_eq!(names(&ana), ["Get order by id", "List orders"]);
+        assert_eq!(
+            ana.reveal_secret(base.id(), "token").unwrap(),
+            "ana-secret-token",
+            "Ana keeps her secret"
+        );
+        assert!(
+            ana.git_status(repo_a.id()).unwrap().changes.is_empty(),
+            "clean after pull"
+        );
+        assert_eq!(
+            ana.git_log(repo_a.id(), 10)
+                .unwrap()
+                .iter()
+                .map(|c| c.message.as_str())
+                .collect::<Vec<_>>(),
+            ["Rename", "Add Shop API"]
+        );
+
+        // pulling with uncommitted edits is refused
+        rename(&ana, "List orders", "List all orders");
+        assert!(
+            ana.git_pull(repo_a.id())
+                .unwrap_err()
+                .to_string()
+                .contains("commit or discard")
+        );
+        // discard brings back the committed version
+        ana.git_discard(repo_a.id(), "insomnia.shop-api.yaml")
+            .unwrap();
+        assert_eq!(names(&ana), ["Get order by id", "List orders"]);
+
+        // both edit the same request: conflict, resolved by taking Ben's version
+        rename(&ana, "List orders", "Orders (Ana)");
+        ana.git_commit(repo_a.id(), "Ana's name", &[]).unwrap();
+        ben.git_pull(repo_b.id()).unwrap();
+        rename(&ben, "List orders", "Orders (Ben)");
+        ben.git_commit(repo_b.id(), "Ben's name", &[]).unwrap();
+        ben.git_push(repo_b.id()).unwrap();
+        let res = ana.git_pull(repo_a.id()).unwrap();
+        assert_eq!(res.conflicts, vec!["insomnia.shop-api.yaml".to_string()]);
+        assert_eq!(
+            names(&ana),
+            ["Get order by id", "Orders (Ana)"],
+            "nothing imported while conflicted"
+        );
+        let res = ana
+            .git_resolve(repo_a.id(), "insomnia.shop-api.yaml", "theirs")
+            .unwrap();
+        assert!(res.conflicts.is_empty());
+        assert_eq!(names(&ana), ["Get order by id", "Orders (Ben)"]);
+        ana.git_push(repo_a.id()).unwrap();
+
+        // branches
+        let res = ana.git_checkout(repo_a.id(), "feature", true).unwrap();
+        assert!(res.conflicts.is_empty());
+        let (current, all) = ana.git_branches(repo_a.id()).unwrap();
+        assert_eq!(current, "feature");
+        assert!(all.contains(&"main".to_string()));
+    }
+}

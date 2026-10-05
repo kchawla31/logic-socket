@@ -17,6 +17,7 @@ irs-convert.workspace = true
 url.workspace = true
 keyring.workspace = true
 sha2 = "0.10"
+aes-gcm = "0.10"
 reqwest.workspace = true
 uuid.workspace = true
 serde_json.workspace = true
@@ -27,5 +28,6 @@ base64.workspace = true
 futures.workspace = true
 
 [dev-dependencies]
+serde_yaml_ng = "0.10"
 axum = { workspace = true, features = ["form", "query"] }
 tempfile.workspace = true

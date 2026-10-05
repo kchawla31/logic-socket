@@ -699,6 +699,33 @@ pub struct McpRoot {
     pub name: Option<String>,
 }
 
+// ---------------------------------------------------------------- Git sync
+
+/// A workspace file tracked in a Git repository.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GitFile {
+    pub workspace_id: String,
+    /// Path relative to the repository root, e.g. `insomnia.orders-api.yaml`.
+    pub path: String,
+}
+
+/// A local Git repository that workspaces are synced with (global, not in a workspace).
+/// Credentials are not stored here: Git's own helpers/SSH agent are used, or a
+/// token kept in the OS keychain.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GitRepo {
+    pub name: String,
+    /// Absolute path of the working copy.
+    pub path: String,
+    pub remote_url: String,
+    pub author_name: String,
+    pub author_email: String,
+    pub files: Vec<GitFile>,
+}
+model!(GitRepo, "GitRepo", "git");
+
 // ---------------------------------------------------------------- Response
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

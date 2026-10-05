@@ -166,7 +166,7 @@ fn url_encode_component(s: &str) -> String {
 
 /// Headers to send (enabled, non-empty names) plus auth headers. Returns any
 /// auth query parameters / cookies separately.
-fn apply_auth(
+pub fn apply_auth(
     auth: &Auth,
     headers: &mut Vec<(String, String)>,
     url: &mut Url,

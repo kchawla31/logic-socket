@@ -57,12 +57,38 @@ impl Engine {
         }
     }
 
+    /// The cached token (decrypted). A token this machine can't decrypt counts as missing.
     pub fn oauth2_cached(&self, owner_id: &str) -> Result<Option<Doc<OAuth2Token>>> {
-        Ok(self
+        let Some(mut t) = self
             .store
             .children::<OAuth2Token>(owner_id)?
             .into_iter()
-            .next())
+            .next()
+        else {
+            return Ok(None);
+        };
+        let open = |s: &str| self.unseal_value(s);
+        let Ok(access) = open(&t.access_token) else {
+            return Ok(None);
+        };
+        t.body.access_token = access;
+        t.body.refresh_token = t
+            .body
+            .refresh_token
+            .as_deref()
+            .map(open)
+            .transpose()
+            .ok()
+            .flatten();
+        t.body.id_token = t
+            .body
+            .id_token
+            .as_deref()
+            .map(open)
+            .transpose()
+            .ok()
+            .flatten();
+        Ok(Some(t))
     }
 
     pub fn oauth2_clear(&self, owner_id: &str) -> Result<()> {
@@ -80,19 +106,37 @@ impl Engine {
         })?)
     }
 
+    /// Store a token with its secrets encrypted by the vault; returns it decrypted.
     fn oauth2_save(&self, owner_id: &str, token: OAuth2Token) -> Result<Doc<OAuth2Token>> {
+        let mut stored = token.clone();
+        let seal = |s: &str| {
+            if s.is_empty() {
+                Ok(String::new())
+            } else {
+                self.seal_value(s)
+            }
+        };
+        stored.access_token = seal(&token.access_token)?;
+        stored.refresh_token = token.refresh_token.as_deref().map(seal).transpose()?;
+        stored.id_token = token.id_token.as_deref().map(seal).transpose()?;
         let old: Vec<String> = self
             .store
             .children::<OAuth2Token>(owner_id)?
             .into_iter()
             .map(|t| t.meta.id)
             .collect();
-        Ok(self.store.batch(|tx| {
-            for id in &old {
-                tx.delete(id)?;
-            }
-            tx.insert(Some(owner_id), token)
-        })?)
+        Ok(self
+            .store
+            .batch(|tx| {
+                for id in &old {
+                    tx.delete(id)?;
+                }
+                tx.insert(Some(owner_id), stored)
+            })
+            .map(|d| Doc {
+                meta: d.meta,
+                body: token,
+            })?)
     }
 
     /// POST to the token endpoint and parse the answer (JSON or form-encoded).

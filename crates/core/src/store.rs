@@ -303,6 +303,14 @@ impl Tx<'_> {
         Ok(doc)
     }
 
+    /// Write a document exactly as given (id, parent, sort key, timestamps), creating
+    /// or overwriting it. Used by importers that keep original identities.
+    pub fn put<T: Model>(&mut self, doc: &Doc<T>) -> Result<()> {
+        let mut meta = doc.meta.clone();
+        meta.kind = T::TYPE.to_string();
+        self.write(&meta, &serde_json::to_value(&doc.body)?)
+    }
+
     pub fn update<T: Model>(&mut self, doc: &Doc<T>) -> Result<Doc<T>> {
         let mut doc = doc.clone();
         doc.meta.kind = T::TYPE.to_string();
