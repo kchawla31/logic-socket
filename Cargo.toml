@@ -7,7 +7,7 @@ members = [
   "crates/mcp",
   "crates/engine",
   "crates/cli",
-  # "apps/desktop/src-tauri",
+  "apps/desktop/src-tauri",
 ]
 
 [workspace.package]

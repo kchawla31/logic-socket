@@ -2,6 +2,7 @@
 //! load request + ancestors + environments → render → send → persist.
 
 pub mod curl;
+pub mod mcp;
 
 use std::path::PathBuf;
 use std::sync::Arc;

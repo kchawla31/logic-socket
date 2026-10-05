@@ -311,6 +311,13 @@ impl Tx<'_> {
         Ok(doc)
     }
 
+    /// Write an untyped document back (e.g. a rename from the UI).
+    pub fn update_raw(&mut self, doc: &RawDoc) -> Result<()> {
+        let mut meta = doc.meta.clone();
+        meta.modified = now_ms();
+        self.write(&meta, &doc.data)
+    }
+
     /// Move a document under a new parent and/or position.
     pub fn move_to(&mut self, id: &str, parent_id: Option<&str>, sort_key: f64) -> Result<()> {
         let Some(mut d) = raw(self.conn, id)? else {

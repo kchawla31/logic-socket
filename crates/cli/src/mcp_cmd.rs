@@ -105,16 +105,13 @@ fn parse_header(h: &str) -> Result<(String, String)> {
     Ok((k.trim().to_string(), v.trim().to_string()))
 }
 
-/// (display label, transport, roots as (uri, name))
-type Resolved = (String, TransportConfig, Vec<(String, Option<String>)>);
-
-fn transport_for(engine: &Engine, a: &ServerArgs) -> Result<Resolved> {
-    let mut headers: Vec<(String, String)> = a
+fn connect_options(engine: &Engine, a: &ServerArgs) -> Result<(String, ConnectOptions)> {
+    let headers: Vec<(String, String)> = a
         .headers
         .iter()
         .map(|h| parse_header(h))
         .collect::<Result<_>>()?;
-    let mut env: HashMap<String, String> = a
+    let env: HashMap<String, String> = a
         .env
         .iter()
         .map(|e| {
@@ -124,88 +121,38 @@ fn transport_for(engine: &Engine, a: &ServerArgs) -> Result<Resolved> {
         })
         .collect::<Result<_>>()?;
     if let Some(url) = &a.url {
-        return Ok((
-            url.clone(),
-            TransportConfig::Http {
-                url: url.clone(),
-                headers,
-                validate_certificates: true,
-            },
-            vec![],
-        ));
+        let t = TransportConfig::Http {
+            url: url.clone(),
+            headers,
+            validate_certificates: true,
+        };
+        return Ok((url.clone(), ConnectOptions::new(t)));
     }
     if let Some(cmd) = &a.stdio {
         let (command, args) = split_command(cmd)?;
-        return Ok((
-            cmd.clone(),
-            TransportConfig::Stdio {
-                command,
-                args,
-                env,
-                cwd: None,
-            },
-            vec![],
-        ));
+        let t = TransportConfig::Stdio {
+            command,
+            args,
+            env,
+            cwd: None,
+        };
+        return Ok((cmd.clone(), ConnectOptions::new(t)));
     }
     let Some(target) = &a.server else {
         bail!("give a saved server name/id, --url or --stdio")
     };
     let server = crate::find::<McpServer>(engine, target)?;
-    // Render {{ vars }} in the saved config against the workspace environment.
-    let ctx = engine.context(server.id())?;
-    let r = |s: &str| {
-        engine
-            .renderer()
-            .render_str(s, &ctx, irs_templating::Mode::Throw)
-            .map_err(|e| anyhow!("{e}"))
-    };
-    for h in server.headers.iter().filter(|h| !h.disabled) {
-        headers.push((r(&h.name)?, r(&h.value)?));
+    let mut opts = engine.mcp_connect_options(server.id())?;
+    // Command-line headers/env add to the saved configuration.
+    match &mut opts.transport {
+        TransportConfig::Http { headers: h, .. } => h.extend(headers),
+        TransportConfig::Stdio { env: e, .. } => e.extend(env),
     }
-    if let irs_core::Auth::Bearer {
-        token,
-        disabled: false,
-        ..
-    } = &server.authentication
-    {
-        headers.push(("Authorization".into(), format!("Bearer {}", r(token)?)));
-    }
-    for e in server.env.iter().filter(|e| !e.disabled) {
-        env.insert(e.name.clone(), r(&e.value)?);
-    }
-    let roots = server
-        .roots
-        .iter()
-        .map(|x| (x.uri.clone(), x.name.clone()))
-        .collect();
-    let label = server.name.clone();
-    Ok(match &server.transport {
-        McpTransport::StreamableHttp { url } => (
-            label,
-            TransportConfig::Http {
-                url: r(url)?,
-                headers,
-                validate_certificates: server.ssl_validation.unwrap_or(true),
-            },
-            roots,
-        ),
-        McpTransport::Stdio { command, args, cwd } => (
-            label,
-            TransportConfig::Stdio {
-                command: r(command)?,
-                args: args.iter().map(|x| r(x)).collect::<Result<_>>()?,
-                env,
-                cwd: cwd.clone(),
-            },
-            roots,
-        ),
-    })
+    Ok((server.name.clone(), opts))
 }
 
 async fn connect(engine: &Engine, a: &ServerArgs) -> Result<(String, Client)> {
-    let (label, transport, roots) = transport_for(engine, a)?;
-    let mut opts = ConnectOptions::new(transport);
-    opts.root_uris = roots;
+    let (label, mut opts) = connect_options(engine, a)?;
     opts.request_timeout = std::time::Duration::from_secs(a.timeout);
     let log = irs_mcp::ProtocolLog::default();
     match Client::connect_with_log(opts, log.clone()).await {
