@@ -3,6 +3,7 @@
 mod llm_cmd;
 mod mcp_cmd;
 mod out;
+mod rt_cmd;
 mod run_cmd;
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -66,6 +67,30 @@ enum Cmd {
     /// AI: providers, chat with MCP tools, saved AI requests
     #[command(subcommand)]
     Llm(llm_cmd::LlmCmd),
+    /// WebSocket / Server-Sent Events / Socket.IO
+    Rt(rt_cmd::RtArgs),
+    /// Local demo servers for trying features without external services
+    #[command(subcommand)]
+    Mock(MockCmd),
+}
+
+#[derive(Subcommand, Debug)]
+enum MockCmd {
+    /// WebSocket echo (/ws), SSE (/events), Socket.IO (/socket.io/)
+    Realtime {
+        #[arg(long, default_value_t = 8790)]
+        port: u16,
+    },
+    /// Mock LLM speaking Anthropic + OpenAI formats (key: test-key)
+    Llm {
+        #[arg(long, default_value_t = 8787)]
+        port: u16,
+    },
+    /// Mock MCP server over Streamable HTTP (/mcp)
+    Mcp {
+        #[arg(long, default_value_t = 3333)]
+        port: u16,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -211,6 +236,21 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Mcp(c) => mcp_cmd::run(&engine, c).await,
         Cmd::Run(c) => run_cmd::run(&engine, c).await,
         Cmd::Llm(c) => llm_cmd::run(&engine, c).await,
+        Cmd::Rt(a) => rt_cmd::run(&engine, a).await,
+        Cmd::Mock(m) => {
+            let url = match m {
+                MockCmd::Realtime { port } => {
+                    let u = irs_realtime::mock::spawn(port).await?;
+                    eprintln!("WebSocket  {}/ws\nSSE        {u}/events\nSocket.IO  {u}", u.replace("http", "ws"));
+                    u
+                }
+                MockCmd::Llm { port } => irs_llm::mock::spawn(Default::default(), port).await?,
+                MockCmd::Mcp { port } => irs_mcp::mock::spawn_http(Default::default(), port).await?,
+            };
+            eprintln!("{} mock server on {url} — Ctrl-C to stop", green("●"));
+            tokio::signal::ctrl_c().await?;
+            Ok(())
+        }
         Cmd::Send {
             request,
             env,
@@ -373,6 +413,10 @@ fn print_tree(engine: &Engine, parent: &str, depth: usize) -> Result<()> {
             }
             "McpServer" => println!("{pad}{:<7} {name} {}", magenta("MCP"), dim(&d.meta.id)),
             "LlmRequest" => println!("{pad}{:<7} {name} {}", cyan("AI"), dim(&d.meta.id)),
+            "RealtimeRequest" => {
+                let k = match d.data["kind"].as_str() { Some("sse") => "SSE", Some("socketio") => "SIO", _ => "WS" };
+                println!("{pad}{:<7} {name} {}", blue(k), dim(&d.meta.id))
+            }
             _ => {}
         }
     }

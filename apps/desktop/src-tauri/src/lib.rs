@@ -2,6 +2,7 @@
 //! SQLite or the network directly, so the CLI and desktop behave identically.
 
 mod ai;
+mod rt;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -31,6 +32,7 @@ pub struct AppState {
     logs: std::sync::Mutex<HashMap<String, ProtocolLog>>,
     runs: std::sync::Mutex<HashMap<String, RunSlot>>,
     ai_runs: std::sync::Mutex<HashMap<String, ai::AiRunSlot>>,
+    rt: std::sync::Mutex<HashMap<String, Arc<irs_realtime::Session>>>,
 }
 
 #[derive(Default)]
@@ -86,6 +88,15 @@ fn tree(engine: &Engine, parent: &str) -> CmdResult<Vec<TreeNode>> {
                 sort_key,
                 name,
                 transport: None,
+                children: vec![],
+            },
+            "RealtimeRequest" => TreeNode {
+                transport: d.data["kind"].as_str().map(str::to_string),
+                id: d.meta.id,
+                kind: "realtime".into(),
+                sort_key,
+                name,
+                method: None,
                 children: vec![],
             },
             "LlmRequest" => TreeNode {
@@ -238,6 +249,13 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                 .meta
                 .id
         }
+        "RealtimeRequest" => {
+            store
+                .insert(parent.as_deref(), serde_json::from_value::<irs_core::RealtimeRequest>(data).map_err(e)?)
+                .map_err(e)?
+                .meta
+                .id
+        }
         "Folder" => {
             // Deep copy: folder + all requests/folders/servers under it.
             fn copy(store: &irs_core::Store, src: &str, dst: &str) -> CmdResult<()> {
@@ -266,6 +284,11 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                                     serde_json::from_value::<irs_core::LlmRequest>(c.data)
                                         .map_err(e)?,
                                 )
+                                .map_err(e)?;
+                        }
+                        "RealtimeRequest" => {
+                            store
+                                .insert(Some(dst), serde_json::from_value::<irs_core::RealtimeRequest>(c.data).map_err(e)?)
                                 .map_err(e)?;
                         }
                         "Folder" => {
@@ -943,6 +966,7 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             logs: Default::default(),
             runs: Default::default(),
             ai_runs: Default::default(),
+            rt: Default::default(),
         })
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -1009,6 +1033,13 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             ai::llm_run_start,
             ai::llm_approve,
             ai::llm_cancel,
+            rt::rt_create,
+            rt::rt_update,
+            rt::rt_connect,
+            rt::rt_status,
+            rt::rt_send,
+            rt::rt_disconnect,
+            rt::rt_log,
         ])
 }
 

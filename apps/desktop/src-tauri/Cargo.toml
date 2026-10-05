@@ -18,6 +18,7 @@ irs-mcp.workspace = true
 irs-templating.workspace = true
 irs-runner.workspace = true
 irs-llm.workspace = true
+irs-realtime.workspace = true
 futures.workspace = true
 tauri = { version = "2", features = [] }
 tokio.workspace = true

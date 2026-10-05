@@ -350,6 +350,55 @@ pub struct McpServer {
 }
 model!(McpServer, "McpServer", "mcp");
 
+// ---------------------------------------------------------------- Realtime
+
+/// WebSocket, Server-Sent Events or Socket.IO connection.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RealtimeRequest {
+    pub name: String,
+    pub description: String,
+    /// `websocket` | `sse` | `socketio`
+    pub kind: String,
+    pub url: String,
+    pub headers: Vec<KeyValue>,
+    pub authentication: Auth,
+    /// Message composer content (supports `{{ variables }}`).
+    pub payload: String,
+    /// `text` | `json`
+    pub payload_format: String,
+    pub subprotocols: Vec<String>,
+    /// Socket.IO: event to emit, namespace and `auth` JSON.
+    pub event: String,
+    pub namespace: String,
+    pub socketio_auth: String,
+    /// SSE: method and body.
+    pub method: String,
+    pub body: String,
+}
+model!(RealtimeRequest, "RealtimeRequest", "rt");
+
+impl Default for RealtimeRequest {
+    fn default() -> Self {
+        Self {
+            name: "New WebSocket".into(),
+            description: String::new(),
+            kind: "websocket".into(),
+            url: "wss://echo.websocket.org".into(),
+            headers: vec![],
+            authentication: Auth::Inherit,
+            payload: String::new(),
+            payload_format: "json".into(),
+            subprotocols: vec![],
+            event: "message".into(),
+            namespace: "/".into(),
+            socketio_auth: String::new(),
+            method: "GET".into(),
+            body: String::new(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------- LLM
 
 /// Where a provider's API key comes from. Keys are never stored in the database.

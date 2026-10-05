@@ -9,6 +9,7 @@ members = [
   "crates/scripting",
   "crates/runner",
   "crates/llm",
+  "crates/realtime",
   "crates/cli",
   "apps/desktop/src-tauri",
 ]
@@ -27,6 +28,7 @@ irs-engine = { path = "crates/engine" }
 irs-scripting = { path = "crates/scripting" }
 irs-runner = { path = "crates/runner" }
 irs-llm = { path = "crates/llm" }
+irs-realtime = { path = "crates/realtime" }
 
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "multipart", "stream", "gzip", "brotli", "deflate", "zstd"] }
@@ -49,6 +51,7 @@ tempfile = "3"
 axum = "0.8"
 rquickjs = { version = "0.14", features = ["futures", "parallel"] }
 csv = "1"
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 keyring = { version = "3", features = ["apple-native", "windows-native"] }
 
 [profile.release]

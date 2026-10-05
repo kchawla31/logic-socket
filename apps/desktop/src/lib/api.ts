@@ -130,6 +130,37 @@ export interface McpServer extends Meta {
   sampling: McpSampling;
 }
 
+// ---- Realtime
+
+export type RtKind = 'websocket' | 'sse' | 'socketio';
+
+export interface RealtimeRequest extends Meta {
+  name: string;
+  description: string;
+  kind: RtKind;
+  url: string;
+  headers: KeyValue[];
+  authentication: Auth;
+  payload: string;
+  payloadFormat: 'text' | 'json';
+  subprotocols: string[];
+  event: string;
+  namespace: string;
+  socketioAuth: string;
+  method: string;
+  body: string;
+}
+
+export interface RtEvent {
+  seq: number;
+  direction: 'out' | 'in' | 'info' | 'error';
+  timestampMs: number;
+  kind: string;
+  name?: string | null;
+  data: string;
+  size: number;
+}
+
 // ---- AI
 
 export type KeySource = { type: 'none' } | { type: 'keychain' } | { type: 'env'; var: string } | { type: 'template'; template: string };
@@ -269,7 +300,7 @@ export interface ResponseSummary {
 
 export interface TreeNode {
   id: string;
-  kind: 'folder' | 'request' | 'mcp' | 'llm';
+  kind: 'folder' | 'request' | 'mcp' | 'llm' | 'realtime';
   name: string;
   method?: string | null;
   transport?: string | null;
@@ -524,7 +555,18 @@ export const api = {
   llmRunStart: (runId: string, requestId: string) => invoke<void>('llm_run_start', { runId, requestId }),
   llmApprove: (runId: string, callId: string, allow: boolean, reason?: string) => invoke<void>('llm_approve', { runId, callId, allow, reason: reason ?? null }),
   llmCancel: (runId: string) => invoke<void>('llm_cancel', { runId }),
+  rtCreate: (parentId: string, kind: RtKind) => invoke<RealtimeRequest>('rt_create', { parentId, kind }),
+  rtUpdate: (doc: RealtimeRequest) => invoke<RealtimeRequest>('rt_update', { doc }),
+  rtConnect: (id: string) => invoke<{ connected: boolean }>('rt_connect', { id }),
+  rtStatus: (id: string) => invoke<{ connected: boolean }>('rt_status', { id }),
+  rtSend: (id: string, text: string, event: string | null, ack: boolean) => invoke<number | null>('rt_send', { id, text, event, ack }),
+  rtDisconnect: (id: string) => invoke<void>('rt_disconnect', { id }),
+  rtLog: (id: string) => invoke<RtEvent[]>('rt_log', { id }),
 };
+
+export function onRtEvent(cb: (id: string, ev: RtEvent) => void): Promise<UnlistenFn> {
+  return listen<{ id: string; event: RtEvent }>('rt-event', e => cb(e.payload.id, e.payload.event));
+}
 
 export function onLlmEvent(cb: (runId: string, ev: AgentEvent) => void): Promise<UnlistenFn> {
   return listen<{ runId: string; event: AgentEvent }>('llm-event', e => cb(e.payload.runId, e.payload.event));

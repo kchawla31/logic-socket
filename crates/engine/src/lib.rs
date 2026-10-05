@@ -5,6 +5,7 @@ pub mod curl;
 pub mod llm;
 pub mod mcp;
 pub mod pipeline;
+pub mod realtime;
 
 pub use pipeline::{Outcome, RunState};
 

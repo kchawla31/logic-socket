@@ -1,4 +1,4 @@
-import { Command as CommandIcon, Folder, Layers, ListChecks, Moon, Plug, Plus, Send, Settings as SettingsIcon, Sparkles, Sun, X } from 'lucide-react';
+import { Command as CommandIcon, Folder, Layers, ListChecks, Moon, Plug, Plus, Radio, Send, Settings as SettingsIcon, Sparkles, Sun, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type Command, CommandPalette } from './components/CommandPalette';
@@ -8,6 +8,7 @@ import { cn, methodColor, methodShort, modKey } from './lib/utils';
 import { AiProvidersModal } from './views/AiProviders';
 import { FolderView } from './views/FolderView';
 import { LlmView } from './views/LlmView';
+import { RealtimeView } from './views/RealtimeView';
 import { McpView } from './views/McpView';
 import { EnvironmentModal, SettingsModal } from './views/Modals';
 import { RequestView } from './views/RequestView';
@@ -211,6 +212,14 @@ function Shell() {
         keywords: 'llm claude gpt chat agent mcp tools',
         run: async () => wsId && open((await api.llmRequestCreate(wsId, 'New AI Request')).id, 'llm'),
       },
+      ...(['websocket', 'socketio', 'sse'] as const).map(k => ({
+        id: `new-rt-${k}`,
+        group: 'Actions',
+        label: `New ${k === 'websocket' ? 'WebSocket' : k === 'socketio' ? 'Socket.IO connection' : 'event stream (SSE)'}`,
+        icon: <Radio className="size-4" />,
+        keywords: 'realtime ws socket stream',
+        run: async () => wsId && open((await api.rtCreate(wsId, k)).id, 'realtime'),
+      })),
       { id: 'ai-providers', group: 'Actions', label: 'AI providers', icon: <Sparkles className="size-4" />, keywords: 'llm api key anthropic openai ollama', run: () => setAiOpen(true) },
       {
         id: 'run-collection',
@@ -254,6 +263,8 @@ function Shell() {
             <Plug className="size-4" />
           ) : n.kind === 'llm' ? (
             <Sparkles className="size-4" />
+          ) : n.kind === 'realtime' ? (
+            <Radio className="size-4" />
           ) : (
             <Folder className="size-4" />
           ),
@@ -350,6 +361,7 @@ function Shell() {
                       {t.kind === 'folder' && <Folder className="size-3.5 shrink-0 text-muted" />}
                       {t.kind === 'runner' && <ListChecks className="size-3.5 shrink-0 text-emerald-500" />}
                       {t.kind === 'llm' && <Sparkles className="size-3.5 shrink-0 text-accent" />}
+                      {t.kind === 'realtime' && <Radio className="size-3.5 shrink-0 text-sky-500" />}
                       <span className="truncate">{label}</span>
                       <button
                         aria-label="Close tab"
@@ -367,6 +379,7 @@ function Shell() {
               {activeTab?.kind === 'request' && <RequestView key={activeTab.id} id={activeTab.id} onRenamed={() => refresh()} />}
               {activeTab?.kind === 'folder' && <FolderView key={activeTab.id} id={activeTab.id} />}
               {activeTab?.kind === 'mcp' && <McpView key={activeTab.id} id={activeTab.id} />}
+              {activeTab?.kind === 'realtime' && <RealtimeView key={activeTab.id} id={activeTab.id} />}
               {activeTab?.kind === 'llm' && <LlmView key={activeTab.id} id={activeTab.id} tree={tree} onOpenProviders={() => setAiOpen(true)} />}
               {activeTab?.kind === 'runner' && wsId && (
                 <RunnerView

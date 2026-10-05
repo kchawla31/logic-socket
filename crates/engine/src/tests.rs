@@ -706,3 +706,31 @@ mod ai {
         assert_eq!(r.text(), "LLM said: Echo: ping");
     }
 }
+
+#[test]
+fn realtime_options_render_and_inherit() {
+    let f = fixture("http://x");
+    let rt = f
+        .e
+        .store
+        .insert(
+            Some(f.folder.id()),
+            irs_core::RealtimeRequest {
+                kind: "socketio".into(),
+                url: "{{ _.base }}/{{ path }}".into(),
+                headers: vec![KeyValue::new("X-User", "{{ user }}")],
+                socketio_auth: r#"{"token":"{{ token }}"}"#.into(),
+                namespace: "/chat".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let o = f.e.realtime_options(rt.id()).unwrap();
+    assert_eq!(o.kind, irs_realtime::Kind::Socketio);
+    assert_eq!(o.url, "http://x/users");
+    assert!(o.headers.contains(&("X-Outer".into(), "o".into())), "folder header inherited");
+    assert!(o.headers.contains(&("X-User".into(), "staging-user".into())));
+    assert!(o.headers.contains(&("Authorization".into(), "Bearer folder-token".into())), "folder auth inherited");
+    assert_eq!(o.auth, Some(json!({"token": "folder-token"})));
+    assert_eq!(f.e.realtime_payload(rt.id(), "hi {{ user }}").unwrap(), "hi staging-user");
+}

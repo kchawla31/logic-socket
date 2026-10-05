@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Copy, Folder, FolderPlus, ListChecks, Pencil, Plug, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Folder, FolderPlus, ListChecks, Pencil, Plug, Plus, Radio, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { IconButton, useDialog, useToast } from '../components/ui';
@@ -75,7 +75,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
     return () => window.removeEventListener('click', close);
   }, []);
 
-  const create = async (kind: 'request' | 'folder' | 'mcp' | 'llm', parentId: string) => {
+  const create = async (kind: 'request' | 'folder' | 'mcp' | 'llm' | 'websocket' | 'socketio' | 'sse', parentId: string) => {
     try {
       if (parentId !== workspaceId) toggle(parentId, true);
       if (kind === 'request') {
@@ -84,6 +84,9 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
       } else if (kind === 'folder') {
         const f = await api.folderCreate(parentId, 'New Folder');
         setRenaming(f.id);
+      } else if (kind === 'websocket' || kind === 'socketio' || kind === 'sse') {
+        const r = await api.rtCreate(parentId, kind);
+        onCreated(r.id, 'realtime', r.name);
       } else if (kind === 'llm') {
         const r = await api.llmRequestCreate(parentId, 'New AI Request');
         onCreated(r.id, 'llm', r.name);
@@ -168,6 +171,10 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
               </>
             ) : n.kind === 'mcp' ? (
               <span className="w-9 shrink-0 text-right font-mono text-[10px] font-bold text-violet-600 dark:text-violet-400">MCP</span>
+            ) : n.kind === 'realtime' ? (
+              <span className="w-9 shrink-0 text-right font-mono text-[10px] font-bold text-sky-600 dark:text-sky-400">
+                {n.transport === 'sse' ? 'SSE' : n.transport === 'socketio' ? 'SIO' : 'WS'}
+              </span>
             ) : n.kind === 'llm' ? (
               <span className="w-9 shrink-0 text-right font-mono text-[10px] font-bold text-fuchsia-600 dark:text-fuchsia-400">AI</span>
             ) : (
@@ -217,17 +224,15 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
             className="h-7 w-full rounded-md border border-app bg-app pr-2 pl-7 text-[12.5px] outline-none focus:border-accent"
           />
         </div>
-        <IconButton label="New request" onClick={() => create('request', workspaceId)}>
+        <IconButton
+          label="New…"
+          onClick={e => {
+            e.stopPropagation();
+            const r = e.currentTarget.getBoundingClientRect();
+            setMenu({ x: r.left, y: r.bottom + 4, node: null });
+          }}
+        >
           <Plus className="size-4" />
-        </IconButton>
-        <IconButton label="New folder" onClick={() => create('folder', workspaceId)}>
-          <FolderPlus className="size-4" />
-        </IconButton>
-        <IconButton label="New MCP server" onClick={() => create('mcp', workspaceId)}>
-          <Plug className="size-4" />
-        </IconButton>
-        <IconButton label="New AI request" onClick={() => create('llm', workspaceId)}>
-          <Sparkles className="size-4" />
         </IconButton>
         <IconButton label="Run collection" onClick={() => onRun(workspaceId)}>
           <ListChecks className="size-4" />
@@ -272,6 +277,15 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
               </MenuItem>
               <MenuItem icon={<Sparkles className="size-3.5" />} onClick={() => create('llm', menu.node?.id ?? workspaceId)}>
                 New AI request
+              </MenuItem>
+              <MenuItem icon={<Radio className="size-3.5" />} onClick={() => create('websocket', menu.node?.id ?? workspaceId)}>
+                New WebSocket
+              </MenuItem>
+              <MenuItem icon={<Radio className="size-3.5" />} onClick={() => create('socketio', menu.node?.id ?? workspaceId)}>
+                New Socket.IO
+              </MenuItem>
+              <MenuItem icon={<Radio className="size-3.5" />} onClick={() => create('sse', menu.node?.id ?? workspaceId)}>
+                New event stream (SSE)
               </MenuItem>
               <MenuItem icon={<ListChecks className="size-3.5" />} onClick={() => onRun(menu.node?.id ?? workspaceId)}>
                 {menu.node ? 'Run folder' : 'Run collection'}
