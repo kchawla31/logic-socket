@@ -13,6 +13,7 @@ irs-core.workspace = true
 irs-engine.workspace = true
 irs-mcp.workspace = true
 irs-templating.workspace = true
+irs-runner.workspace = true
 tokio.workspace = true
 clap.workspace = true
 serde.workspace = true
@@ -22,3 +23,4 @@ chrono.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+irs-mcp.workspace = true

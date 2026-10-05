@@ -379,15 +379,28 @@ pub struct TimelineEntry {
     pub at_ms: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
 pub struct TestResult {
     pub name: String,
     pub passed: bool,
+    pub skipped: bool,
     pub error: Option<String>,
     pub duration_ms: f64,
     /// `pre-request` | `after-response`
     pub category: String,
+}
+
+/// One `console.*` line from a script.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ConsoleEntry {
+    /// `log` | `info` | `warn` | `error` | `debug`
+    pub level: String,
+    pub text: String,
+    pub timestamp_ms: i64,
+    /// Which script produced it, e.g. "pre-request: Folder Auth".
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -409,6 +422,9 @@ pub struct Response {
     pub timeline: Vec<TimelineEntry>,
     pub error: Option<String>,
     pub test_results: Vec<TestResult>,
+    pub console: Vec<ConsoleEntry>,
+    /// Script failure (pre-request or after-response), with location.
+    pub script_error: Option<String>,
 }
 model!(Response, "Response", "res");
 
@@ -448,6 +464,7 @@ pub struct Settings {
     /// `system` | `light` | `dark`
     pub theme: String,
     pub max_concurrent_requests: usize,
+    pub script_timeout_ms: u64,
 }
 
 impl Default for Settings {
@@ -460,6 +477,7 @@ impl Default for Settings {
             max_history_per_request: 20,
             theme: "system".into(),
             max_concurrent_requests: 8,
+            script_timeout_ms: 5_000,
         }
     }
 }

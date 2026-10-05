@@ -292,3 +292,133 @@ async fn send_many_keeps_order_history_prunes_and_large_bodies_go_to_disk() {
     assert!(r.body_b64.is_none() && r.body_path.is_some());
     assert_eq!(e.response_body(&r).len(), 2 * 1024 * 1024);
 }
+
+// ---------------------------------------------------------------- scripts in the pipeline
+
+#[tokio::test]
+async fn scripts_run_in_insomnia_order_and_persist_results() {
+    let base = server().await;
+    let f = fixture(&base);
+    // outer folder (parent of `f.folder`) gets scripts too
+    let outer_id = f.folder.meta.parent_id.clone().unwrap();
+    let mut outer = f.e.store.get::<Folder>(&outer_id).unwrap();
+    outer.pre_request_script = Some("console.log('outer pre'); insomnia.variables.set('trail', 'outer');".into());
+    outer.after_response_script = Some("console.log('outer after');".into());
+    f.e.store.update(&outer).unwrap();
+    let mut inner = f.e.store.get::<Folder>(f.folder.id()).unwrap();
+    inner.pre_request_script = Some("console.log('inner pre'); insomnia.variables.set('trail', insomnia.variables.get('trail') + '>inner');".into());
+    inner.after_response_script = Some("console.log('inner after');".into());
+    f.e.store.update(&inner).unwrap();
+    let mut req = f.e.store.get::<Request>(f.req.id()).unwrap();
+    req.pre_request_script = Some(
+        r#"console.log('request pre');
+        insomnia.environment.set('user', 'from-script');
+        insomnia.request.headers.add({ key: 'X-Trail', value: '{{ trail }}>request' });"#
+            .into(),
+    );
+    req.after_response_script = Some(
+        r#"console.log('request after');
+        const body = insomnia.response.json();
+        insomnia.environment.set('lastPath', body.path);
+        insomnia.test('status ok', () => insomnia.expect(insomnia.response.code).to.equal(200));
+        insomnia.test('header came through', () => insomnia.expect(body.headers['x-trail']).to.equal('outer>inner>request'));
+        insomnia.test('fails on purpose', () => insomnia.expect(1).to.equal(2));"#
+            .into(),
+    );
+    f.e.store.update(&req).unwrap();
+
+    let resp = f.e.send(f.req.id()).await.unwrap();
+    assert_eq!(resp.error, None);
+    assert_eq!(resp.script_error, None);
+    let order: Vec<&str> = resp.console.iter().map(|c| c.text.as_str()).collect();
+    assert_eq!(order, ["outer pre", "inner pre", "request pre", "request after", "inner after", "outer after"]);
+    assert_eq!(resp.console[3].source, "after-response");
+    // environment change applied before rendering (path param uses {{ user }})
+    assert_eq!(body_json(&f.e, &resp)["path"], "/users/from-script");
+    let results: Vec<(&str, bool)> = resp.test_results.iter().map(|t| (t.name.as_str(), t.passed)).collect();
+    assert_eq!(results, [("status ok", true), ("header came through", true), ("fails on purpose", false)]);
+    // persisted to the active sub-environment
+    let ws = f.e.store.get::<Workspace>(f.ws.id()).unwrap();
+    let sub = f.e.store.get::<Environment>(ws.active_environment_id.as_ref().unwrap()).unwrap();
+    assert_eq!(sub.data["user"], json!("from-script"));
+    assert_eq!(sub.data["lastPath"], json!("/users/from-script"));
+}
+
+#[tokio::test]
+async fn skip_and_script_errors_stop_the_send() {
+    let f = fixture("http://127.0.0.1:1");
+    let mut req = f.e.store.get::<Request>(f.req.id()).unwrap();
+    req.pre_request_script = Some("insomnia.execution.skipRequest(); insomnia.execution.setNextRequest('Other');".into());
+    f.e.store.update(&req).unwrap();
+    let out = f.e.send_with_state(f.req.id(), &mut RunState::default()).await.unwrap();
+    assert!(out.skipped);
+    assert_eq!(out.next_request.as_deref(), Some("Other"));
+    assert!(out.response.error.as_deref().unwrap().contains("skipped"));
+
+    req.pre_request_script = Some("const a = 1;\nnotDefined();".into());
+    f.e.store.update(&req).unwrap();
+    let resp = f.e.send(f.req.id()).await.unwrap();
+    let err = resp.error.clone().unwrap();
+    assert!(err.starts_with("Pre-request script error (pre-request): "), "{err}");
+    assert!(err.contains("line 2"), "{err}");
+    assert_eq!(resp.status_code, 0, "nothing was sent");
+}
+
+#[tokio::test]
+async fn send_request_from_script_reaches_server_and_iteration_data_renders() {
+    let base = server().await;
+    let f = fixture(&base);
+    let mut req = f.e.store.get::<Request>(f.req.id()).unwrap();
+    req.pre_request_script = Some(format!(
+        r#"const r = await insomnia.sendRequest({{ url: '{base}/token', method: 'POST', body: {{ mode: 'raw', raw: 'x' }} }});
+        insomnia.variables.set('tokenPath', r.json().path);"#
+    ));
+    req.headers.push(irs_core::KeyValue::new("X-Token-Path", "{{ tokenPath }}"));
+    req.headers.push(irs_core::KeyValue::new("X-Row", "{{ email }}"));
+    f.e.store.update(&req).unwrap();
+    let mut state = RunState { iteration_data: vars(json!({ "email": "a@b.c" })), iteration: 1, iteration_count: 1, ..Default::default() };
+    let out = f.e.send_with_state(f.req.id(), &mut state).await.unwrap();
+    let j = body_json(&f.e, &out.response);
+    assert_eq!(j["headers"]["x-token-path"], "/token");
+    assert_eq!(j["headers"]["x-row"], "a@b.c");
+    assert_eq!(state.local_variables["tokenPath"], json!("/token"), "locals carry across requests in a run");
+}
+
+#[tokio::test]
+async fn without_sub_environment_insomnia_environment_is_the_base() {
+    let base = server().await;
+    let e = Engine::in_memory();
+    let ws = e.store.insert(None, Workspace::default()).unwrap();
+    let mut b = e.base_environment(ws.id()).unwrap();
+    b.data = vars(json!({ "base": base, "keep": 1, "drop": 2 }));
+    e.store.update(&b).unwrap();
+    let first = e
+        .store
+        .insert(
+            Some(ws.id()),
+            Request {
+                url: "{{ _.base }}/a".into(),
+                after_response_script: Some(
+                    "insomnia.environment.set('token', 'abc'); insomnia.environment.unset('drop'); insomnia.baseEnvironment.set('other', true);".into(),
+                ),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let second = e
+        .store
+        .insert(
+            Some(ws.id()),
+            Request {
+                url: "{{ _.base }}/b".into(),
+                pre_request_script: Some("insomnia.request.headers.add({ key: 'X-T', value: insomnia.environment.get('token') });".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    e.send(first.id()).await.unwrap();
+    let data = e.base_environment(ws.id()).unwrap().data;
+    assert_eq!((data.get("token"), data.get("other"), data.get("drop"), data.get("keep")), (Some(&json!("abc")), Some(&json!(true)), None, Some(&json!(1))));
+    let r = e.send(second.id()).await.unwrap();
+    assert_eq!(body_json(&e, &r)["headers"]["x-t"], "abc");
+}

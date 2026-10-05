@@ -5,3 +5,15 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+irs-core.workspace = true
+irs-engine.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+csv.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+roxmltree = "0.20"

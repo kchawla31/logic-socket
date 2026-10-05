@@ -3,6 +3,9 @@
 
 pub mod curl;
 pub mod mcp;
+pub mod pipeline;
+
+pub use pipeline::{Outcome, RunState};
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -58,7 +61,7 @@ const INLINE_BODY_LIMIT: usize = 1024 * 1024;
 #[derive(Clone)]
 pub struct Engine {
     pub store: Store,
-    renderer: Arc<Renderer>,
+    pub(crate) renderer: Arc<Renderer>,
     data_dir: Option<PathBuf>,
 }
 
@@ -217,6 +220,11 @@ impl Engine {
     /// script variables) are applied on top of the environment.
     pub fn prepare(&self, request_id: &str, extra: &[Layer]) -> Result<Prepared> {
         let req: Request = self.store.get::<Request>(request_id)?.body;
+        self.prepare_request(request_id, &req, extra)
+    }
+
+    /// Like [`Engine::prepare`] but for an in-memory (e.g. script-mutated) request.
+    pub fn prepare_request(&self, request_id: &str, req: &Request, extra: &[Layer]) -> Result<Prepared> {
         let ws = self.workspace_of(request_id)?;
         let settings: Settings = self.store.settings()?.body;
         let mut layers = self.layers(request_id)?;
@@ -318,28 +326,10 @@ impl Engine {
         })
     }
 
-    /// Prepare, send and persist a response (errors are persisted too).
+    /// Run scripts, send and persist a response (errors are persisted too).
     pub async fn send(&self, request_id: &str) -> Result<Doc<Response>> {
-        self.send_with(request_id, &[]).await
-    }
-
-    pub async fn send_with(&self, request_id: &str, extra: &[Layer]) -> Result<Doc<Response>> {
-        let prepared = match self.prepare(request_id, extra) {
-            Ok(p) => p,
-            Err(EngineError::Render { field, source }) => {
-                let req: Doc<Request> = self.store.get(request_id)?;
-                let resp = Response {
-                    method: req.method.clone(),
-                    url: req.url.clone(),
-                    error: Some(format!("Could not render {field}: {source}")),
-                    ..Default::default()
-                };
-                return self.persist(request_id, resp, None);
-            }
-            Err(e) => return Err(e),
-        };
-        let (resp, jar) = self.execute(&prepared).await?;
-        self.persist(request_id, resp, jar)
+        let out = self.send_with_state(request_id, &mut RunState::default()).await?;
+        Ok(out.response)
     }
 
     /// Send a prepared request without persisting the response.
@@ -376,11 +366,12 @@ impl Engine {
         Ok((resp, jar_changed.then_some(jar)))
     }
 
-    fn persist(
+    pub(crate) fn persist(
         &self,
         request_id: &str,
         mut resp: Response,
         jar: Option<Doc<CookieJar>>,
+        envs: &[Doc<Environment>],
     ) -> Result<Doc<Response>> {
         let max_history = self.store.settings()?.max_history_per_request.max(1);
         let big_body = resp
@@ -406,6 +397,9 @@ impl Engine {
             let doc = tx.insert(Some(request_id), resp)?;
             if let Some(j) = &jar {
                 tx.update(j)?;
+            }
+            for e in envs {
+                tx.update(e)?;
             }
             let mut history = tx.children::<Response>(request_id)?;
             history.sort_by_key(|r| std::cmp::Reverse(r.meta.created));

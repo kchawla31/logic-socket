@@ -9,6 +9,7 @@ irs-core.workspace = true
 irs-templating.workspace = true
 irs-http.workspace = true
 irs-mcp.workspace = true
+irs-scripting.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

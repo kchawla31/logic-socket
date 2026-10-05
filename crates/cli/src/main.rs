@@ -2,6 +2,7 @@
 
 mod mcp_cmd;
 mod out;
+mod run_cmd;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
@@ -58,6 +59,9 @@ enum Cmd {
     Mcp(mcp_cmd::McpCmd),
     /// Render a template string in the context of a workspace/folder/request
     Render { target: String, template: String },
+    /// Run a collection or folder (scripts, tests, iterations) — like `inso run collection`
+    #[command(subcommand)]
+    Run(run_cmd::RunCmd),
 }
 
 #[derive(Subcommand, Debug)]
@@ -93,6 +97,15 @@ enum RequestCmd {
     Folder { parent: String, name: String },
     /// Show recent responses for a request
     History { request: String },
+    /// Attach pre-request / after-response scripts (from files) to a request or folder
+    Script {
+        /// Request or folder (name or id)
+        target: String,
+        #[arg(long)]
+        pre: Option<std::path::PathBuf>,
+        #[arg(long)]
+        after: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -192,6 +205,7 @@ async fn run(cli: Cli) -> Result<()> {
         Engine::open(dir.clone()).with_context(|| format!("opening data dir {}", dir.display()))?;
     match cli.cmd {
         Cmd::Mcp(c) => mcp_cmd::run(&engine, c).await,
+        Cmd::Run(c) => run_cmd::run(&engine, c).await,
         Cmd::Send {
             request,
             env,
@@ -414,6 +428,32 @@ fn request_cmd(engine: &Engine, c: RequestCmd) -> Result<()> {
                 },
             )?;
             println!("{} {} {}", green("✓"), bold(&d.name), dim(d.id()));
+        }
+        RequestCmd::Script { target, pre, after } => {
+            let read = |p: &Option<std::path::PathBuf>| -> Result<Option<String>> {
+                p.as_ref().map(|p| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))).transpose()
+            };
+            let (pre, after) = (read(&pre)?, read(&after)?);
+            if let Ok(mut r) = find::<Request>(engine, &target) {
+                if pre.is_some() {
+                    r.pre_request_script = pre;
+                }
+                if after.is_some() {
+                    r.after_response_script = after;
+                }
+                engine.store.update(&r)?;
+                println!("{} scripts updated on {}", green("✓"), bold(&r.name));
+            } else {
+                let mut f = find::<Folder>(engine, &target).context("target must be a request or folder")?;
+                if pre.is_some() {
+                    f.pre_request_script = pre;
+                }
+                if after.is_some() {
+                    f.after_response_script = after;
+                }
+                engine.store.update(&f)?;
+                println!("{} scripts updated on folder {}", green("✓"), bold(&f.name));
+            }
         }
         RequestCmd::History { request } => {
             let r = find::<Request>(engine, &request)?;
