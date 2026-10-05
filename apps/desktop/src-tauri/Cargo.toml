@@ -16,6 +16,7 @@ irs-core.workspace = true
 irs-engine.workspace = true
 irs-mcp.workspace = true
 irs-templating.workspace = true
+irs-runner.workspace = true
 tauri = { version = "2", features = [] }
 tokio.workspace = true
 serde.workspace = true
@@ -23,6 +24,7 @@ serde_json.workspace = true
 base64.workspace = true
 
 [dev-dependencies]
+tempfile.workspace = true
 tauri = { version = "2", features = ["test"] }
 irs-mcp.workspace = true
 axum.workspace = true

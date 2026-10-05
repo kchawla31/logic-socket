@@ -17,20 +17,43 @@ fn input(script: &str) -> ScriptInput {
             name: "Get user".into(),
             method: "GET".into(),
             url: "https://api.example.com/users/{{ _.id }}".into(),
-            query: vec![ScriptKv { key: "page".into(), value: "1".into(), disabled: false }],
-            headers: vec![ScriptKv { key: "Accept".into(), value: "application/json".into(), disabled: false }],
+            query: vec![ScriptKv {
+                key: "page".into(),
+                value: "1".into(),
+                disabled: false,
+            }],
+            headers: vec![ScriptKv {
+                key: "Accept".into(),
+                value: "application/json".into(),
+                disabled: false,
+            }],
             body: json!({}),
             auth: json!({ "type": "inherit" }),
         },
         response: None,
-        environment: NamedVars { name: "Staging".into(), data: vars(json!({ "value": "subEnv-value", "token": "t1" })) },
-        base_environment: NamedVars { name: "Base".into(), data: vars(json!({ "value": "base-value", "host": "example.com" })) },
-        globals: NamedVars { name: "Globals".into(), data: vars(json!({ "value": "global-value" })) },
+        environment: NamedVars {
+            name: "Staging".into(),
+            data: vars(json!({ "value": "subEnv-value", "token": "t1" })),
+        },
+        base_environment: NamedVars {
+            name: "Base".into(),
+            data: vars(json!({ "value": "base-value", "host": "example.com" })),
+        },
+        globals: NamedVars {
+            name: "Globals".into(),
+            data: vars(json!({ "value": "global-value" })),
+        },
         iteration_data: VarMap::new(),
         local_variables: VarMap::new(),
         folders: vec![],
         cookies: vec![],
-        info: Info { iteration: 1, iteration_count: 1, request_name: "Get user".into(), request_id: "req_1".into(), ..Default::default() },
+        info: Info {
+            iteration: 1,
+            iteration_count: 1,
+            request_name: "Get user".into(),
+            request_id: "req_1".into(),
+            ..Default::default()
+        },
         location: vec!["My Collection".into()],
     }
 }
@@ -40,8 +63,16 @@ fn after(script: &str, code: u16, body: &str) -> ScriptInput {
     i.event = Some(Event::AfterResponse);
     i.response = Some(ScriptResponseData {
         code,
-        status: if code == 200 { "OK".into() } else { "Not Found".into() },
-        headers: vec![ScriptKv { key: "Content-Type".into(), value: "application/json".into(), disabled: false }],
+        status: if code == 200 {
+            "OK".into()
+        } else {
+            "Not Found".into()
+        },
+        headers: vec![ScriptKv {
+            key: "Content-Type".into(),
+            value: "application/json".into(),
+            disabled: false,
+        }],
         body: body.into(),
         response_time: 12.0,
     });
@@ -49,7 +80,13 @@ fn after(script: &str, code: u16, body: &str) -> ScriptInput {
 }
 
 async fn exec(i: ScriptInput) -> ScriptOutput {
-    run(i, Limits::default(), Arc::new(NoNetwork), Arc::new(Renderer::new())).await
+    run(
+        i,
+        Limits::default(),
+        Arc::new(NoNetwork),
+        Arc::new(Renderer::new()),
+    )
+    .await
 }
 
 fn ok(o: &ScriptOutput) {
@@ -96,8 +133,14 @@ async fn variables_precedence_matches_insomnia() {
     );
     i.iteration_data = vars(json!({ "value": "iterationData-value" }));
     i.folders = vec![
-        FolderVars { name: "f1".into(), environment: vars(json!({ "value": "folderLevel1-value" })) },
-        FolderVars { name: "f2".into(), environment: vars(json!({ "value": "folderLevel2-value" })) },
+        FolderVars {
+            name: "f1".into(),
+            environment: vars(json!({ "value": "folderLevel1-value" })),
+        },
+        FolderVars {
+            name: "f2".into(),
+            environment: vars(json!({ "value": "folderLevel2-value" })),
+        },
     ];
     let o = exec(i).await;
     ok(&o);
@@ -129,8 +172,20 @@ async fn request_url_query_headers_method_mutations() {
     ok(&o);
     let r = o.request.unwrap();
     assert_eq!(r.method, "POST");
-    assert_eq!(r.query.iter().map(|q| (q.key.as_str(), q.value.as_str())).collect::<Vec<_>>(), [("page", "2"), ("sort", "asc"), ("q", "a b")]);
-    assert_eq!(r.headers.iter().map(|h| (h.key.as_str(), h.value.as_str())).collect::<Vec<_>>(), [("Accept", "text/plain"), ("X-Trace", "abc")]);
+    assert_eq!(
+        r.query
+            .iter()
+            .map(|q| (q.key.as_str(), q.value.as_str()))
+            .collect::<Vec<_>>(),
+        [("page", "2"), ("sort", "asc"), ("q", "a b")]
+    );
+    assert_eq!(
+        r.headers
+            .iter()
+            .map(|h| (h.key.as_str(), h.value.as_str()))
+            .collect::<Vec<_>>(),
+        [("Accept", "text/plain"), ("X-Trace", "abc")]
+    );
 }
 
 #[tokio::test]
@@ -148,7 +203,10 @@ async fn request_url_assignment_and_body_and_auth() {
     assert_eq!(r.url, "https://other.io/v2/items");
     assert_eq!(r.query[0].key, "limit");
     assert_eq!(r.body["raw"], json!("{\"a\":1}"));
-    assert_eq!(r.auth, json!({ "type": "bearer", "token": "{{ _.token }}", "prefix": null, "disabled": false }));
+    assert_eq!(
+        r.auth,
+        json!({ "type": "bearer", "token": "{{ _.token }}", "prefix": null, "disabled": false })
+    );
 }
 
 #[tokio::test]
@@ -171,8 +229,21 @@ async fn tests_and_chai_expect() {
     ))
     .await;
     ok(&o);
-    let by: Vec<(&str, &str)> = o.tests.iter().map(|t| (t.name.as_str(), t.status.as_str())).collect();
-    assert_eq!(by, [("status is 200", "passed"), ("fails", "failed"), ("skipped", "skipped"), ("json body", "passed"), ("async passes", "passed")]);
+    let by: Vec<(&str, &str)> = o
+        .tests
+        .iter()
+        .map(|t| (t.name.as_str(), t.status.as_str()))
+        .collect();
+    assert_eq!(
+        by,
+        [
+            ("status is 200", "passed"),
+            ("fails", "failed"),
+            ("skipped", "skipped"),
+            ("json body", "passed"),
+            ("async passes", "passed")
+        ]
+    );
     assert_eq!(o.tests[1].error.as_deref(), Some("expected 1 to equal 2"));
     assert!(o.tests.iter().all(|t| t.category == "after-response"));
 }
@@ -201,20 +272,40 @@ async fn response_assertions() {
     .await;
     ok(&o);
     assert_eq!(o.tests[0].status, "passed", "{:?}", o.tests[0].error);
-    assert_eq!(o.tests[1].error.as_deref(), Some("expected response to have status code 404 but got 200"));
+    assert_eq!(
+        o.tests[1].error.as_deref(),
+        Some("expected response to have status code 404 but got 200")
+    );
 }
 
 #[tokio::test]
 async fn execution_skip_and_next_request() {
     // ported: execution.test.ts
-    let o = exec(input("insomnia.execution.skipRequest(); insomnia.execution.setNextRequest('Login');")).await;
+    let o = exec(input(
+        "insomnia.execution.skipRequest(); insomnia.execution.setNextRequest('Login');",
+    ))
+    .await;
     ok(&o);
-    assert_eq!(o.execution, Execution { skip_request: true, next_request: Some("Login".into()) });
+    assert_eq!(
+        o.execution,
+        Execution {
+            skip_request: true,
+            next_request: Some("Login".into())
+        }
+    );
     let o = exec(input("insomnia.execution.setNextRequest(null);")).await;
     assert_eq!(o.execution.next_request.as_deref(), Some("__stop__"));
     let o = exec(after("insomnia.execution.skipRequest();", 200, "")).await;
-    assert!(o.error.unwrap().message.contains("only be used in pre-request"));
-    let o = exec(input("insomnia.environment.set('loc', insomnia.execution.location.join('/'));")).await;
+    assert!(
+        o.error
+            .unwrap()
+            .message
+            .contains("only be used in pre-request")
+    );
+    let o = exec(input(
+        "insomnia.environment.set('loc', insomnia.execution.location.join('/'));",
+    ))
+    .await;
     assert_eq!(o.environment["loc"], json!("My Collection/Get user"));
 }
 
@@ -241,10 +332,24 @@ async fn info_and_iteration_data() {
 #[tokio::test]
 async fn console_is_captured_with_levels() {
     // ported: console.test.ts
-    let o = exec(input("console.log('hi', {a: 1}); console.warn('careful'); console.error(new Error('boom'));")).await;
+    let o = exec(input(
+        "console.log('hi', {a: 1}); console.warn('careful'); console.error(new Error('boom'));",
+    ))
+    .await;
     ok(&o);
-    let lines: Vec<(&str, &str)> = o.console.iter().map(|c| (c.level.as_str(), c.text.as_str())).collect();
-    assert_eq!(lines, [("log", "hi {\n  \"a\": 1\n}"), ("warn", "careful"), ("error", "Error: boom")]);
+    let lines: Vec<(&str, &str)> = o
+        .console
+        .iter()
+        .map(|c| (c.level.as_str(), c.text.as_str()))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            ("log", "hi {\n  \"a\": 1\n}"),
+            ("warn", "careful"),
+            ("error", "Error: boom")
+        ]
+    );
 }
 
 #[tokio::test]
@@ -259,14 +364,23 @@ async fn cookies_jar_operations() {
         insomnia.environment.set('reqCookie', insomnia.cookies.get('old'));
         "#,
     );
-    i.cookies = vec![Cookie { name: "old".into(), value: "1".into(), domain: "api.example.com".into(), path: "/".into(), ..Default::default() }];
+    i.cookies = vec![Cookie {
+        name: "old".into(),
+        value: "1".into(),
+        domain: "api.example.com".into(),
+        path: "/".into(),
+        ..Default::default()
+    }];
     let o = exec(i).await;
     ok(&o);
     assert_eq!(o.environment["got"], json!("abc"));
     assert_eq!(o.environment["reqCookie"], json!("1"));
     let jar = o.cookies.unwrap();
     assert_eq!(jar.len(), 1);
-    assert_eq!((jar[0].name.as_str(), jar[0].value.as_str()), ("session", "abc"));
+    assert_eq!(
+        (jar[0].name.as_str(), jar[0].value.as_str()),
+        ("session", "abc")
+    );
 }
 
 #[tokio::test]
@@ -298,8 +412,14 @@ async fn require_vendored_modules() {
     let e = &o.environment;
     assert_eq!(e["chunk"], json!([[1, 2], [3]]));
     assert_eq!(e["globalLodash"], json!(3));
-    assert_eq!(e["sha"], json!("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
-    assert_eq!(e["hmac"], json!("LZPLwb4We8sWN6SiPL/wGnh48MUO6DOVTqUiG7G4xig="));
+    assert_eq!(
+        e["sha"],
+        json!("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    );
+    assert_eq!(
+        e["hmac"],
+        json!("LZPLwb4We8sWN6SiPL/wGnh48MUO6DOVTqUiG7G4xig=")
+    );
     assert_eq!(e["year"], json!("2020"));
     assert_eq!(e["uuidOk"], json!(true));
     assert_eq!(e["ajv"], json!(true));
@@ -310,23 +430,46 @@ async fn require_vendored_modules() {
 
 #[tokio::test]
 async fn unsupported_modules_and_apis_fail_clearly() {
-    for (m, needle) in [("fs", "NotSupported: require('fs')"), ("cheerio", "NotSupported: require('cheerio')"), ("leftpad", "Cannot find module")] {
+    for (m, needle) in [
+        ("fs", "NotSupported: require('fs')"),
+        ("cheerio", "NotSupported: require('cheerio')"),
+        ("leftpad", "Cannot find module"),
+    ] {
         let o = exec(input(&format!("require('{m}');"))).await;
-        assert!(o.error.as_ref().unwrap().message.contains(needle), "{m}: {:?}", o.error);
+        assert!(
+            o.error.as_ref().unwrap().message.contains(needle),
+            "{m}: {:?}",
+            o.error
+        );
     }
     let o = exec(input("insomnia.vault.get('x')")).await;
-    assert!(o.error.unwrap().message.contains("NotSupported: insomnia.vault"));
+    assert!(
+        o.error
+            .unwrap()
+            .message
+            .contains("NotSupported: insomnia.vault")
+    );
     let o = exec(input("fetch('http://x')")).await;
-    assert!(o.error.unwrap().message.contains("fetch"), "no fetch global");
+    assert!(
+        o.error.unwrap().message.contains("fetch"),
+        "no fetch global"
+    );
 }
 
 #[tokio::test]
 async fn errors_report_script_line_and_keep_partial_results() {
-    let o = exec(input("insomnia.environment.set('before', 1);\nconsole.log('x');\nundefinedFunction();\n")).await;
+    let o = exec(input(
+        "insomnia.environment.set('before', 1);\nconsole.log('x');\nundefinedFunction();\n",
+    ))
+    .await;
     let e = o.error.unwrap();
     assert!(e.message.contains("undefinedFunction"), "{e:?}");
     assert_eq!(e.line, Some(3));
-    assert_eq!(o.environment["before"], json!(1), "mutations before the error are kept");
+    assert_eq!(
+        o.environment["before"],
+        json!(1),
+        "mutations before the error are kept"
+    );
     assert_eq!(o.console.len(), 1);
 
     let o = exec(input("let x = ;")).await;
@@ -337,23 +480,47 @@ async fn errors_report_script_line_and_keep_partial_results() {
 
 #[tokio::test]
 async fn sandbox_kills_infinite_loops() {
-    let limits = Limits { timeout: Duration::from_millis(300), ..Default::default() };
+    let limits = Limits {
+        timeout: Duration::from_millis(300),
+        ..Default::default()
+    };
     let t = Instant::now();
-    let o = run(input("while (true) {}"), limits, Arc::new(NoNetwork), Arc::new(Renderer::new())).await;
+    let o = run(
+        input("while (true) {}"),
+        limits,
+        Arc::new(NoNetwork),
+        Arc::new(Renderer::new()),
+    )
+    .await;
     assert!(t.elapsed() < Duration::from_secs(3));
     assert!(o.error.unwrap().message.contains("timed out"));
 
     // an await that never resolves is cut off by the outer timeout
     let t = Instant::now();
-    let o = run(input("await new Promise(() => {});"), limits, Arc::new(NoNetwork), Arc::new(Renderer::new())).await;
+    let o = run(
+        input("await new Promise(() => {});"),
+        limits,
+        Arc::new(NoNetwork),
+        Arc::new(Renderer::new()),
+    )
+    .await;
     assert!(t.elapsed() < Duration::from_secs(3));
     assert!(o.error.is_some());
 }
 
 #[tokio::test]
 async fn sandbox_contains_memory_exhaustion() {
-    let limits = Limits { memory_bytes: 16 * 1024 * 1024, ..Default::default() };
-    let o = run(input("const a = []; while (true) a.push('x'.repeat(1024 * 64));"), limits, Arc::new(NoNetwork), Arc::new(Renderer::new())).await;
+    let limits = Limits {
+        memory_bytes: 16 * 1024 * 1024,
+        ..Default::default()
+    };
+    let o = run(
+        input("const a = []; while (true) a.push('x'.repeat(1024 * 64));"),
+        limits,
+        Arc::new(NoNetwork),
+        Arc::new(Renderer::new()),
+    )
+    .await;
     let msg = o.error.unwrap().message;
     assert!(msg.contains("memory") || msg.contains("timed out"), "{msg}");
 }
@@ -368,8 +535,14 @@ impl Host for Echo {
             Ok(ScriptResponseData {
                 code: 201,
                 status: "Created".into(),
-                headers: vec![ScriptKv { key: "X-Echo".into(), value: req.method.clone(), disabled: false }],
-                body: serde_json::json!({ "url": req.url, "body": req.body, "headers": req.headers }).to_string(),
+                headers: vec![ScriptKv {
+                    key: "X-Echo".into(),
+                    value: req.method.clone(),
+                    disabled: false,
+                }],
+                body:
+                    serde_json::json!({ "url": req.url, "body": req.body, "headers": req.headers })
+                        .to_string(),
                 response_time: 1.0,
             })
         })
@@ -396,7 +569,13 @@ async fn send_request_callback_and_promise() {
         }));
         try { await insomnia.sendRequest('https://fail.io'); } catch (e) { insomnia.environment.set('rejected', e.message); }
     "#;
-    let o = run(input(script), Limits::default(), Arc::new(Echo), Arc::new(Renderer::new())).await;
+    let o = run(
+        input(script),
+        Limits::default(),
+        Arc::new(Echo),
+        Arc::new(Renderer::new()),
+    )
+    .await;
     ok(&o);
     assert_eq!(o.environment["code"], json!(201));
     assert_eq!(o.environment["echo"], json!("hello"));
@@ -422,18 +601,40 @@ async fn timers_run_before_finish_and_clear_timeout_works() {
 
 #[tokio::test]
 async fn dollar_and_pm_aliases_and_parent_folders() {
-    let mut i = input("$.environment.set('a', 1); pm.environment.set('b', 2); insomnia.environment.set('f', insomnia.parentFolders.get('Auth').environment.get('scope'));");
-    i.folders = vec![FolderVars { name: "Auth".into(), environment: vars(json!({ "scope": "admin" })) }];
+    let mut i = input(
+        "$.environment.set('a', 1); pm.environment.set('b', 2); insomnia.environment.set('f', insomnia.parentFolders.get('Auth').environment.get('scope'));",
+    );
+    i.folders = vec![FolderVars {
+        name: "Auth".into(),
+        environment: vars(json!({ "scope": "admin" })),
+    }];
     let o = exec(i).await;
     ok(&o);
-    assert_eq!((o.environment["a"].clone(), o.environment["b"].clone(), o.environment["f"].clone()), (json!(1), json!(2), json!("admin")));
+    assert_eq!(
+        (
+            o.environment["a"].clone(),
+            o.environment["b"].clone(),
+            o.environment["f"].clone()
+        ),
+        (json!(1), json!(2), json!("admin"))
+    );
 }
 
 #[tokio::test]
 async fn each_vendored_module_loads_alone() {
-    for m in ["chai", "lodash", "crypto-js", "moment", "tv4", "ajv", "uuid"] {
-        let o = exec(input(&format!("const m = require('{m}'); if (!m) throw new Error('empty');"))).await;
+    for m in [
+        "chai",
+        "lodash",
+        "crypto-js",
+        "moment",
+        "tv4",
+        "ajv",
+        "uuid",
+    ] {
+        let o = exec(input(&format!(
+            "const m = require('{m}'); if (!m) throw new Error('empty');"
+        )))
+        .await;
         assert!(o.error.is_none(), "{m}: {:?}", o.error);
     }
 }
-

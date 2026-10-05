@@ -72,6 +72,24 @@ export interface Folder extends Meta {
   environment: Record<string, unknown>;
   headers: KeyValue[];
   authentication: Auth;
+  preRequestScript?: string | null;
+  afterResponseScript?: string | null;
+}
+
+export interface TestResult {
+  name: string;
+  passed: boolean;
+  skipped: boolean;
+  error?: string | null;
+  durationMs: number;
+  category: string;
+}
+
+export interface ConsoleEntry {
+  level: 'log' | 'info' | 'warn' | 'error' | 'debug' | string;
+  text: string;
+  timestampMs: number;
+  source: string;
 }
 
 export interface Workspace extends Meta {
@@ -132,6 +150,9 @@ export interface ResponseView extends Meta {
   timings: Timings;
   timeline: TimelineEntry[];
   error?: string | null;
+  testResults: TestResult[];
+  console: ConsoleEntry[];
+  scriptError?: string | null;
   bodyText: string;
   bodyTruncated: boolean;
   bodyImage?: string | null;
@@ -298,6 +319,52 @@ export interface Notification {
   timestampMs: number;
 }
 
+// ---- runner
+
+export interface RunResult {
+  iteration: number;
+  requestId: string;
+  name: string;
+  method: string;
+  url: string;
+  status: number;
+  statusMessage: string;
+  durationMs: number;
+  error?: string | null;
+  scriptError?: string | null;
+  skipped: boolean;
+  tests: TestResult[];
+  console: ConsoleEntry[];
+  responseId?: string | null;
+}
+
+export interface RunSummary {
+  iterations: number;
+  requests: number;
+  requestsFailed: number;
+  requestsSkipped: number;
+  testsPassed: number;
+  testsFailed: number;
+  testsSkipped: number;
+  durationMs: number;
+  bailed: boolean;
+  cancelled: boolean;
+  results: RunResult[];
+}
+
+export type RunEvent =
+  | { type: 'runStart'; requests: number; iterations: number }
+  | { type: 'iterationStart'; iteration: number }
+  | { type: 'requestStart'; iteration: number; requestId: string; name: string; method: string }
+  | { type: 'requestEnd'; result: RunResult }
+  | { type: 'iterationEnd'; iteration: number }
+  | { type: 'warning'; iteration: number; message: string }
+  | { type: 'done'; summary: RunSummary };
+
+export function runFailed(r: RunResult): boolean {
+  return !r.skipped && (!!r.error || !!r.scriptError || r.tests.some(t => !t.passed && !t.skipped));
+}
+
 export const api = {
   treeGet: (workspaceId: string) => invoke<TreeNode[]>('tree_get', { workspaceId }),
   workspaceList: () => invoke<Workspace[]>('workspace_list'),
@@ -344,7 +411,15 @@ export const api = {
   mcpLog: (serverId: string) => invoke<LogEntry[]>('mcp_log', { serverId }),
   mcpLogClear: (serverId: string) => invoke<void>('mcp_log_clear', { serverId }),
   mcpNotifications: (serverId: string) => invoke<Notification[]>('mcp_notifications', { serverId }),
+  runnerStart: (run: { runId?: string; requestIds: string[]; iterations: number; delayMs: number; bail: boolean; dataText?: string | null }) =>
+    invoke<string>('runner_start', { run }),
+  runnerCancel: (runId: string) => invoke<void>('runner_cancel', { runId }),
+  runnerExport: (runId: string, reporter: 'junit' | 'json' | 'spec') => invoke<string>('runner_export', { runId, reporter }),
 };
+
+export function onRunnerEvent(cb: (runId: string, ev: RunEvent) => void): Promise<UnlistenFn> {
+  return listen<{ runId: string; event: RunEvent }>('runner-event', e => cb(e.payload.runId, e.payload.event));
+}
 
 export function onDbChanged(cb: () => void): Promise<UnlistenFn> {
   return listen('db-changed', () => cb());

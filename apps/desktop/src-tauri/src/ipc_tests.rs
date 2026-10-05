@@ -313,3 +313,57 @@ fn mcp_inspector_commands_against_mock_server() {
             .is_empty()
     );
 }
+
+#[test]
+fn runner_commands_stream_and_export() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let url = rt
+        .block_on(irs_mcp::mock::spawn_http(Default::default(), 0))
+        .unwrap();
+    let h = Harness::new();
+    let ws = h.ok("workspace_create", json!({"name": "API"}));
+    let req = h.ok(
+        "request_create",
+        json!({"parentId": ws["id"], "request": {
+            "name": "Init", "method": "POST", "url": url,
+            "headers": [{"name": "Accept", "value": "application/json"}],
+            "body": {"mimeType": "application/json", "text": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}", "params": []},
+            "afterResponseScript": "insomnia.test('ok', () => insomnia.response.to.have.status(200)); console.log('row', insomnia.iterationData.get('n'));"
+        }}),
+    );
+    assert!(
+        h.call(
+            "runner_start",
+            json!({"run": {"requestIds": [], "iterations": 1, "delayMs": 0, "bail": false}})
+        )
+        .is_err()
+    );
+    let run_id = h.ok(
+        "runner_start",
+        json!({"run": {"requestIds": [req["id"]], "iterations": 2, "delayMs": 0, "bail": false, "dataText": "n\n1\n2\n"}}),
+    );
+    let run_id = run_id.as_str().unwrap().to_string();
+    let out_dir = tempfile::tempdir().unwrap();
+    let mut path = None;
+    for _ in 0..100 {
+        match h.call(
+            "runner_export",
+            json!({"runId": run_id, "reporter": "json", "dir": out_dir.path()}),
+        ) {
+            Ok(p) => {
+                path = Some(p.as_str().unwrap().to_string());
+                break;
+            }
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    }
+    let report: Value =
+        serde_json::from_str(&std::fs::read_to_string(path.expect("run finished")).unwrap())
+            .unwrap();
+    assert_eq!(
+        (report["requests"].as_u64(), report["testsPassed"].as_u64()),
+        (Some(2), Some(2))
+    );
+    assert_eq!(report["results"][1]["console"][0]["text"], "row 2");
+    h.ok("runner_cancel", json!({"runId": run_id}));
+}

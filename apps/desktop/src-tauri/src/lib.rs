@@ -14,7 +14,7 @@ use irs_mcp::schema::{self, ParamRow};
 use irs_mcp::{Client, Hints, InitializeResult, LogEntry, Notification, ProtocolLog, Tool};
 use serde::Serialize;
 use serde_json::{Value, json};
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 use tokio::sync::Mutex;
 
 type CmdResult<T> = Result<T, String>;
@@ -27,6 +27,13 @@ pub struct AppState {
     engine: Engine,
     mcp: Mutex<HashMap<String, Arc<Client>>>,
     logs: std::sync::Mutex<HashMap<String, ProtocolLog>>,
+    runs: std::sync::Mutex<HashMap<String, RunSlot>>,
+}
+
+#[derive(Default)]
+struct RunSlot {
+    cancel: Arc<std::sync::atomic::AtomicBool>,
+    summary: Option<irs_runner::Summary>,
 }
 
 impl AppState {
@@ -726,6 +733,121 @@ async fn mcp_notifications(
     })
 }
 
+// ------------------------------------------------------------------ runner
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunRequest {
+    /// Client-chosen id so events can't arrive before the UI knows it.
+    run_id: Option<String>,
+    request_ids: Vec<String>,
+    iterations: u32,
+    delay_ms: u64,
+    bail: bool,
+    /// CSV or JSON data file contents.
+    data_text: Option<String>,
+}
+
+#[tauri::command]
+async fn runner_start<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, AppState>,
+    run: RunRequest,
+) -> CmdResult<String> {
+    let data = match run.data_text.as_deref().filter(|t| !t.trim().is_empty()) {
+        Some(t) => irs_runner::parse_data(t).map_err(e)?,
+        None => vec![],
+    };
+    if run.request_ids.is_empty() {
+        return Err("Select at least one request to run".into());
+    }
+    let run_id = run
+        .run_id
+        .clone()
+        .filter(|r| !r.is_empty())
+        .unwrap_or_else(|| irs_core::new_id("run"));
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    state.runs.lock().unwrap().insert(
+        run_id.clone(),
+        RunSlot {
+            cancel: cancel.clone(),
+            summary: None,
+        },
+    );
+    let opts = irs_runner::RunOptions {
+        iterations: run.iterations.max(1),
+        delay_ms: run.delay_ms,
+        data,
+        bail: run.bail,
+        cancel: Some(cancel),
+        ..Default::default()
+    };
+    let engine = state.engine.clone();
+    let id = run_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let summary = irs_runner::run(&engine, &run.request_ids, &opts, |ev| {
+            let _ = app.emit("runner-event", json!({ "runId": id, "event": ev }));
+        })
+        .await;
+        if let Some(state) = app.try_state::<AppState>()
+            && let Some(slot) = state.runs.lock().unwrap().get_mut(&id)
+        {
+            slot.summary = Some(summary);
+        }
+    });
+    Ok(run_id)
+}
+
+#[tauri::command]
+fn runner_cancel(state: State<'_, AppState>, run_id: String) {
+    if let Some(slot) = state.runs.lock().unwrap().get(&run_id) {
+        slot.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Write a finished run's report to `dir` (default: Downloads) and return the path.
+#[tauri::command]
+fn runner_export(
+    state: State<'_, AppState>,
+    run_id: String,
+    reporter: String,
+    dir: Option<String>,
+) -> CmdResult<String> {
+    let runs = state.runs.lock().unwrap();
+    let summary = runs
+        .get(&run_id)
+        .and_then(|s| s.summary.as_ref())
+        .ok_or("The run has not finished yet")?;
+    let text = irs_runner::report::render(summary, &reporter).ok_or("Unknown report format")?;
+    let ext = match reporter.as_str() {
+        "junit" => "xml",
+        "json" => "json",
+        _ => "txt",
+    };
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let dir = match dir {
+        Some(d) => std::path::PathBuf::from(d),
+        None => [home.join("Downloads"), home.clone()]
+            .into_iter()
+            .find(|d| d.is_dir())
+            .unwrap_or(home),
+    };
+    let stamp = chrono_like_stamp();
+    let path = dir.join(format!("insomnia-rs-run-{stamp}.{ext}"));
+    std::fs::write(&path, text).map_err(e)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+fn chrono_like_stamp() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    secs.to_string()
+}
+
 // ------------------------------------------------------------------ app
 
 fn seed_if_empty(engine: &Engine) -> irs_core::store::Result<()> {
@@ -788,6 +910,7 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             engine: engine.clone(),
             mcp: Mutex::default(),
             logs: Default::default(),
+            runs: Default::default(),
         })
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -839,6 +962,9 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             mcp_log,
             mcp_log_clear,
             mcp_notifications,
+            runner_start,
+            runner_cancel,
+            runner_export,
         ])
 }
 

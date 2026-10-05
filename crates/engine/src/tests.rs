@@ -302,7 +302,8 @@ async fn scripts_run_in_insomnia_order_and_persist_results() {
     // outer folder (parent of `f.folder`) gets scripts too
     let outer_id = f.folder.meta.parent_id.clone().unwrap();
     let mut outer = f.e.store.get::<Folder>(&outer_id).unwrap();
-    outer.pre_request_script = Some("console.log('outer pre'); insomnia.variables.set('trail', 'outer');".into());
+    outer.pre_request_script =
+        Some("console.log('outer pre'); insomnia.variables.set('trail', 'outer');".into());
     outer.after_response_script = Some("console.log('outer after');".into());
     f.e.store.update(&outer).unwrap();
     let mut inner = f.e.store.get::<Folder>(f.folder.id()).unwrap();
@@ -331,15 +332,39 @@ async fn scripts_run_in_insomnia_order_and_persist_results() {
     assert_eq!(resp.error, None);
     assert_eq!(resp.script_error, None);
     let order: Vec<&str> = resp.console.iter().map(|c| c.text.as_str()).collect();
-    assert_eq!(order, ["outer pre", "inner pre", "request pre", "request after", "inner after", "outer after"]);
+    assert_eq!(
+        order,
+        [
+            "outer pre",
+            "inner pre",
+            "request pre",
+            "request after",
+            "inner after",
+            "outer after"
+        ]
+    );
     assert_eq!(resp.console[3].source, "after-response");
     // environment change applied before rendering (path param uses {{ user }})
     assert_eq!(body_json(&f.e, &resp)["path"], "/users/from-script");
-    let results: Vec<(&str, bool)> = resp.test_results.iter().map(|t| (t.name.as_str(), t.passed)).collect();
-    assert_eq!(results, [("status ok", true), ("header came through", true), ("fails on purpose", false)]);
+    let results: Vec<(&str, bool)> = resp
+        .test_results
+        .iter()
+        .map(|t| (t.name.as_str(), t.passed))
+        .collect();
+    assert_eq!(
+        results,
+        [
+            ("status ok", true),
+            ("header came through", true),
+            ("fails on purpose", false)
+        ]
+    );
     // persisted to the active sub-environment
     let ws = f.e.store.get::<Workspace>(f.ws.id()).unwrap();
-    let sub = f.e.store.get::<Environment>(ws.active_environment_id.as_ref().unwrap()).unwrap();
+    let sub =
+        f.e.store
+            .get::<Environment>(ws.active_environment_id.as_ref().unwrap())
+            .unwrap();
     assert_eq!(sub.data["user"], json!("from-script"));
     assert_eq!(sub.data["lastPath"], json!("/users/from-script"));
 }
@@ -348,9 +373,14 @@ async fn scripts_run_in_insomnia_order_and_persist_results() {
 async fn skip_and_script_errors_stop_the_send() {
     let f = fixture("http://127.0.0.1:1");
     let mut req = f.e.store.get::<Request>(f.req.id()).unwrap();
-    req.pre_request_script = Some("insomnia.execution.skipRequest(); insomnia.execution.setNextRequest('Other');".into());
+    req.pre_request_script = Some(
+        "insomnia.execution.skipRequest(); insomnia.execution.setNextRequest('Other');".into(),
+    );
     f.e.store.update(&req).unwrap();
-    let out = f.e.send_with_state(f.req.id(), &mut RunState::default()).await.unwrap();
+    let out =
+        f.e.send_with_state(f.req.id(), &mut RunState::default())
+            .await
+            .unwrap();
     assert!(out.skipped);
     assert_eq!(out.next_request.as_deref(), Some("Other"));
     assert!(out.response.error.as_deref().unwrap().contains("skipped"));
@@ -359,7 +389,10 @@ async fn skip_and_script_errors_stop_the_send() {
     f.e.store.update(&req).unwrap();
     let resp = f.e.send(f.req.id()).await.unwrap();
     let err = resp.error.clone().unwrap();
-    assert!(err.starts_with("Pre-request script error (pre-request): "), "{err}");
+    assert!(
+        err.starts_with("Pre-request script error (pre-request): "),
+        "{err}"
+    );
     assert!(err.contains("line 2"), "{err}");
     assert_eq!(resp.status_code, 0, "nothing was sent");
 }
@@ -373,15 +406,26 @@ async fn send_request_from_script_reaches_server_and_iteration_data_renders() {
         r#"const r = await insomnia.sendRequest({{ url: '{base}/token', method: 'POST', body: {{ mode: 'raw', raw: 'x' }} }});
         insomnia.variables.set('tokenPath', r.json().path);"#
     ));
-    req.headers.push(irs_core::KeyValue::new("X-Token-Path", "{{ tokenPath }}"));
-    req.headers.push(irs_core::KeyValue::new("X-Row", "{{ email }}"));
+    req.headers
+        .push(irs_core::KeyValue::new("X-Token-Path", "{{ tokenPath }}"));
+    req.headers
+        .push(irs_core::KeyValue::new("X-Row", "{{ email }}"));
     f.e.store.update(&req).unwrap();
-    let mut state = RunState { iteration_data: vars(json!({ "email": "a@b.c" })), iteration: 1, iteration_count: 1, ..Default::default() };
+    let mut state = RunState {
+        iteration_data: vars(json!({ "email": "a@b.c" })),
+        iteration: 1,
+        iteration_count: 1,
+        ..Default::default()
+    };
     let out = f.e.send_with_state(f.req.id(), &mut state).await.unwrap();
     let j = body_json(&f.e, &out.response);
     assert_eq!(j["headers"]["x-token-path"], "/token");
     assert_eq!(j["headers"]["x-row"], "a@b.c");
-    assert_eq!(state.local_variables["tokenPath"], json!("/token"), "locals carry across requests in a run");
+    assert_eq!(
+        state.local_variables["tokenPath"],
+        json!("/token"),
+        "locals carry across requests in a run"
+    );
 }
 
 #[tokio::test]
@@ -417,8 +461,21 @@ async fn without_sub_environment_insomnia_environment_is_the_base() {
         )
         .unwrap();
     e.send(first.id()).await.unwrap();
-    let data = e.base_environment(ws.id()).unwrap().data;
-    assert_eq!((data.get("token"), data.get("other"), data.get("drop"), data.get("keep")), (Some(&json!("abc")), Some(&json!(true)), None, Some(&json!(1))));
+    let data = e.base_environment(ws.id()).unwrap().body.data;
+    assert_eq!(
+        (
+            data.get("token"),
+            data.get("other"),
+            data.get("drop"),
+            data.get("keep")
+        ),
+        (
+            Some(&json!("abc")),
+            Some(&json!(true)),
+            None,
+            Some(&json!(1))
+        )
+    );
     let r = e.send(second.id()).await.unwrap();
     assert_eq!(body_json(&e, &r)["headers"]["x-t"], "abc");
 }

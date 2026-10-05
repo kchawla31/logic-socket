@@ -224,7 +224,12 @@ impl Engine {
     }
 
     /// Like [`Engine::prepare`] but for an in-memory (e.g. script-mutated) request.
-    pub fn prepare_request(&self, request_id: &str, req: &Request, extra: &[Layer]) -> Result<Prepared> {
+    pub fn prepare_request(
+        &self,
+        request_id: &str,
+        req: &Request,
+        extra: &[Layer],
+    ) -> Result<Prepared> {
         let ws = self.workspace_of(request_id)?;
         let settings: Settings = self.store.settings()?.body;
         let mut layers = self.layers(request_id)?;
@@ -328,7 +333,9 @@ impl Engine {
 
     /// Run scripts, send and persist a response (errors are persisted too).
     pub async fn send(&self, request_id: &str) -> Result<Doc<Response>> {
-        let out = self.send_with_state(request_id, &mut RunState::default()).await?;
+        let out = self
+            .send_with_state(request_id, &mut RunState::default())
+            .await?;
         Ok(out.response)
     }
 

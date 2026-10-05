@@ -431,10 +431,21 @@ fn request_cmd(engine: &Engine, c: RequestCmd) -> Result<()> {
         }
         RequestCmd::Script { target, pre, after } => {
             let read = |p: &Option<std::path::PathBuf>| -> Result<Option<String>> {
-                p.as_ref().map(|p| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))).transpose()
+                p.as_ref()
+                    .map(|p| {
+                        std::fs::read_to_string(p)
+                            .with_context(|| format!("reading {}", p.display()))
+                    })
+                    .transpose()
             };
             let (pre, after) = (read(&pre)?, read(&after)?);
-            if let Ok(mut r) = find::<Request>(engine, &target) {
+            let found = find::<Request>(engine, &target);
+            if let Err(e) = &found
+                && e.to_string().contains("are named")
+            {
+                bail!("{e}");
+            }
+            if let Ok(mut r) = found {
                 if pre.is_some() {
                     r.pre_request_script = pre;
                 }
@@ -444,7 +455,8 @@ fn request_cmd(engine: &Engine, c: RequestCmd) -> Result<()> {
                 engine.store.update(&r)?;
                 println!("{} scripts updated on {}", green("✓"), bold(&r.name));
             } else {
-                let mut f = find::<Folder>(engine, &target).context("target must be a request or folder")?;
+                let mut f = find::<Folder>(engine, &target)
+                    .context("target must be a request or folder")?;
                 if pre.is_some() {
                     f.pre_request_script = pre;
                 }

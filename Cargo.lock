@@ -1907,11 +1907,13 @@ dependencies = [
  "irs-core",
  "irs-engine",
  "irs-mcp",
+ "irs-runner",
  "irs-templating",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "tempfile",
  "tokio",
  "tower-http",
 ]

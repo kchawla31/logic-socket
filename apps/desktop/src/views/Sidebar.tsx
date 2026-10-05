@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Copy, Folder, FolderPlus, Pencil, Plug, Plus, Search, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Folder, FolderPlus, ListChecks, Pencil, Plug, Plus, Search, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { IconButton, useDialog, useToast } from '../components/ui';
@@ -12,6 +12,7 @@ interface Props {
   onOpen: (node: TreeNode) => void;
   onCreated: (id: string, kind: TreeNode['kind'], name: string) => void;
   onDeleted: (ids: string[]) => void;
+  onRun: (targetId: string) => void;
 }
 
 function useExpanded(workspaceId: string) {
@@ -58,7 +59,7 @@ interface Menu {
   node: TreeNode | null;
 }
 
-export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDeleted }: Props) {
+export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDeleted, onRun }: Props) {
   const toast = useToast();
   const dialog = useDialog();
   const [q, setQ] = useState('');
@@ -220,6 +221,9 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
         <IconButton label="New MCP server" onClick={() => create('mcp', workspaceId)}>
           <Plug className="size-4" />
         </IconButton>
+        <IconButton label="Run collection" onClick={() => onRun(workspaceId)}>
+          <ListChecks className="size-4" />
+        </IconButton>
       </div>
       <div
         role="tree"
@@ -257,6 +261,9 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
               </MenuItem>
               <MenuItem icon={<Plug className="size-3.5" />} onClick={() => create('mcp', menu.node?.id ?? workspaceId)}>
                 New MCP server
+              </MenuItem>
+              <MenuItem icon={<ListChecks className="size-3.5" />} onClick={() => onRun(menu.node?.id ?? workspaceId)}>
+                {menu.node ? 'Run folder' : 'Run collection'}
               </MenuItem>
             </>
           )}

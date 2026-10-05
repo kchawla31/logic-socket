@@ -138,7 +138,7 @@ export function Tabs({
   right?: ReactNode;
 }) {
   return (
-    <div role="tablist" className={cn('flex h-9 shrink-0 items-end gap-1 border-b border-app px-2', className)}>
+    <div role="tablist" className={cn('flex h-9 shrink-0 items-end gap-1 overflow-x-auto overflow-y-hidden border-b border-app px-2 [scrollbar-width:none]', className)}>
       {tabs.map(t => (
         <button
           key={t.id}
@@ -146,7 +146,7 @@ export function Tabs({
           aria-selected={value === t.id}
           onClick={() => onChange(t.id)}
           className={cn(
-            '-mb-px flex h-8 items-center gap-1.5 border-b-2 px-2.5 text-[13px] transition-colors',
+            '-mb-px flex h-8 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-[13px] whitespace-nowrap transition-colors',
             value === t.id ? 'border-accent text-app font-medium' : 'border-transparent text-muted hover:text-app',
           )}
         >

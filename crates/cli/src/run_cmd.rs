@@ -50,7 +50,10 @@ pub struct CollectionArgs {
 pub async fn run(engine: &Engine, cmd: RunCmd) -> Result<()> {
     let RunCmd::Collection(a) = cmd;
     if !["spec", "dot", "json", "junit"].contains(&a.reporter.as_str()) {
-        bail!("unknown reporter '{}' (use spec, dot, json or junit)", a.reporter);
+        bail!(
+            "unknown reporter '{}' (use spec, dot, json or junit)",
+            a.reporter
+        );
     }
     let target_id = crate::find::<Folder>(engine, &a.target)
         .map(|f| f.meta.id)
@@ -75,7 +78,12 @@ pub async fn run(engine: &Engine, cmd: RunCmd) -> Result<()> {
             if let Ok(f) = crate::find::<Folder>(engine, item) {
                 keep.extend(engine.request_ids_in(f.id())?);
             } else {
-                keep.push(crate::find::<Request>(engine, item).with_context(|| format!("--item {item}"))?.meta.id);
+                keep.push(
+                    crate::find::<Request>(engine, item)
+                        .with_context(|| format!("--item {item}"))?
+                        .meta
+                        .id,
+                );
             }
         }
         ids.retain(|id| keep.contains(id));
@@ -89,7 +97,9 @@ pub async fn run(engine: &Engine, cmd: RunCmd) -> Result<()> {
         None => vec![],
     };
     for kv in &a.env_vars {
-        let (k, v) = kv.split_once('=').ok_or_else(|| anyhow!("--env-var must be KEY=value"))?;
+        let (k, v) = kv
+            .split_once('=')
+            .ok_or_else(|| anyhow!("--env-var must be KEY=value"))?;
         if data.is_empty() {
             data.push(Default::default());
         }
@@ -97,8 +107,18 @@ pub async fn run(engine: &Engine, cmd: RunCmd) -> Result<()> {
             row.insert(k.to_string(), serde_json::Value::String(v.to_string()));
         }
     }
-    let iterations = a.iterations.unwrap_or(if a.data.is_some() { data.len().max(1) as u32 } else { 1 });
-    let opts = RunOptions { iterations, delay_ms: a.delay, data, bail: a.bail, ..Default::default() };
+    let iterations = a.iterations.unwrap_or(if a.data.is_some() {
+        data.len().max(1) as u32
+    } else {
+        1
+    });
+    let opts = RunOptions {
+        iterations,
+        delay_ms: a.delay,
+        data,
+        bail: a.bail,
+        ..Default::default()
+    };
 
     // Stream progress for the human reporters when printing to a terminal.
     let live = a.reporter == "spec" && a.output.is_none();
@@ -107,9 +127,17 @@ pub async fn run(engine: &Engine, cmd: RunCmd) -> Result<()> {
             return;
         }
         match ev {
-            RunEvent::IterationStart { iteration } if iterations > 1 => println!("\n{}", bold(&format!("Iteration {iteration}/{iterations}"))),
+            RunEvent::IterationStart { iteration } if iterations > 1 => {
+                println!("\n{}", bold(&format!("Iteration {iteration}/{iterations}")))
+            }
             RunEvent::RequestEnd { result: r } => {
-                let mark = if r.skipped { dim("-") } else if r.failed() { red("✗") } else { green("✓") };
+                let mark = if r.skipped {
+                    dim("-")
+                } else if r.failed() {
+                    red("✗")
+                } else {
+                    green("✓")
+                };
                 let status = if r.skipped {
                     dim("skipped")
                 } else if let Some(e) = &r.error {
@@ -118,7 +146,13 @@ pub async fn run(engine: &Engine, cmd: RunCmd) -> Result<()> {
                     let s = format!("{} {}", r.status, r.status_message);
                     if r.status >= 400 { yellow(&s) } else { s }
                 };
-                println!("  {mark} {} {} {} {}", bold(&r.method), r.name, status, dim(&format!("({:.0} ms)", r.duration_ms)));
+                println!(
+                    "  {mark} {} {} {} {}",
+                    bold(&r.method),
+                    r.name,
+                    status,
+                    dim(&format!("({:.0} ms)", r.duration_ms))
+                );
                 if let Some(e) = &r.script_error {
                     println!("      {}", red(&format!("script error: {e}")));
                 }
@@ -128,10 +162,19 @@ pub async fn run(engine: &Engine, cmd: RunCmd) -> Result<()> {
                     } else if t.passed {
                         println!("      {} {}", green("✓"), t.name);
                     } else {
-                        println!("      {} {} {}", red("✗"), t.name, dim(&format!("— {}", t.error.clone().unwrap_or_default())));
+                        println!(
+                            "      {} {} {}",
+                            red("✗"),
+                            t.name,
+                            dim(&format!("— {}", t.error.clone().unwrap_or_default()))
+                        );
                     }
                 }
-                for c in r.console.iter().filter(|c| c.level == "error" || c.level == "warn") {
+                for c in r
+                    .console
+                    .iter()
+                    .filter(|c| c.level == "error" || c.level == "warn")
+                {
                     println!("      {} {}", yellow(&format!("[{}]", c.level)), c.text);
                 }
             }
@@ -152,7 +195,11 @@ pub async fn run(engine: &Engine, cmd: RunCmd) -> Result<()> {
             summary.tests_failed,
             summary.tests_skipped,
             summary.duration_ms,
-            if summary.bailed { "\nStopped early (--bail) after the first failure." } else { "" }
+            if summary.bailed {
+                "\nStopped early (--bail) after the first failure."
+            } else {
+                ""
+            }
         );
         if summary.ok() { green(&t) } else { red(&t) }
     } else {
@@ -161,7 +208,14 @@ pub async fn run(engine: &Engine, cmd: RunCmd) -> Result<()> {
     match &a.output {
         Some(path) => {
             std::fs::write(path, &text).with_context(|| format!("writing {path}"))?;
-            eprintln!("{} report written to {path}", if summary.ok() { green("✓") } else { red("✗") });
+            eprintln!(
+                "{} report written to {path}",
+                if summary.ok() {
+                    green("✓")
+                } else {
+                    red("✗")
+                }
+            );
         }
         None => println!("{text}"),
     }

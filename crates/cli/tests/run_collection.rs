@@ -5,7 +5,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn irs(data: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_irs")).args(args).env("IRS_DATA_DIR", data).env("NO_COLOR", "1").output().unwrap()
+    Command::new(env!("CARGO_BIN_EXE_irs"))
+        .args(args)
+        .env("IRS_DATA_DIR", data)
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap()
 }
 
 fn fixtures() -> PathBuf {
@@ -33,13 +38,19 @@ fn seed(data: &Path, base_url: &str) {
     for s in steps {
         let args: Vec<&str> = s.iter().map(String::as_str).collect();
         let o = irs(data, &args);
-        assert!(o.status.success(), "{args:?}: {}", String::from_utf8_lossy(&o.stderr));
+        assert!(
+            o.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
     }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn run_collection_reporters_and_exit_codes() {
-    let url = irs_mcp::mock::spawn_http(Default::default(), 0).await.unwrap();
+    let url = irs_mcp::mock::spawn_http(Default::default(), 0)
+        .await
+        .unwrap();
     let base = url.trim_end_matches("/mcp").to_string();
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path();
@@ -56,8 +67,16 @@ async fn run_collection_reporters_and_exit_codes() {
     .await
     .unwrap();
     let out = String::from_utf8_lossy(&o.stdout);
-    assert_eq!(o.status.code(), Some(0), "{out}\n{}", String::from_utf8_lossy(&o.stderr));
-    assert!(out.contains("Iteration 3/3") && out.contains("✓ weather for Tokyo"), "{out}");
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{out}\n{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(
+        out.contains("Iteration 3/3") && out.contains("✓ weather for Tokyo"),
+        "{out}"
+    );
 
     // JUnit to a file
     let report = data.join("report.xml");
@@ -65,13 +84,31 @@ async fn run_collection_reporters_and_exit_codes() {
         let data = data.to_path_buf();
         let csv = csv.to_string();
         let report = report.clone();
-        move || irs(&data, &["run", "collection", "Smoke", "-d", &csv, "-r", "junit", "-o", report.to_str().unwrap()])
+        move || {
+            irs(
+                &data,
+                &[
+                    "run",
+                    "collection",
+                    "Smoke",
+                    "-d",
+                    &csv,
+                    "-r",
+                    "junit",
+                    "-o",
+                    report.to_str().unwrap(),
+                ],
+            )
+        }
     })
     .await
     .unwrap();
     assert_eq!(o.status.code(), Some(0));
     let xml = std::fs::read_to_string(&report).unwrap();
-    assert!(xml.starts_with("<?xml") && xml.contains("tests=\"15\"") && xml.contains("failures=\"0\""), "{xml}");
+    assert!(
+        xml.starts_with("<?xml") && xml.contains("tests=\"15\"") && xml.contains("failures=\"0\""),
+        "{xml}"
+    );
 
     // exit 1: no data file → unresolved {{ city }} fails the Weather request
     let o = tokio::task::spawn_blocking({
@@ -85,6 +122,14 @@ async fn run_collection_reporters_and_exit_codes() {
     assert_eq!(json["requestsFailed"], 1);
 
     // exit 2: usage errors
-    assert_eq!(irs(data, &["run", "collection", "Nope"]).status.code(), Some(2));
-    assert_eq!(irs(data, &["run", "collection", "Smoke", "-r", "xml"]).status.code(), Some(2));
+    assert_eq!(
+        irs(data, &["run", "collection", "Nope"]).status.code(),
+        Some(2)
+    );
+    assert_eq!(
+        irs(data, &["run", "collection", "Smoke", "-r", "xml"])
+            .status
+            .code(),
+        Some(2)
+    );
 }

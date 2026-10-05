@@ -1,4 +1,4 @@
-import { AlertTriangle, History, Send, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleSlash, History, Send, Trash2, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { CodeEditor, JsonTree } from '../components/editors';
@@ -51,6 +51,9 @@ export function ResponsePane({
   }
 
   const headerCount = response.headers.length;
+  const tests = response.testResults ?? [];
+  const failedTests = tests.filter(t => !t.passed && !t.skipped).length;
+  const consoleLines = response.console ?? [];
   const cookies = response.headers.filter(h => h.name.toLowerCase() === 'set-cookie');
 
   return (
@@ -70,6 +73,17 @@ export function ResponsePane({
             </span>
             <span className="text-[12px] text-muted">{formatBytes(response.bytes)}</span>
           </>
+        )}
+        {tests.length > 0 && (
+          <button
+            onClick={() => setTab('tests')}
+            className={cn(
+              'rounded px-2 py-0.5 text-[12px] font-medium',
+              failedTests ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400' : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
+            )}
+          >
+            {failedTests ? `${failedTests}/${tests.length} tests failed` : `${tests.length} tests passed`}
+          </button>
         )}
         <div className="flex-1" />
         <History className="size-3.5 text-muted" />
@@ -113,6 +127,15 @@ export function ResponsePane({
         </div>
       ) : null}
 
+      {response.scriptError && !response.error && (
+        <div className="mx-3 mt-3 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[12.5px]">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+          <div>
+            <div className="font-semibold">After-response script failed</div>
+            <div className="selectable font-mono">{response.scriptError}</div>
+          </div>
+        </div>
+      )}
       <Tabs
         value={tab}
         onChange={setTab}
@@ -121,6 +144,8 @@ export function ResponsePane({
           { id: 'raw', label: 'Raw' },
           { id: 'headers', label: 'Headers', count: headerCount },
           { id: 'cookies', label: 'Cookies', count: cookies.length },
+          { id: 'tests', label: 'Tests', count: tests.length },
+          { id: 'console', label: 'Console', count: consoleLines.length },
           { id: 'timeline', label: 'Timeline' },
           { id: 'timing', label: 'Timing' },
         ]}
@@ -201,6 +226,8 @@ export function ResponsePane({
           </div>
         )}
         {tab === 'timing' && <TimingChart response={response} />}
+        {tab === 'tests' && <TestsView response={response} />}
+        {tab === 'console' && <ConsoleView response={response} />}
       </div>
     </div>
   );
@@ -240,6 +267,81 @@ function TimingChart({ response }: { response: ResponseView }) {
         Each send opens a fresh connection, so TTFB includes DNS, TCP and TLS setup (like curl). {response.httpVersion} · {response.method}{' '}
         <span className="selectable font-mono">{response.url}</span>
       </p>
+    </div>
+  );
+}
+
+function TestsView({ response }: { response: ResponseView }) {
+  const tests = response.testResults ?? [];
+  if (!tests.length)
+    return (
+      <Empty title="No tests">
+        Add tests in the request's Scripts tab, e.g. <code className="font-mono">{"insomnia.test('ok', () => insomnia.response.to.have.status(200))"}</code>
+      </Empty>
+    );
+  const passed = tests.filter(t => t.passed).length;
+  const skipped = tests.filter(t => t.skipped).length;
+  return (
+    <div className="flex flex-col">
+      <div className="flex gap-3 border-b border-app px-3 py-2 text-[12.5px]">
+        <span className="text-emerald-700 dark:text-emerald-400">{passed} passed</span>
+        <span className="text-rose-700 dark:text-rose-400">{tests.length - passed - skipped} failed</span>
+        {skipped > 0 && <span className="text-muted">{skipped} skipped</span>}
+      </div>
+      {tests.map((t, i) => (
+        <div key={i} className="flex items-start gap-2 border-b border-app px-3 py-2">
+          {t.skipped ? (
+            <CircleSlash className="mt-0.5 size-4 shrink-0 text-muted" />
+          ) : t.passed ? (
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+          ) : (
+            <XCircle className="mt-0.5 size-4 shrink-0 text-rose-500" />
+          )}
+          <div className="min-w-0 flex-1">
+            <div className={cn(t.skipped && 'text-muted')}>{t.name}</div>
+            {t.error && !t.passed && <div className="selectable mt-0.5 font-mono text-[12px] text-rose-700 dark:text-rose-400">{t.error}</div>}
+          </div>
+          <span className="shrink-0 text-[11px] text-muted">{t.category}</span>
+          <span className="w-14 shrink-0 text-right text-[11px] text-muted">{formatMs(t.durationMs)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ConsoleView({ response }: { response: ResponseView }) {
+  const [level, setLevel] = useState('all');
+  const lines = (response.console ?? []).filter(l => level === 'all' || l.level === level);
+  if (!(response.console ?? []).length) return <Empty title="Console is empty">Output from console.log() in scripts appears here.</Empty>;
+  const tone: Record<string, string> = {
+    error: 'text-rose-700 dark:text-rose-400',
+    warn: 'text-amber-700 dark:text-amber-400',
+    info: 'text-sky-700 dark:text-sky-400',
+    debug: 'text-muted',
+  };
+  return (
+    <div className="flex flex-col">
+      <div className="flex gap-1.5 border-b border-app px-3 py-1.5">
+        {['all', 'log', 'info', 'warn', 'error', 'debug'].map(l => (
+          <button
+            key={l}
+            onClick={() => setLevel(l)}
+            className={cn('rounded-full px-2.5 py-0.5 text-[12px] capitalize', level === l ? 'bg-accent text-white' : 'bg-muted text-muted hover:text-app')}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+      <div className="selectable font-mono text-[12px]">
+        {lines.map((l, i) => (
+          <div key={i} className="flex gap-3 border-b border-app px-3 py-1">
+            <span className="shrink-0 text-muted">{new Date(l.timestampMs).toLocaleTimeString([], { hour12: false })}</span>
+            <span className={cn('w-10 shrink-0 uppercase', tone[l.level])}>{l.level}</span>
+            <span className={cn('min-w-0 flex-1 whitespace-pre-wrap break-all', tone[l.level])}>{l.text}</span>
+            <span className="shrink-0 text-[11px] text-muted">{l.source}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

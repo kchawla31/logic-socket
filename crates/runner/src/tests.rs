@@ -1,7 +1,12 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use axum::{Router, body::Bytes, http::{HeaderMap, Uri}, routing::any};
+use axum::{
+    Router,
+    body::Bytes,
+    http::{HeaderMap, Uri},
+    routing::any,
+};
 use irs_core::{Folder, KeyValue, Workspace};
 use serde_json::{Value, json};
 
@@ -56,11 +61,29 @@ fn add(e: &Engine, parent: &str, name: &str, url: String, pre: &str, after: &str
 async fn fixture() -> Fx {
     let base = server().await;
     let e = Engine::in_memory();
-    let ws = e.store.insert(None, Workspace { name: "Shop".into(), ..Default::default() }).unwrap();
+    let ws = e
+        .store
+        .insert(
+            None,
+            Workspace {
+                name: "Shop".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
     let mut env = e.base_environment(ws.id()).unwrap();
     env.data.insert("base".into(), json!(base));
     e.store.update(&env).unwrap();
-    let folder = e.store.insert(Some(ws.id()), Folder { name: "Flow".into(), ..Default::default() }).unwrap();
+    let folder = e
+        .store
+        .insert(
+            Some(ws.id()),
+            Folder {
+                name: "Flow".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
     let login = add(
         &e,
         folder.id(),
@@ -79,10 +102,22 @@ async fn fixture() -> Fx {
         ),
         ..Default::default()
     };
-    items_req.headers.push(KeyValue::new("X-Token", "{{ _.token }}"));
-    items_req.parameters.push(KeyValue::new("user", "{{ user }}"));
-    let items = e.store.insert(Some(folder.id()), items_req).unwrap().meta.id;
-    Fx { e, ids: vec![login, items] }
+    items_req
+        .headers
+        .push(KeyValue::new("X-Token", "{{ _.token }}"));
+    items_req
+        .parameters
+        .push(KeyValue::new("user", "{{ user }}"));
+    let items = e
+        .store
+        .insert(Some(folder.id()), items_req)
+        .unwrap()
+        .meta
+        .id;
+    Fx {
+        e,
+        ids: vec![login, items],
+    }
 }
 
 #[tokio::test]
@@ -91,22 +126,41 @@ async fn three_iterations_with_csv_data() {
     let data = parse_data("user,role\nada,admin\nbob, viewer \n").unwrap();
     assert_eq!(data[1]["role"], json!("viewer"));
     let mut events = vec![];
-    let opts = RunOptions { iterations: 3, data, ..Default::default() };
+    let opts = RunOptions {
+        iterations: 3,
+        data,
+        ..Default::default()
+    };
     let s = run(&fx.e, &fx.ids, &opts, |e| events.push(e.clone())).await;
     assert!(s.ok(), "{}", report::spec(&s));
     assert_eq!((s.requests, s.tests_passed, s.tests_failed), (6, 9, 0));
     // iteration 3 cycles back to row 1
     assert_eq!(s.results[5].iteration, 3);
-    assert!(matches!(events.first(), Some(RunEvent::RunStart { requests: 2, iterations: 3 })));
+    assert!(matches!(
+        events.first(),
+        Some(RunEvent::RunStart {
+            requests: 2,
+            iterations: 3
+        })
+    ));
     assert!(matches!(events.last(), Some(RunEvent::Done { .. })));
-    assert_eq!(events.iter().filter(|e| matches!(e, RunEvent::RequestEnd { .. })).count(), 6);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, RunEvent::RequestEnd { .. }))
+            .count(),
+        6
+    );
 }
 
 #[tokio::test]
 async fn set_next_request_loops_and_stops() {
     let fx = fixture().await;
     let ws = fx.e.workspace_of(&fx.ids[0]).unwrap();
-    let base = fx.e.base_environment(ws.id()).unwrap().data["base"].as_str().unwrap().to_string();
+    let base = fx.e.base_environment(ws.id()).unwrap().data["base"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let poll = add(
         &fx.e,
         ws.id(),
@@ -120,10 +174,21 @@ async fn set_next_request_loops_and_stops() {
     let never = add(&fx.e, ws.id(), "Never", format!("{base}/never"), "", "");
     let s = run(&fx.e, &[poll, never], &RunOptions::default(), |_| {}).await;
     let names: Vec<&str> = s.results.iter().map(|r| r.name.as_str()).collect();
-    assert_eq!(names, ["Poll", "Poll", "Poll"], "loops 3 times then stops before 'Never'");
+    assert_eq!(
+        names,
+        ["Poll", "Poll", "Poll"],
+        "loops 3 times then stops before 'Never'"
+    );
 
     // unknown target → warning, iteration stops
-    let bad = add(&fx.e, ws.id(), "Bad", format!("{base}/bad"), "insomnia.execution.setNextRequest('Nope');", "");
+    let bad = add(
+        &fx.e,
+        ws.id(),
+        "Bad",
+        format!("{base}/bad"),
+        "insomnia.execution.setNextRequest('Nope');",
+        "",
+    );
     let mut warnings = vec![];
     run(&fx.e, &[bad], &RunOptions::default(), |e| {
         if let RunEvent::Warning { message, .. } = e {
@@ -138,18 +203,58 @@ async fn set_next_request_loops_and_stops() {
 async fn bail_stops_on_first_failure_and_skip_is_reported() {
     let fx = fixture().await;
     let ws = fx.e.workspace_of(&fx.ids[0]).unwrap();
-    let base = fx.e.base_environment(ws.id()).unwrap().data["base"].as_str().unwrap().to_string();
-    let skip = add(&fx.e, ws.id(), "Skip me", format!("{base}/skip"), "insomnia.execution.skipRequest();", "");
-    let fail = add(&fx.e, ws.id(), "Missing", format!("{base}/missing"), "", "insomnia.test('is 200', () => insomnia.response.to.have.status(200));");
+    let base = fx.e.base_environment(ws.id()).unwrap().data["base"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let skip = add(
+        &fx.e,
+        ws.id(),
+        "Skip me",
+        format!("{base}/skip"),
+        "insomnia.execution.skipRequest();",
+        "",
+    );
+    let fail = add(
+        &fx.e,
+        ws.id(),
+        "Missing",
+        format!("{base}/missing"),
+        "",
+        "insomnia.test('is 200', () => insomnia.response.to.have.status(200));",
+    );
     let ids = vec![skip, fail, fx.ids[0].clone()];
-    let s = run(&fx.e, &ids, &RunOptions { iterations: 2, bail: true, ..Default::default() }, |_| {}).await;
+    let s = run(
+        &fx.e,
+        &ids,
+        &RunOptions {
+            iterations: 2,
+            bail: true,
+            ..Default::default()
+        },
+        |_| {},
+    )
+    .await;
     assert!(s.bailed);
-    assert_eq!(s.results.len(), 2, "stopped right after the failing request");
+    assert_eq!(
+        s.results.len(),
+        2,
+        "stopped right after the failing request"
+    );
     assert!(s.results[0].skipped && !s.results[0].failed());
     assert!(s.results[1].failed());
     assert_eq!((s.requests_skipped, s.tests_failed), (1, 1));
 
-    let s = run(&fx.e, &ids, &RunOptions { iterations: 2, ..Default::default() }, |_| {}).await;
+    let s = run(
+        &fx.e,
+        &ids,
+        &RunOptions {
+            iterations: 2,
+            ..Default::default()
+        },
+        |_| {},
+    )
+    .await;
     assert_eq!(s.results.len(), 6);
     assert!(!s.ok());
 }
@@ -158,7 +263,17 @@ async fn bail_stops_on_first_failure_and_skip_is_reported() {
 async fn reporters_produce_valid_output() {
     let fx = fixture().await;
     let data = parse_data(r#"[{"user":"ada"},{"user":"<b>&'\""}]"#).unwrap();
-    let s = run(&fx.e, &fx.ids, &RunOptions { iterations: 2, data, ..Default::default() }, |_| {}).await;
+    let s = run(
+        &fx.e,
+        &fx.ids,
+        &RunOptions {
+            iterations: 2,
+            data,
+            ..Default::default()
+        },
+        |_| {},
+    )
+    .await;
 
     let xml = report::junit(&s);
     let doc = roxmltree::Document::parse(&xml).expect("well-formed JUnit XML");
@@ -179,5 +294,8 @@ async fn reporters_produce_valid_output() {
 #[test]
 fn data_file_errors() {
     assert!(matches!(parse_data("[1,2]"), Err(RunError::DataFormat(_))));
-    assert!(matches!(load_data_file("/definitely/missing.csv"), Err(RunError::DataFile(..))));
+    assert!(matches!(
+        load_data_file("/definitely/missing.csv"),
+        Err(RunError::DataFile(..))
+    ));
 }

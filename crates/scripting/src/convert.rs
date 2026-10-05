@@ -7,7 +7,11 @@ use crate::{ScriptKv, ScriptRequest};
 
 fn kv_out(list: &[KeyValue]) -> Vec<ScriptKv> {
     list.iter()
-        .map(|k| ScriptKv { key: k.name.clone(), value: k.value.clone(), disabled: k.disabled })
+        .map(|k| ScriptKv {
+            key: k.name.clone(),
+            value: k.value.clone(),
+            disabled: k.disabled,
+        })
         .collect()
 }
 
@@ -65,9 +69,12 @@ pub fn body_out(b: &Body) -> Value {
         },
         Some(mime::FORM) => json!({ "mode": "urlencoded", "urlencoded": params("urlencoded") }),
         Some(mime::MULTIPART) => json!({ "mode": "formdata", "formdata": params("formdata") }),
-        Some(mime::FILE) => json!({ "mode": "file", "file": { "src": b.file_name.clone().unwrap_or_default() } }),
+        Some(mime::FILE) => {
+            json!({ "mode": "file", "file": { "src": b.file_name.clone().unwrap_or_default() } })
+        }
         Some(mime::GRAPHQL) => {
-            let gql: Value = serde_json::from_str(b.text.as_deref().unwrap_or("{}")).unwrap_or(json!({}));
+            let gql: Value =
+                serde_json::from_str(b.text.as_deref().unwrap_or("{}")).unwrap_or(json!({}));
             json!({ "mode": "graphql", "graphql": gql })
         }
         Some(m) => json!({
@@ -86,9 +93,15 @@ pub fn body_in(v: &Value, previous: &Body) -> Body {
             .flatten()
             .map(|p| BodyParam {
                 name: p["key"].as_str().unwrap_or("").to_string(),
-                value: p["value"].as_str().map(str::to_string).unwrap_or_else(|| p["value"].to_string()),
+                value: p["value"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| p["value"].to_string()),
                 disabled: p["disabled"].as_bool().unwrap_or(false),
-                kind: p["type"].as_str().map(str::to_string).filter(|t| t == "file"),
+                kind: p["type"]
+                    .as_str()
+                    .map(str::to_string)
+                    .filter(|t| t == "file"),
                 file_name: p["src"].as_str().map(str::to_string),
                 id: None,
             })
@@ -103,13 +116,27 @@ pub fn body_in(v: &Value, previous: &Body) -> Body {
                 (_, Some("json")) => Some(mime::JSON.to_string()),
                 (_, Some("xml")) => Some("application/xml".to_string()),
                 (_, Some("html")) => Some("text/html".to_string()),
-                (Some(p), None) if ![mime::FORM, mime::MULTIPART, mime::FILE].contains(&p) => Some(p.to_string()),
+                (Some(p), None) if ![mime::FORM, mime::MULTIPART, mime::FILE].contains(&p) => {
+                    Some(p.to_string())
+                }
                 _ => Some("text/plain".to_string()),
             };
-            Body { mime_type, text: v["raw"].as_str().map(str::to_string), ..Default::default() }
+            Body {
+                mime_type,
+                text: v["raw"].as_str().map(str::to_string),
+                ..Default::default()
+            }
         }
-        Some("urlencoded") => Body { mime_type: Some(mime::FORM.into()), params: list("urlencoded"), ..Default::default() },
-        Some("formdata") => Body { mime_type: Some(mime::MULTIPART.into()), params: list("formdata"), ..Default::default() },
+        Some("urlencoded") => Body {
+            mime_type: Some(mime::FORM.into()),
+            params: list("urlencoded"),
+            ..Default::default()
+        },
+        Some("formdata") => Body {
+            mime_type: Some(mime::MULTIPART.into()),
+            params: list("formdata"),
+            ..Default::default()
+        },
         Some("file") => Body {
             mime_type: Some(mime::FILE.into()),
             file_name: v["file"]["src"].as_str().map(str::to_string),
@@ -160,11 +187,23 @@ mod tests {
     #[test]
     fn round_trip_is_lossless() {
         let bodies = [
-            Body { mime_type: Some(mime::JSON.into()), text: Some("{\"a\":1}".into()), ..Default::default() },
-            Body { mime_type: Some("application/vnd.api+json".into()), text: Some("{}".into()), ..Default::default() },
+            Body {
+                mime_type: Some(mime::JSON.into()),
+                text: Some("{\"a\":1}".into()),
+                ..Default::default()
+            },
+            Body {
+                mime_type: Some("application/vnd.api+json".into()),
+                text: Some("{}".into()),
+                ..Default::default()
+            },
             Body {
                 mime_type: Some(mime::FORM.into()),
-                params: vec![BodyParam { name: "a".into(), value: "1".into(), ..Default::default() }],
+                params: vec![BodyParam {
+                    name: "a".into(),
+                    value: "1".into(),
+                    ..Default::default()
+                }],
                 ..Default::default()
             },
             Body {
@@ -177,11 +216,18 @@ mod tests {
                 }],
                 ..Default::default()
             },
-            Body { mime_type: Some(mime::FILE.into()), file_name: Some("/tmp/b".into()), ..Default::default() },
+            Body {
+                mime_type: Some(mime::FILE.into()),
+                file_name: Some("/tmp/b".into()),
+                ..Default::default()
+            },
             Body::default(),
         ];
         for b in bodies {
-            let r = Request { body: b.clone(), ..Default::default() };
+            let r = Request {
+                body: b.clone(),
+                ..Default::default()
+            };
             let s = to_script_request("req_1", &r);
             let mut back = r.clone();
             apply_script_request(&mut back, &s);
@@ -192,13 +238,21 @@ mod tests {
     #[test]
     fn script_changes_apply() {
         let mut r = Request {
-            headers: vec![KeyValue { id: Some("h1".into()), ..KeyValue::new("X-A", "1") }],
+            headers: vec![KeyValue {
+                id: Some("h1".into()),
+                ..KeyValue::new("X-A", "1")
+            }],
             ..Default::default()
         };
         let mut s = to_script_request("req_1", &r);
         s.headers[0].value = "2".into();
-        s.headers.push(ScriptKv { key: "X-B".into(), value: "3".into(), disabled: false });
-        s.body = json!({ "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } });
+        s.headers.push(ScriptKv {
+            key: "X-B".into(),
+            value: "3".into(),
+            disabled: false,
+        });
+        s.body =
+            json!({ "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } });
         s.auth = json!({ "type": "bearer", "token": "t" });
         apply_script_request(&mut r, &s);
         assert_eq!(r.headers[0].id.as_deref(), Some("h1"));

@@ -119,7 +119,7 @@ Source: `packages/insomnia-scripting-environment/src/objects/` + `packages/insom
 | `settings`, `clientCertificates`, `parentFolders` | partial / NotSupported | `parentFolders.get(name).environment` read-only; certificates Phase 4 |
 | `console.log/info/warn/error/debug` | implement | captured with level + timestamp |
 | `setTimeout/clearTimeout`, `queueMicrotask` | implement | host timers; `setImmediate` NotSupported (as in Insomnia) |
-| `eval` | NotSupported | disabled in sandbox |
+| `eval` | implement | available, runs inside the same sandbox (no host access) |
 
 | `require(...)` module | Status | How |
 |---|---|---|

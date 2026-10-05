@@ -2,6 +2,7 @@ import { Braces, Send } from 'lucide-react';
 import { type ClipboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { CodeEditor, KeyValueEditor } from '../components/editors';
+import { ScriptEditor } from '../components/ScriptEditor';
 import { Button, Empty, Input, Kbd, Select, Split, Tabs, Toggle, useToast } from '../components/ui';
 import { VarInput } from '../components/VarInput';
 import { api, type Body, errorText, type KeyValue, type Preview, type Request, type ResponseView } from '../lib/api';
@@ -62,6 +63,7 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
   const toast = useToast();
   const [req, setReq, flush] = useAutosave<Request>(id, api.requestUpdate);
   const [tab, setTab] = useState('params');
+  const [scriptPhase, setScriptPhase] = useState<'pre' | 'after'>('pre');
   const [sending, setSending] = useState(false);
   const [response, setResponse] = useState<ResponseView | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -201,6 +203,7 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
             { id: 'body', label: 'Body', dot: !!mime },
             { id: 'auth', label: 'Auth', dot: req.authentication.type !== 'inherit' && req.authentication.type !== 'none' },
             { id: 'headers', label: 'Headers', count: enabledCount(req.headers) },
+            { id: 'scripts', label: 'Scripts', dot: !!(req.preRequestScript?.trim() || req.afterResponseScript?.trim()) },
             { id: 'settings', label: 'Settings' },
             { id: 'docs', label: 'Docs', dot: !!req.description },
           ]}
@@ -287,6 +290,34 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
             <div>
               <KeyValueEditor items={req.headers} onChange={headers => update({ headers })} contextId={id} namePlaceholder="Header" />
               <p className="px-3 py-3 text-[12px] text-muted">Headers set on parent folders are added automatically; a header here with the same name wins.</p>
+            </div>
+          )}
+          {tab === 'scripts' && (
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="flex shrink-0 gap-1 border-b border-app px-2 py-1.5">
+                {(['pre', 'after'] as const).map(p => {
+                  const has = !!(p === 'pre' ? req.preRequestScript : req.afterResponseScript)?.trim();
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setScriptPhase(p)}
+                      className={cn(
+                        'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12.5px]',
+                        scriptPhase === p ? 'bg-accent-soft text-app font-medium' : 'text-muted hover:text-app',
+                      )}
+                    >
+                      {p === 'pre' ? 'Pre-request' : 'After-response'}
+                      {has && <span className="size-1.5 rounded-full bg-accent" />}
+                    </button>
+                  );
+                })}
+              </div>
+              <ScriptEditor
+                key={`${id}-${scriptPhase}`}
+                phase={scriptPhase}
+                value={(scriptPhase === 'pre' ? req.preRequestScript : req.afterResponseScript) ?? ''}
+                onChange={v => update(scriptPhase === 'pre' ? { preRequestScript: v } : { afterResponseScript: v })}
+              />
             </div>
           )}
           {tab === 'settings' && (

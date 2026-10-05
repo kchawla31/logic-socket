@@ -5,6 +5,8 @@
 
 pub mod report;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use irs_core::{ConsoleEntry, Request, TestResult, VarMap};
@@ -30,11 +32,20 @@ pub struct RunOptions {
     pub bail: bool,
     /// Guard against `setNextRequest` loops.
     pub max_steps_per_iteration: usize,
+    /// Set to stop the run after the current request.
+    pub cancel: Option<Arc<AtomicBool>>,
 }
 
 impl Default for RunOptions {
     fn default() -> Self {
-        Self { iterations: 1, delay_ms: 0, data: vec![], bail: false, max_steps_per_iteration: 1000 }
+        Self {
+            iterations: 1,
+            delay_ms: 0,
+            data: vec![],
+            bail: false,
+            max_steps_per_iteration: 1000,
+            cancel: None,
+        }
     }
 }
 
@@ -59,7 +70,10 @@ pub struct RequestResult {
 
 impl RequestResult {
     pub fn failed(&self) -> bool {
-        !self.skipped && (self.error.is_some() || self.script_error.is_some() || self.tests.iter().any(|t| !t.passed && !t.skipped))
+        !self.skipped
+            && (self.error.is_some()
+                || self.script_error.is_some()
+                || self.tests.iter().any(|t| !t.passed && !t.skipped))
     }
 }
 
@@ -75,6 +89,7 @@ pub struct Summary {
     pub tests_skipped: usize,
     pub duration_ms: f64,
     pub bailed: bool,
+    pub cancelled: bool,
     pub started_at: String,
     pub results: Vec<RequestResult>,
 }
@@ -88,25 +103,50 @@ impl Summary {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum RunEvent {
-    RunStart { requests: usize, iterations: u32 },
-    IterationStart { iteration: u32 },
-    RequestStart { iteration: u32, request_id: String, name: String, method: String },
-    RequestEnd { result: RequestResult },
-    IterationEnd { iteration: u32 },
+    RunStart {
+        requests: usize,
+        iterations: u32,
+    },
+    IterationStart {
+        iteration: u32,
+    },
+    RequestStart {
+        iteration: u32,
+        request_id: String,
+        name: String,
+        method: String,
+    },
+    RequestEnd {
+        result: RequestResult,
+    },
+    IterationEnd {
+        iteration: u32,
+    },
     /// A problem with the run itself (e.g. unknown `setNextRequest` target).
-    Warning { iteration: u32, message: String },
-    Done { summary: Summary },
+    Warning {
+        iteration: u32,
+        message: String,
+    },
+    Done {
+        summary: Summary,
+    },
 }
 
 /// Parse a CSV (header row) or JSON (array of objects) data file.
 pub fn parse_data(content: &str) -> Result<Vec<VarMap>, RunError> {
     let trimmed = content.trim_start_matches('\u{feff}').trim();
     if trimmed.starts_with('[') {
-        let rows: Vec<VarMap> = serde_json::from_str(trimmed).map_err(|e| RunError::DataFormat(e.to_string()))?;
+        let rows: Vec<VarMap> =
+            serde_json::from_str(trimmed).map_err(|e| RunError::DataFormat(e.to_string()))?;
         return Ok(rows);
     }
-    let mut rdr = csv::ReaderBuilder::new().trim(csv::Trim::All).from_reader(trimmed.as_bytes());
-    let headers = rdr.headers().map_err(|e| RunError::DataFormat(e.to_string()))?.clone();
+    let mut rdr = csv::ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_reader(trimmed.as_bytes());
+    let headers = rdr
+        .headers()
+        .map_err(|e| RunError::DataFormat(e.to_string()))?
+        .clone();
     let mut rows = vec![];
     for rec in rdr.records() {
         let rec = rec.map_err(|e| RunError::DataFormat(e.to_string()))?;
@@ -120,35 +160,75 @@ pub fn parse_data(content: &str) -> Result<Vec<VarMap>, RunError> {
 }
 
 pub fn load_data_file(path: &str) -> Result<Vec<VarMap>, RunError> {
-    let content = std::fs::read_to_string(path).map_err(|e| RunError::DataFile(path.to_string(), e.to_string()))?;
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| RunError::DataFile(path.to_string(), e.to_string()))?;
     parse_data(&content)
 }
 
 /// Run `request_ids` (in order) for each iteration.
-pub async fn run(engine: &Engine, request_ids: &[String], opts: &RunOptions, mut on_event: impl FnMut(&RunEvent)) -> Summary {
+pub async fn run(
+    engine: &Engine,
+    request_ids: &[String],
+    opts: &RunOptions,
+    mut on_event: impl FnMut(&RunEvent),
+) -> Summary {
     let started = Instant::now();
     let iterations = opts.iterations.max(1);
-    let mut summary = Summary { iterations, started_at: chrono::Utc::now().to_rfc3339(), ..Default::default() };
-    on_event(&RunEvent::RunStart { requests: request_ids.len(), iterations });
+    let mut summary = Summary {
+        iterations,
+        started_at: chrono::Utc::now().to_rfc3339(),
+        ..Default::default()
+    };
+    on_event(&RunEvent::RunStart {
+        requests: request_ids.len(),
+        iterations,
+    });
 
     // Names for setNextRequest lookups.
     let names: Vec<String> = request_ids
         .iter()
-        .map(|id| engine.store.get::<Request>(id).map(|r| r.body.name.clone()).unwrap_or_default())
+        .map(|id| {
+            engine
+                .store
+                .get::<Request>(id)
+                .map(|r| r.body.name.clone())
+                .unwrap_or_default()
+        })
         .collect();
 
     'iterations: for iteration in 1..=iterations {
         on_event(&RunEvent::IterationStart { iteration });
-        let row = if opts.data.is_empty() { VarMap::new() } else { opts.data[(iteration as usize - 1) % opts.data.len()].clone() };
-        let mut state = RunState { iteration_data: row, iteration, iteration_count: iterations, ..Default::default() };
+        let row = if opts.data.is_empty() {
+            VarMap::new()
+        } else {
+            opts.data[(iteration as usize - 1) % opts.data.len()].clone()
+        };
+        let mut state = RunState {
+            iteration_data: row,
+            iteration,
+            iteration_count: iterations,
+            ..Default::default()
+        };
         let mut idx = 0usize;
         let mut steps = 0usize;
         while idx < request_ids.len() {
+            if opts
+                .cancel
+                .as_ref()
+                .is_some_and(|c| c.load(Ordering::SeqCst))
+            {
+                summary.cancelled = true;
+                on_event(&RunEvent::IterationEnd { iteration });
+                break 'iterations;
+            }
             steps += 1;
             if steps > opts.max_steps_per_iteration {
                 on_event(&RunEvent::Warning {
                     iteration,
-                    message: format!("stopped after {} requests in one iteration (setNextRequest loop?)", opts.max_steps_per_iteration),
+                    message: format!(
+                        "stopped after {} requests in one iteration (setNextRequest loop?)",
+                        opts.max_steps_per_iteration
+                    ),
                 });
                 break;
             }
@@ -173,7 +253,11 @@ pub async fn run(engine: &Engine, request_ids: &[String], opts: &RunOptions, mut
                             url: r.url.clone(),
                             status: r.status_code,
                             status_message: r.status_message.clone(),
-                            duration_ms: if r.timings.total_ms > 0.0 { r.timings.total_ms } else { t.elapsed().as_secs_f64() * 1000.0 },
+                            duration_ms: if r.timings.total_ms > 0.0 {
+                                r.timings.total_ms
+                            } else {
+                                t.elapsed().as_secs_f64() * 1000.0
+                            },
                             error: if out.skipped { None } else { r.error.clone() },
                             script_error: r.script_error.clone(),
                             skipped: out.skipped,
@@ -217,7 +301,9 @@ pub async fn run(engine: &Engine, request_ids: &[String], opts: &RunOptions, mut
                     summary.tests_failed += 1;
                 }
             }
-            on_event(&RunEvent::RequestEnd { result: result.clone() });
+            on_event(&RunEvent::RequestEnd {
+                result: result.clone(),
+            });
             summary.results.push(result);
             if failed && opts.bail {
                 summary.bailed = true;
@@ -237,7 +323,9 @@ pub async fn run(engine: &Engine, request_ids: &[String], opts: &RunOptions, mut
                     None => {
                         on_event(&RunEvent::Warning {
                             iteration,
-                            message: format!("setNextRequest('{target}'): no request with that name or id in this run; stopping iteration"),
+                            message: format!(
+                                "setNextRequest('{target}'): no request with that name or id in this run; stopping iteration"
+                            ),
                         });
                         break;
                     }
@@ -254,7 +342,9 @@ pub async fn run(engine: &Engine, request_ids: &[String], opts: &RunOptions, mut
         }
     }
     summary.duration_ms = started.elapsed().as_secs_f64() * 1000.0;
-    on_event(&RunEvent::Done { summary: summary.clone() });
+    on_event(&RunEvent::Done {
+        summary: summary.clone(),
+    });
     summary
 }
 

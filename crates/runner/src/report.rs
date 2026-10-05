@@ -4,7 +4,11 @@
 use crate::{RequestResult, Summary};
 
 fn ms(v: f64) -> String {
-    if v < 1000.0 { format!("{v:.0}ms") } else { format!("{:.2}s", v / 1000.0) }
+    if v < 1000.0 {
+        format!("{v:.0}ms")
+    } else {
+        format!("{:.2}s", v / 1000.0)
+    }
 }
 
 fn status_text(r: &RequestResult) -> String {
@@ -13,7 +17,9 @@ fn status_text(r: &RequestResult) -> String {
     } else if let Some(e) = &r.error {
         format!("error: {e}")
     } else {
-        format!("{} {}", r.status, r.status_message).trim().to_string()
+        format!("{} {}", r.status, r.status_message)
+            .trim()
+            .to_string()
     }
 }
 
@@ -25,7 +31,11 @@ fn totals(s: &Summary) -> String {
         s.requests_failed,
         s.requests_skipped,
         s.tests_passed + s.tests_failed + s.tests_skipped,
-        if s.tests_passed + s.tests_failed + s.tests_skipped == 1 { "" } else { "s" },
+        if s.tests_passed + s.tests_failed + s.tests_skipped == 1 {
+            ""
+        } else {
+            "s"
+        },
         s.tests_passed,
         s.tests_failed,
         s.tests_skipped,
@@ -47,13 +57,31 @@ pub fn spec(s: &Summary) -> String {
                 out.push_str(&format!("\nIteration {current}/{}\n", s.iterations));
             }
         }
-        let mark = if r.skipped { "-" } else if r.failed() { "✗" } else { "✓" };
-        out.push_str(&format!("  {mark} {} {} — {} ({})\n", r.method, r.name, status_text(r), ms(r.duration_ms)));
+        let mark = if r.skipped {
+            "-"
+        } else if r.failed() {
+            "✗"
+        } else {
+            "✓"
+        };
+        out.push_str(&format!(
+            "  {mark} {} {} — {} ({})\n",
+            r.method,
+            r.name,
+            status_text(r),
+            ms(r.duration_ms)
+        ));
         if let Some(e) = &r.script_error {
             out.push_str(&format!("      script error: {e}\n"));
         }
         for t in &r.tests {
-            let m = if t.skipped { "-" } else if t.passed { "✓" } else { "✗" };
+            let m = if t.skipped {
+                "-"
+            } else if t.passed {
+                "✓"
+            } else {
+                "✗"
+            };
             out.push_str(&format!("      {m} {}", t.name));
             if let Some(e) = t.error.as_ref().filter(|_| !t.passed) {
                 out.push_str(&format!(" — {e}"));
@@ -69,19 +97,38 @@ pub fn dot(s: &Summary) -> String {
     let mut out: String = s
         .results
         .iter()
-        .map(|r| if r.skipped { 's' } else if r.failed() { 'F' } else { '.' })
+        .map(|r| {
+            if r.skipped {
+                's'
+            } else if r.failed() {
+                'F'
+            } else {
+                '.'
+            }
+        })
         .collect();
     out.push('\n');
     let failures: Vec<&RequestResult> = s.results.iter().filter(|r| r.failed()).collect();
     if !failures.is_empty() {
         out.push_str("\nFailures:\n");
         for (i, r) in failures.iter().enumerate() {
-            out.push_str(&format!("{}. [iteration {}] {} {} — {}\n", i + 1, r.iteration, r.method, r.name, status_text(r)));
+            out.push_str(&format!(
+                "{}. [iteration {}] {} {} — {}\n",
+                i + 1,
+                r.iteration,
+                r.method,
+                r.name,
+                status_text(r)
+            ));
             if let Some(e) = &r.script_error {
                 out.push_str(&format!("   script error: {e}\n"));
             }
             for t in r.tests.iter().filter(|t| !t.passed && !t.skipped) {
-                out.push_str(&format!("   ✗ {} — {}\n", t.name, t.error.clone().unwrap_or_default()));
+                out.push_str(&format!(
+                    "   ✗ {} — {}\n",
+                    t.name,
+                    t.error.clone().unwrap_or_default()
+                ));
             }
         }
     }
@@ -127,8 +174,15 @@ pub fn junit(s: &Summary) -> String {
             cases.push_str("<skipped message=\"skipped by pre-request script\"/>");
         } else if request_failed {
             failures += 1;
-            let msg = r.error.clone().or(r.script_error.clone()).unwrap_or_default();
-            cases.push_str(&format!("<failure message=\"{}\" type=\"RequestError\"/>", esc(&msg)));
+            let msg = r
+                .error
+                .clone()
+                .or(r.script_error.clone())
+                .unwrap_or_default();
+            cases.push_str(&format!(
+                "<failure message=\"{}\" type=\"RequestError\"/>",
+                esc(&msg)
+            ));
         }
         cases.push_str("</testcase>\n");
         for t in &r.tests {
@@ -143,7 +197,11 @@ pub fn junit(s: &Summary) -> String {
             } else if !t.passed {
                 failures += 1;
                 let msg = t.error.clone().unwrap_or_else(|| "failed".into());
-                cases.push_str(&format!("<failure message=\"{}\" type=\"AssertionError\">{}</failure>", esc(&msg), esc(&msg)));
+                cases.push_str(&format!(
+                    "<failure message=\"{}\" type=\"AssertionError\">{}</failure>",
+                    esc(&msg),
+                    esc(&msg)
+                ));
             }
             cases.push_str("</testcase>\n");
         }
@@ -153,7 +211,11 @@ pub fn junit(s: &Summary) -> String {
         total_skipped += skipped;
         let mut system_out = String::new();
         if !r.console.is_empty() {
-            let lines: Vec<String> = r.console.iter().map(|c| format!("[{}] {}", c.level, c.text)).collect();
+            let lines: Vec<String> = r
+                .console
+                .iter()
+                .map(|c| format!("[{}] {}", c.level, c.text))
+                .collect();
             system_out = format!("    <system-out>{}</system-out>\n", esc(&lines.join("\n")));
         }
         suites.push_str(&format!(

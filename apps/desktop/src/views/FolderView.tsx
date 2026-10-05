@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { CodeEditor, KeyValueEditor } from '../components/editors';
+import { ScriptEditor } from '../components/ScriptEditor';
 import { Empty, Input, Tabs } from '../components/ui';
 import { api, type Folder } from '../lib/api';
 import { AuthEditor } from './AuthEditor';
@@ -34,6 +35,8 @@ export function FolderView({ id }: { id: string }) {
           { id: 'environment', label: 'Environment', count: Object.keys(folder.environment ?? {}).length },
           { id: 'headers', label: 'Headers', count: folder.headers.filter(h => !h.disabled).length },
           { id: 'auth', label: 'Auth', dot: folder.authentication.type !== 'inherit' },
+          { id: 'pre', label: 'Pre-request script', dot: !!folder.preRequestScript?.trim() },
+          { id: 'after', label: 'After-response script', dot: !!folder.afterResponseScript?.trim() },
           { id: 'docs', label: 'Docs' },
         ]}
       />
@@ -62,6 +65,12 @@ export function FolderView({ id }: { id: string }) {
         )}
         {tab === 'headers' && <KeyValueEditor items={folder.headers} onChange={headers => update({ headers })} contextId={id} namePlaceholder="Header" />}
         {tab === 'auth' && <AuthEditor auth={folder.authentication} onChange={authentication => update({ authentication })} contextId={id} />}
+        {tab === 'pre' && (
+          <ScriptEditor key={`${id}-pre`} phase="pre" value={folder.preRequestScript ?? ''} onChange={v => update({ preRequestScript: v })} />
+        )}
+        {tab === 'after' && (
+          <ScriptEditor key={`${id}-after`} phase="after" value={folder.afterResponseScript ?? ''} onChange={v => update({ afterResponseScript: v })} />
+        )}
         {tab === 'docs' && (
           <textarea
             value={folder.description}

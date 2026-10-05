@@ -10,9 +10,13 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use futures::future::BoxFuture;
-use irs_core::{ConsoleEntry, CookieJar, Doc, Environment, Folder, RawDoc, Request, Response, TestResult, VarMap, Workspace};
+use irs_core::{
+    ConsoleEntry, CookieJar, Doc, Environment, Folder, RawDoc, Request, Response, TestResult,
+    VarMap, Workspace,
+};
 use irs_scripting::{
-    Event, FolderVars, Host, HostRequest, Info, Limits, NamedVars, ScriptInput, ScriptOutput, ScriptResponseData,
+    Event, FolderVars, Host, HostRequest, Info, Limits, NamedVars, ScriptInput, ScriptOutput,
+    ScriptResponseData,
 };
 use irs_templating::Layer;
 
@@ -43,17 +47,42 @@ struct EngineHost {
 }
 
 impl Host for EngineHost {
-    fn send(&self, req: HostRequest) -> BoxFuture<'static, std::result::Result<ScriptResponseData, String>> {
-        let options = irs_http::Options { send_cookies: false, store_cookies: false, ..self.options.clone() };
+    fn send(
+        &self,
+        req: HostRequest,
+    ) -> BoxFuture<'static, std::result::Result<ScriptResponseData, String>> {
+        let options = irs_http::Options {
+            send_cookies: false,
+            store_cookies: false,
+            ..self.options.clone()
+        };
         Box::pin(async move {
-            let mut r = Request { method: req.method, url: req.url, ..Default::default() };
-            r.headers = req.headers.into_iter().map(|(k, v)| irs_core::KeyValue::new(k, v)).collect();
+            let mut r = Request {
+                method: req.method,
+                url: req.url,
+                ..Default::default()
+            };
+            r.headers = req
+                .headers
+                .into_iter()
+                .map(|(k, v)| irs_core::KeyValue::new(k, v))
+                .collect();
             r.body.text = req.body;
-            let resp = irs_http::send(&r, &irs_core::Auth::None, &options, &mut vec![]).await.map_err(|e| e.to_string())?;
+            let resp = irs_http::send(&r, &irs_core::Auth::None, &options, &mut vec![])
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(ScriptResponseData {
                 code: resp.status,
                 status: resp.status_text.clone(),
-                headers: resp.headers.iter().map(|h| irs_scripting::ScriptKv { key: h.name.clone(), value: h.value.clone(), disabled: false }).collect(),
+                headers: resp
+                    .headers
+                    .iter()
+                    .map(|h| irs_scripting::ScriptKv {
+                        key: h.name.clone(),
+                        value: h.value.clone(),
+                        disabled: false,
+                    })
+                    .collect(),
                 body: resp.text(),
                 response_time: resp.timings.total_ms,
             })
@@ -70,15 +99,26 @@ struct Envs {
 
 impl Envs {
     fn named(d: &Option<Doc<Environment>>) -> NamedVars {
-        d.as_ref().map(|e| NamedVars { name: e.name.clone(), data: e.data.clone() }).unwrap_or_default()
+        d.as_ref()
+            .map(|e| NamedVars {
+                name: e.name.clone(),
+                data: e.data.clone(),
+            })
+            .unwrap_or_default()
     }
 
     /// What scripts see as `insomnia.environment`: the active sub-environment,
     /// or the base environment when none is active (as in Insomnia).
     fn script_env(&self) -> NamedVars {
         match &self.sub {
-            Some(e) => NamedVars { name: e.name.clone(), data: e.data.clone() },
-            None => NamedVars { name: self.base.name.clone(), data: self.base.data.clone() },
+            Some(e) => NamedVars {
+                name: e.name.clone(),
+                data: e.data.clone(),
+            },
+            None => NamedVars {
+                name: self.base.name.clone(),
+                data: self.base.data.clone(),
+            },
         }
     }
 
@@ -130,7 +170,12 @@ impl Envs {
 fn console_entries(out: &ScriptOutput, source: &str) -> Vec<ConsoleEntry> {
     out.console
         .iter()
-        .map(|c| ConsoleEntry { level: c.level.clone(), text: c.text.clone(), timestamp_ms: c.timestamp_ms, source: source.to_string() })
+        .map(|c| ConsoleEntry {
+            level: c.level.clone(),
+            text: c.text.clone(),
+            timestamp_ms: c.timestamp_ms,
+            source: source.to_string(),
+        })
         .collect()
 }
 
@@ -155,7 +200,10 @@ impl Engine {
         let mut req = doc.body.clone();
         let ws: Doc<Workspace> = self.workspace_of(request_id)?;
         let settings = self.store.settings()?.body;
-        let limits = Limits { timeout: Duration::from_millis(settings.script_timeout_ms.max(100)), ..Default::default() };
+        let limits = Limits {
+            timeout: Duration::from_millis(settings.script_timeout_ms.max(100)),
+            ..Default::default()
+        };
         let folders: Vec<Doc<Folder>> = self
             .store
             .ancestors(request_id)?
@@ -182,8 +230,13 @@ impl Engine {
         let mut console = vec![];
         let mut tests = vec![];
         let mut next_request = None;
-        let folder_vars: Vec<FolderVars> =
-            folders.iter().map(|f| FolderVars { name: f.name.clone(), environment: f.environment.clone() }).collect();
+        let folder_vars: Vec<FolderVars> = folders
+            .iter()
+            .map(|f| FolderVars {
+                name: f.name.clone(),
+                environment: f.environment.clone(),
+            })
+            .collect();
         let mut location = vec![ws.name.clone()];
         location.extend(folders.iter().map(|f| f.name.clone()));
 
@@ -195,14 +248,23 @@ impl Engine {
             },
         });
 
-        let make_input = |script: &str, event: Event, req: &Request, envs: &Envs, jar: &CookieJar, state: &RunState, response: Option<ScriptResponseData>| {
+        let make_input = |script: &str,
+                          event: Event,
+                          req: &Request,
+                          envs: &Envs,
+                          jar: &CookieJar,
+                          state: &RunState,
+                          response: Option<ScriptResponseData>| {
             ScriptInput {
                 script: script.to_string(),
                 event: Some(event),
                 request: irs_scripting::to_script_request(request_id, req),
                 response,
                 environment: envs.script_env(),
-                base_environment: NamedVars { name: envs.base.name.clone(), data: envs.base.data.clone() },
+                base_environment: NamedVars {
+                    name: envs.base.name.clone(),
+                    data: envs.base.data.clone(),
+                },
                 globals: Envs::named(&envs.global),
                 iteration_data: state.iteration_data.clone(),
                 local_variables: state.local_variables.clone(),
@@ -222,9 +284,18 @@ impl Engine {
         // ---- pre-request scripts
         let mut pre_scripts: Vec<(String, String)> = folders
             .iter()
-            .filter_map(|f| f.pre_request_script.as_ref().filter(|s| !s.trim().is_empty()).map(|s| (format!("pre-request: folder {}", f.name), s.clone())))
+            .filter_map(|f| {
+                f.pre_request_script
+                    .as_ref()
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|s| (format!("pre-request: folder {}", f.name), s.clone()))
+            })
             .collect();
-        if let Some(s) = req.pre_request_script.as_ref().filter(|s| !s.trim().is_empty()) {
+        if let Some(s) = req
+            .pre_request_script
+            .as_ref()
+            .filter(|s| !s.trim().is_empty())
+        {
             pre_scripts.push(("pre-request".into(), s.clone()));
         }
         let mut pre_env_changes: Vec<Doc<Environment>> = vec![];
@@ -258,20 +329,41 @@ impl Engine {
                     console,
                     ..Default::default()
                 };
-                let response = self.persist(request_id, resp, jar_changed.then_some(jar), &pre_env_changes)?;
-                return Ok(Outcome { response, skipped: false, next_request });
+                let response = self.persist(
+                    request_id,
+                    resp,
+                    jar_changed.then_some(jar),
+                    &pre_env_changes,
+                )?;
+                return Ok(Outcome {
+                    response,
+                    skipped: false,
+                    next_request,
+                });
             }
             if out.execution.skip_request {
                 let resp = Response {
                     method: req.method.clone(),
                     url: req.url.clone(),
-                    error: Some("Request skipped by pre-request script (insomnia.execution.skipRequest)".into()),
+                    error: Some(
+                        "Request skipped by pre-request script (insomnia.execution.skipRequest)"
+                            .into(),
+                    ),
                     test_results: tests,
                     console,
                     ..Default::default()
                 };
-                let response = self.persist(request_id, resp, jar_changed.then_some(jar), &pre_env_changes)?;
-                return Ok(Outcome { response, skipped: true, next_request });
+                let response = self.persist(
+                    request_id,
+                    resp,
+                    jar_changed.then_some(jar),
+                    &pre_env_changes,
+                )?;
+                return Ok(Outcome {
+                    response,
+                    skipped: true,
+                    next_request,
+                });
             }
         }
         // Persist environment changes before rendering so `{{ vars }}` see them.
@@ -295,7 +387,10 @@ impl Engine {
             extra.push(Layer::new("Iteration data", state.iteration_data.clone()));
         }
         if !state.local_variables.is_empty() {
-            extra.push(Layer::new("Script variables", state.local_variables.clone()));
+            extra.push(Layer::new(
+                "Script variables",
+                state.local_variables.clone(),
+            ));
         }
         let (mut resp, new_jar) = match self.prepare_request(request_id, &req, &extra) {
             Ok(prepared) => self.execute(&prepared).await?,
@@ -319,7 +414,11 @@ impl Engine {
         let mut post_env_changes: Vec<Doc<Environment>> = vec![];
         if resp.error.is_none() {
             let mut after_scripts: Vec<(String, String)> = vec![];
-            if let Some(s) = req.after_response_script.as_ref().filter(|s| !s.trim().is_empty()) {
+            if let Some(s) = req
+                .after_response_script
+                .as_ref()
+                .filter(|s| !s.trim().is_empty())
+            {
                 after_scripts.push(("after-response".into(), s.clone()));
             }
             after_scripts.extend(folders.iter().rev().filter_map(|f| {
@@ -332,13 +431,30 @@ impl Engine {
             let response_data = ScriptResponseData {
                 code: resp.status_code,
                 status: resp.status_message.clone(),
-                headers: resp.headers.iter().map(|h| irs_scripting::ScriptKv { key: h.name.clone(), value: h.value.clone(), disabled: false }).collect(),
+                headers: resp
+                    .headers
+                    .iter()
+                    .map(|h| irs_scripting::ScriptKv {
+                        key: h.name.clone(),
+                        value: h.value.clone(),
+                        disabled: false,
+                    })
+                    .collect(),
                 body: String::from_utf8_lossy(&body).into_owned(),
                 response_time: resp.timings.total_ms,
             };
             for (source, script) in &after_scripts {
-                let input = make_input(script, Event::AfterResponse, &req, &envs, &jar, state, Some(response_data.clone()));
-                let out = irs_scripting::run(input, limits, host.clone(), self.renderer.clone()).await;
+                let input = make_input(
+                    script,
+                    Event::AfterResponse,
+                    &req,
+                    &envs,
+                    &jar,
+                    state,
+                    Some(response_data.clone()),
+                );
+                let out =
+                    irs_scripting::run(input, limits, host.clone(), self.renderer.clone()).await;
                 console.extend(console_entries(&out, source));
                 tests.extend(test_results(&out));
                 for c in envs.apply(&out) {
@@ -364,7 +480,16 @@ impl Engine {
         if resp.body_b64.is_none() && resp.body_path.is_none() && resp.error.is_none() {
             resp.body_b64 = Some(base64::engine::general_purpose::STANDARD.encode(b""));
         }
-        let response = self.persist(request_id, resp, jar_changed.then_some(jar), &post_env_changes)?;
-        Ok(Outcome { response, skipped: false, next_request })
+        let response = self.persist(
+            request_id,
+            resp,
+            jar_changed.then_some(jar),
+            &post_env_changes,
+        )?;
+        Ok(Outcome {
+            response,
+            skipped: false,
+            next_request,
+        })
     }
 }

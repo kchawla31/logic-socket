@@ -15,7 +15,9 @@ use irs_core::{Cookie, VarMap};
 use irs_templating::{Context, Layer, Mode, Renderer};
 use rquickjs::context::EvalOptions;
 use rquickjs::prelude::{Async, Func};
-use rquickjs::{AsyncContext, AsyncRuntime, CatchResultExt, CaughtError, Ctx, Function, Object, Promise, Value};
+use rquickjs::{
+    AsyncContext, AsyncRuntime, CatchResultExt, CaughtError, Ctx, Function, Object, Promise, Value,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
@@ -128,7 +130,10 @@ pub struct Limits {
 
 impl Default for Limits {
     fn default() -> Self {
-        Self { timeout: Duration::from_secs(5), memory_bytes: 64 * 1024 * 1024 }
+        Self {
+            timeout: Duration::from_secs(5),
+            memory_bytes: 64 * 1024 * 1024,
+        }
     }
 }
 
@@ -242,8 +247,12 @@ const SCRIPT_FILE: &str = "script.js";
 
 /// Find `script.js:LINE:COL` in a QuickJS stack trace.
 fn location(stack: &str) -> (Option<u32>, Option<u32>) {
-    let Some(i) = stack.find(SCRIPT_FILE) else { return (None, None) };
-    let mut parts = stack[i + SCRIPT_FILE.len()..].trim_start_matches(':').split(|c: char| !c.is_ascii_digit());
+    let Some(i) = stack.find(SCRIPT_FILE) else {
+        return (None, None);
+    };
+    let mut parts = stack[i + SCRIPT_FILE.len()..]
+        .trim_start_matches(':')
+        .split(|c: char| !c.is_ascii_digit());
     let line = parts.next().and_then(|l| l.parse().ok());
     let col = parts.next().and_then(|c| c.parse().ok());
     (line, col)
@@ -254,63 +263,109 @@ fn caught_to_error(e: CaughtError<'_>) -> ScriptError {
         CaughtError::Exception(ex) => {
             let message = ex.message().unwrap_or_else(|| "script error".into());
             let (line, column) = location(&ex.stack().unwrap_or_default());
-            ScriptError { message, line, column }
+            ScriptError {
+                message,
+                line,
+                column,
+            }
         }
         CaughtError::Value(v) => ScriptError {
-            message: v.as_string().and_then(|s| s.to_string().ok()).unwrap_or_else(|| format!("{v:?}")),
+            message: v
+                .as_string()
+                .and_then(|s| s.to_string().ok())
+                .unwrap_or_else(|| format!("{v:?}")),
             line: None,
             column: None,
         },
-        CaughtError::Error(e) => ScriptError { message: e.to_string(), line: None, column: None },
+        CaughtError::Error(e) => ScriptError {
+            message: e.to_string(),
+            line: None,
+            column: None,
+        },
     }
 }
 
 /// Run one script. Never panics on script errors: they are reported in
 /// [`ScriptOutput::error`] together with any tests/logs produced before the failure.
-pub async fn run(input: ScriptInput, limits: Limits, host: Arc<dyn Host>, renderer: Arc<Renderer>) -> ScriptOutput {
+pub async fn run(
+    input: ScriptInput,
+    limits: Limits,
+    host: Arc<dyn Host>,
+    renderer: Arc<Renderer>,
+) -> ScriptOutput {
     // QuickJS parses/evaluates on the native stack; large vendored libraries
     // need more than a default 2 MB worker stack. Each script gets its own
     // thread + current-thread runtime, which also isolates it from app workers.
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let spawned = std::thread::Builder::new().name("irs-script".into()).stack_size(32 * 1024 * 1024).spawn(move || {
-        let out = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
-            Ok(rt) => rt.block_on(run_on_this_thread(input, limits, host, renderer)),
-            Err(e) => ScriptOutput {
-                error: Some(ScriptError { message: format!("could not start script runtime: {e}"), line: None, column: None }),
-                ..Default::default()
-            },
-        };
-        let _ = tx.send(out);
-    });
+    let spawned = std::thread::Builder::new()
+        .name("irs-script".into())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(move || {
+            let out = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt.block_on(run_on_this_thread(input, limits, host, renderer)),
+                Err(e) => ScriptOutput {
+                    error: Some(ScriptError {
+                        message: format!("could not start script runtime: {e}"),
+                        line: None,
+                        column: None,
+                    }),
+                    ..Default::default()
+                },
+            };
+            let _ = tx.send(out);
+        });
     if let Err(e) = spawned {
         return ScriptOutput {
-            error: Some(ScriptError { message: format!("could not start script thread: {e}"), line: None, column: None }),
+            error: Some(ScriptError {
+                message: format!("could not start script thread: {e}"),
+                line: None,
+                column: None,
+            }),
             ..Default::default()
         };
     }
     rx.await.unwrap_or_else(|_| ScriptOutput {
-        error: Some(ScriptError { message: "script runtime crashed".into(), line: None, column: None }),
+        error: Some(ScriptError {
+            message: "script runtime crashed".into(),
+            line: None,
+            column: None,
+        }),
         ..Default::default()
     })
 }
 
-async fn run_on_this_thread(input: ScriptInput, limits: Limits, host: Arc<dyn Host>, renderer: Arc<Renderer>) -> ScriptOutput {
+async fn run_on_this_thread(
+    input: ScriptInput,
+    limits: Limits,
+    host: Arc<dyn Host>,
+    renderer: Arc<Renderer>,
+) -> ScriptOutput {
     let started = Instant::now();
     let console: Arc<Mutex<Vec<ConsoleLine>>> = Arc::default();
-    let result = tokio::time::timeout(limits.timeout + Duration::from_millis(250), execute(&input, limits, host, renderer, console.clone()))
-        .await
-        .unwrap_or_else(|_| {
-            Err(ScriptError {
-                message: format!("Script timed out after {} ms", limits.timeout.as_millis()),
-                line: None,
-                column: None,
-            })
-        });
+    let result = tokio::time::timeout(
+        limits.timeout + Duration::from_millis(250),
+        execute(&input, limits, host, renderer, console.clone()),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        Err(ScriptError {
+            message: format!("Script timed out after {} ms", limits.timeout.as_millis()),
+            line: None,
+            column: None,
+        })
+    });
     let console = console.lock().unwrap().clone();
     let duration_ms = started.elapsed().as_secs_f64() * 1000.0;
     match result {
         Ok(raw) => {
-            let (line, column) = raw.error.as_ref().map(|e| location(&e.stack)).unwrap_or((None, None));
+            let (line, column) = raw
+                .error
+                .as_ref()
+                .map(|e| location(&e.stack))
+                .unwrap_or((None, None));
             ScriptOutput {
                 request: Some(raw.request),
                 environment: raw.environment,
@@ -321,7 +376,11 @@ async fn run_on_this_thread(input: ScriptInput, limits: Limits, host: Arc<dyn Ho
                 tests: raw.tests,
                 console,
                 execution: raw.execution,
-                error: raw.error.map(|e| ScriptError { message: e.message, line, column }),
+                error: raw.error.map(|e| ScriptError {
+                    message: e.message,
+                    line,
+                    column,
+                }),
                 duration_ms,
             }
         }
@@ -345,13 +404,20 @@ async fn execute(
     renderer: Arc<Renderer>,
     console: Arc<Mutex<Vec<ConsoleLine>>>,
 ) -> Result<RawOutput, ScriptError> {
-    let fail = |m: String| ScriptError { message: m, line: None, column: None };
+    let fail = |m: String| ScriptError {
+        message: m,
+        line: None,
+        column: None,
+    };
     let rt = AsyncRuntime::new().map_err(|e| fail(e.to_string()))?;
     rt.set_memory_limit(limits.memory_bytes).await;
     rt.set_max_stack_size(16 * 1024 * 1024).await; // thread has 32 MB
     let deadline = Instant::now() + limits.timeout;
-    rt.set_interrupt_handler(Some(Box::new(move || Instant::now() > deadline))).await;
-    let ctx = AsyncContext::full(&rt).await.map_err(|e| fail(e.to_string()))?;
+    rt.set_interrupt_handler(Some(Box::new(move || Instant::now() > deadline)))
+        .await;
+    let ctx = AsyncContext::full(&rt)
+        .await
+        .map_err(|e| fail(e.to_string()))?;
 
     let mut ctx_json = serde_json::to_value(input).map_err(|e| fail(e.to_string()))?;
     let event = input.event.unwrap_or(Event::PreRequest);
@@ -387,9 +453,15 @@ async fn execute(
         .await;
     let out = out.map_err(|mut e| {
         if e.message.contains("out of memory") {
-            e.message = format!("Script exceeded the memory limit ({} MB)", limits.memory_bytes / 1024 / 1024);
+            e.message = format!(
+                "Script exceeded the memory limit ({} MB)",
+                limits.memory_bytes / 1024 / 1024
+            );
         } else if e.message.contains("interrupted") {
-            e.message = format!("Script timed out after {} ms (possible infinite loop)", limits.timeout.as_millis());
+            e.message = format!(
+                "Script timed out after {} ms (possible infinite loop)",
+                limits.timeout.as_millis()
+            );
         }
         e
     })?;
@@ -399,7 +471,11 @@ async fn execute(
 /// Evaluate a vendored library with a CommonJS shim and return its exports.
 fn load_module<'js>(ctx: Ctx<'js>, name: String) -> rquickjs::Result<Value<'js>> {
     let Some(src) = vendored(&name) else {
-        return Err(rquickjs::Error::new_from_js_message("string", "module", format!("unknown module {name}")));
+        return Err(rquickjs::Error::new_from_js_message(
+            "string",
+            "module",
+            format!("unknown module {name}"),
+        ));
     };
     let wrapped = format!(
         "(function(){{var module={{exports:{{}}}};var exports=module.exports;var define=undefined;var self=globalThis;var window=undefined;\n{src}\n;if(typeof __ajv!=='undefined'){{module.exports=__ajv;}}return module.exports;}})()"
@@ -432,7 +508,9 @@ fn install_host(
         Func::from(move |template: String, vars: String| -> String {
             let vars: VarMap = serde_json::from_str(&vars).unwrap_or_default();
             let ctx = Context::build(&renderer, &[Layer::new("script", vars)]);
-            renderer.render_str(&template, &ctx, Mode::Keep).unwrap_or(template)
+            renderer
+                .render_str(&template, &ctx, Mode::Keep)
+                .unwrap_or(template)
         }),
     )?;
     h.set("uuid", Func::from(|| uuid::Uuid::new_v4().to_string()))?;
@@ -453,7 +531,9 @@ fn install_host(
                         Ok(resp) => serde_json::to_string(&resp).unwrap_or_default(),
                         Err(e) => serde_json::json!({ "error": e }).to_string(),
                     },
-                    Err(e) => serde_json::json!({ "error": format!("invalid request: {e}") }).to_string(),
+                    Err(e) => {
+                        serde_json::json!({ "error": format!("invalid request: {e}") }).to_string()
+                    }
                 };
                 rquickjs::Result::Ok(out)
             }

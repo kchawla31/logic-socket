@@ -1,4 +1,4 @@
-import { Command as CommandIcon, Folder, Layers, Moon, Plug, Plus, Send, Settings as SettingsIcon, Sun, X } from 'lucide-react';
+import { Command as CommandIcon, Folder, Layers, ListChecks, Moon, Plug, Plus, Send, Settings as SettingsIcon, Sun, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type Command, CommandPalette } from './components/CommandPalette';
@@ -9,12 +9,15 @@ import { FolderView } from './views/FolderView';
 import { McpView } from './views/McpView';
 import { EnvironmentModal, SettingsModal } from './views/Modals';
 import { RequestView } from './views/RequestView';
+import { RunnerView } from './views/RunnerView';
 import { Sidebar } from './views/Sidebar';
 
 interface Tab {
   id: string;
-  kind: TreeNode['kind'];
+  kind: TreeNode['kind'] | 'runner';
 }
+
+const RUNNER = 'runner:';
 
 function load<T>(key: string, fallback: T): T {
   try {
@@ -123,11 +126,12 @@ function Shell() {
   // Drop tabs whose items were deleted (once the tree has loaded).
   useEffect(() => {
     if (!nodes.length) return;
-    setTabs(ts => ts.filter(t => byId.has(t.id)));
-    setActive(a => (a && !byId.has(a) ? null : a));
-  }, [byId, nodes.length]);
+    const alive = (id: string) => byId.has(id) || (id.startsWith(RUNNER) && (id.slice(RUNNER.length) === wsId || byId.has(id.slice(RUNNER.length))));
+    setTabs(ts => ts.filter(t => alive(t.id)));
+    setActive(a => (a && !alive(a) ? null : a));
+  }, [byId, nodes.length, wsId]);
 
-  const open = useCallback((id: string, kind: TreeNode['kind']) => {
+  const open = useCallback((id: string, kind: Tab['kind']) => {
     setTabs(ts => (ts.some(t => t.id === id) ? ts : [...ts, { id, kind }]));
     setActive(id);
   }, []);
@@ -196,6 +200,14 @@ function Shell() {
       },
       { id: 'new-folder', group: 'Actions', label: 'New folder', icon: <Folder className="size-4" />, run: async () => wsId && (await api.folderCreate(wsId, 'New Folder')) },
       { id: 'new-ws', group: 'Actions', label: 'New collection', icon: <Layers className="size-4" />, keywords: 'workspace', run: newWorkspace },
+      {
+        id: 'run-collection',
+        group: 'Actions',
+        label: 'Run collection',
+        icon: <ListChecks className="size-4" />,
+        keywords: 'runner tests iterations data',
+        run: () => wsId && open(`${RUNNER}${wsId}`, 'runner'),
+      },
       { id: 'envs', group: 'Actions', label: 'Manage environments', icon: <Layers className="size-4" />, hint: <Kbd>{modKey()} E</Kbd>, keywords: 'variables', run: () => setEnvOpen(true) },
       { id: 'settings', group: 'Actions', label: 'Settings', icon: <SettingsIcon className="size-4" />, hint: <Kbd>{modKey()} ,</Kbd>, run: () => setSettingsOpen(true) },
       {
@@ -297,12 +309,15 @@ function Shell() {
             onOpen={n => open(n.id, n.kind)}
             onCreated={(id, kind) => open(id, kind)}
             onDeleted={ids => ids.forEach(close)}
+            onRun={targetId => open(`${RUNNER}${targetId}`, 'runner')}
           />
           <main className="flex h-full min-h-0 flex-col">
             {tabs.length > 0 && (
               <div className="flex h-9 shrink-0 items-end gap-0.5 overflow-x-auto border-b border-app bg-subtle px-1.5">
                 {tabs.map(t => {
                   const n = byId.get(t.id);
+                  const runnerTarget = t.kind === 'runner' ? t.id.slice(RUNNER.length) : null;
+                  const label = runnerTarget ? `Run: ${runnerTarget === wsId ? (ws?.name ?? 'Collection') : (byId.get(runnerTarget)?.name ?? 'Folder')}` : n?.name || 'Untitled';
                   return (
                     <div
                       key={t.id}
@@ -316,7 +331,8 @@ function Shell() {
                       {t.kind === 'request' && <span className={cn('font-mono text-[9.5px] font-bold', methodColor(n?.method))}>{methodShort(n?.method)}</span>}
                       {t.kind === 'mcp' && <Plug className="size-3.5 shrink-0 text-violet-500" />}
                       {t.kind === 'folder' && <Folder className="size-3.5 shrink-0 text-muted" />}
-                      <span className="truncate">{n?.name || 'Untitled'}</span>
+                      {t.kind === 'runner' && <ListChecks className="size-3.5 shrink-0 text-emerald-500" />}
+                      <span className="truncate">{label}</span>
                       <button
                         aria-label="Close tab"
                         onClick={e => (e.stopPropagation(), close(t.id))}
@@ -333,6 +349,15 @@ function Shell() {
               {activeTab?.kind === 'request' && <RequestView key={activeTab.id} id={activeTab.id} onRenamed={() => refresh()} />}
               {activeTab?.kind === 'folder' && <FolderView key={activeTab.id} id={activeTab.id} />}
               {activeTab?.kind === 'mcp' && <McpView key={activeTab.id} id={activeTab.id} />}
+              {activeTab?.kind === 'runner' && wsId && (
+                <RunnerView
+                  key={activeTab.id}
+                  targetId={activeTab.id.slice(RUNNER.length)}
+                  workspaceId={wsId}
+                  workspaceName={ws?.name ?? 'Collection'}
+                  tree={tree}
+                />
+              )}
               {!activeTab && (
                 <Empty icon={<Send className="size-9" />} title={ws ? ws.name : 'Welcome'}>
                   <div className="flex flex-col items-center gap-3">
