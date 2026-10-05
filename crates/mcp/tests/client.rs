@@ -27,7 +27,7 @@ async fn exercise(client: &Client) {
     assert!(client.server().instructions.is_some());
 
     let tools = client.list_tools().await.unwrap();
-    assert_eq!((tools.pages, tools.items.len()), (2, 9));
+    assert_eq!((tools.pages, tools.items.len()), (2, 10));
     let create = tools
         .items
         .iter()

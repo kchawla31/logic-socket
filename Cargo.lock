@@ -1993,6 +1993,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "irs-llm"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "futures",
+ "irs-mcp",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "irs-mcp"
 version = "0.1.0"
 dependencies = [

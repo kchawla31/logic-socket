@@ -41,13 +41,32 @@ pub enum McpError {
     Unsupported(&'static str),
 }
 
-#[derive(Debug, Clone)]
+/// Answers server-initiated `sampling/createMessage` requests (e.g. with an LLM).
+pub trait SamplingHandler: Send + Sync {
+    /// `params` is the request's params; return the result object.
+    fn create_message(&self, params: Value) -> futures::future::BoxFuture<'static, Result<Value, String>>;
+}
+
+#[derive(Clone)]
 pub struct ConnectOptions {
     pub transport: TransportConfig,
     /// Roots returned to `roots/list`: (uri, optional name).
     pub root_uris: Vec<(String, Option<String>)>,
     pub request_timeout: Duration,
     pub client_name: String,
+    /// When set, the client advertises `sampling` and answers server requests with it.
+    pub sampling: Option<Arc<dyn SamplingHandler>>,
+}
+
+impl std::fmt::Debug for ConnectOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConnectOptions")
+            .field("transport", &self.transport)
+            .field("root_uris", &self.root_uris)
+            .field("request_timeout", &self.request_timeout)
+            .field("sampling", &self.sampling.is_some())
+            .finish()
+    }
 }
 
 impl ConnectOptions {
@@ -57,6 +76,7 @@ impl ConnectOptions {
             root_uris: vec![],
             request_timeout: Duration::from_secs(60),
             client_name: "insomnia-rs".into(),
+            sampling: None,
         }
     }
 }
@@ -127,6 +147,7 @@ impl Client {
             log.clone(),
             notifications.clone(),
             roots,
+            opts.sampling.clone(),
         ));
 
         let mut client = Client {
@@ -148,9 +169,13 @@ impl Client {
                 instructions: None,
             },
         };
+        let mut capabilities = json!({ "roots": { "listChanged": true } });
+        if opts.sampling.is_some() {
+            capabilities["sampling"] = json!({});
+        }
         let params = json!({
             "protocolVersion": LATEST_PROTOCOL_VERSION,
-            "capabilities": { "roots": { "listChanged": true } },
+            "capabilities": capabilities,
             "clientInfo": { "name": opts.client_name, "version": env!("CARGO_PKG_VERSION") },
         });
         let init: InitializeResult = match client.request_typed("initialize", params).await {
@@ -370,6 +395,7 @@ async fn dispatch(
     log: ProtocolLog,
     notifications: Arc<Mutex<Vec<Notification>>>,
     roots: Vec<Value>,
+    sampling: Option<Arc<dyn SamplingHandler>>,
 ) {
     while let Some(ev) = rx.recv().await {
         match ev {
@@ -420,6 +446,26 @@ async fn dispatch(
                 FrameKind::Request => {
                     log.push_frame(Direction::In, &msg, None, None);
                     let method = msg["method"].as_str().unwrap_or("");
+                    if method == "sampling/createMessage"
+                        && let Some(handler) = sampling.clone()
+                    {
+                        // May take seconds (LLM call): answer from a task so the dispatcher keeps running.
+                        let (transport, log, id) = (transport.clone(), log.clone(), msg["id"].clone());
+                        let fut = handler.create_message(msg.get("params").cloned().unwrap_or(Value::Null));
+                        tokio::spawn(async move {
+                            let started = Instant::now();
+                            let reply = match fut.await {
+                                Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
+                                Err(e) => json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32603, "message": e}}),
+                            };
+                            let ms = (started.elapsed().as_secs_f64() * 100_000.0).round() / 100.0;
+                            log.push_frame(Direction::Out, &reply, Some("sampling/createMessage".into()), Some(ms));
+                            if let Err(e) = transport.send(&reply).await {
+                                log.push_text(Direction::Error, e.to_string());
+                            }
+                        });
+                        continue;
+                    }
                     let reply = match method {
                         "ping" => json!({"jsonrpc": "2.0", "id": msg["id"], "result": {}}),
                         "roots/list" => {
@@ -427,7 +473,11 @@ async fn dispatch(
                         }
                         _ => json!({"jsonrpc": "2.0", "id": msg["id"], "error": {
                             "code": -32601,
-                            "message": format!("insomnia-rs does not handle '{method}' yet (sampling/elicitation arrive with LLM support)"),
+                            "message": if method == "sampling/createMessage" {
+                                "Sampling is disabled for this server (enable it and pick an AI provider in the server settings)".to_string()
+                            } else {
+                                format!("insomnia-rs does not support '{method}' yet")
+                            },
                         }}),
                     };
                     log.push_frame(Direction::Out, &reply, Some(method.to_string()), None);

@@ -224,7 +224,7 @@ fn mcp_inspector_commands_against_mock_server() {
             tools["items"].as_array().unwrap().len(),
             tools["pages"].as_u64()
         ),
-        (9, Some(2))
+        (10, Some(2))
     );
     let create = tools["items"]
         .as_array()

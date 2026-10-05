@@ -92,7 +92,8 @@ pub fn tools_page(cursor: Option<&str>) -> Value {
         {"name": "notify", "description": "Emits a log notification, then returns.", "inputSchema": {"type": "object"}},
         {"name": "fail", "description": "Always returns a tool error (isError: true).", "inputSchema": {"type": "object"}},
         {"name": "slow", "description": "Sleeps for `ms` milliseconds.", "inputSchema": {"type": "object", "properties": {"ms": {"type": "integer", "default": 1500}}}},
-        {"name": "ask_roots", "description": "Asks the client for its roots (stdio only) and returns them.", "inputSchema": {"type": "object"}}
+        {"name": "ask_roots", "description": "Asks the client for its roots (stdio only) and returns them.", "inputSchema": {"type": "object"}},
+        {"name": "ask_llm", "description": "Asks the client's LLM via MCP sampling (stdio only).", "inputSchema": {"type": "object", "properties": {"prompt": {"type": "string"}}, "required": ["prompt"]}, "annotations": {"readOnlyHint": true}}
     ]);
     match cursor {
         Some("page2") => json!({ "tools": page2 }),
@@ -215,6 +216,8 @@ pub async fn handle(msg: &Value) -> Reply {
 pub struct HttpState {
     sessions: Arc<Mutex<HashMap<String, ()>>>,
     required_token: Option<String>,
+    /// Server→client requests awaiting the client's POSTed response, by id.
+    waiting: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<Value>>>>,
 }
 
 impl HttpState {
@@ -268,6 +271,18 @@ async fn http_post(State(st): State<HttpState>, headers: HeaderMap, body: String
             None => return (StatusCode::BAD_REQUEST, "missing mcp-session-id").into_response(),
         }
     }
+    // A client's response to one of our server→client requests (e.g. sampling).
+    if msg.get("method").is_none()
+        && let Some(id) = msg["id"].as_str()
+    {
+        if let Some(tx) = st.waiting.lock().unwrap().remove(id) {
+            let _ = tx.send(msg.clone());
+        }
+        return StatusCode::ACCEPTED.into_response();
+    }
+    if msg["method"] == "tools/call" && msg["params"]["name"] == "ask_llm" {
+        return ask_llm_over_sse(&st, &msg, sid);
+    }
     let reply = handle(&msg).await;
     let Some(resp) = reply.response else {
         return StatusCode::ACCEPTED.into_response();
@@ -301,6 +316,39 @@ async fn http_post(State(st): State<HttpState>, headers: HeaderMap, body: String
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(resp.to_string()))
         .unwrap()
+}
+
+/// Stream a `sampling/createMessage` request to the client, wait for its
+/// answer (POSTed separately), then stream the tool result.
+fn ask_llm_over_sse(st: &HttpState, msg: &Value, sid: Option<String>) -> Response {
+    let req_id = format!("srv-{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default());
+    let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
+    st.waiting.lock().unwrap().insert(req_id.clone(), tx);
+    let prompt = msg["params"]["arguments"]["prompt"].as_str().unwrap_or("hello").to_string();
+    let sampling = serde_json::json!({"jsonrpc": "2.0", "id": req_id, "method": "sampling/createMessage", "params": {
+        "messages": [{"role": "user", "content": {"type": "text", "text": prompt}}],
+        "systemPrompt": "Answer briefly.", "maxTokens": 200
+    }});
+    let call_id = msg["id"].clone();
+    let (out_tx, out_rx) = tokio::sync::mpsc::channel::<Result<String, std::io::Error>>(4);
+    tokio::spawn(async move {
+        let _ = out_tx.send(Ok(format!("event: message\ndata: {sampling}\n\n"))).await;
+        let result = match tokio::time::timeout(Duration::from_secs(30), rx).await {
+            Ok(Ok(v)) if v.get("result").is_some() => {
+                serde_json::json!({"content": [{"type": "text", "text": format!("LLM said: {}", v["result"]["content"]["text"].as_str().unwrap_or(""))}]})
+            }
+            Ok(Ok(v)) => serde_json::json!({"content": [{"type": "text", "text": format!("sampling failed: {}", v["error"]["message"])}], "isError": true}),
+            _ => serde_json::json!({"content": [{"type": "text", "text": "sampling timed out"}], "isError": true}),
+        };
+        let final_msg = serde_json::json!({"jsonrpc": "2.0", "id": call_id, "result": result});
+        let _ = out_tx.send(Ok(format!("event: message\ndata: {final_msg}\n\n"))).await;
+    });
+    let stream = futures::stream::unfold(out_rx, |mut rx| async move { rx.recv().await.map(|x| (x, rx)) });
+    let mut b = Response::builder().header(header::CONTENT_TYPE, "text/event-stream");
+    if let Some(s) = sid {
+        b = b.header("mcp-session-id", s);
+    }
+    b.body(Body::from_stream(stream)).unwrap()
 }
 
 async fn http_delete(State(st): State<HttpState>, headers: HeaderMap) -> StatusCode {
