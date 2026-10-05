@@ -37,6 +37,8 @@ pub struct Options {
     pub user_agent: Option<String>,
     /// Cap on body bytes copied into the timeline.
     pub timeline_body_limit: usize,
+    pub proxy: Option<String>,
+    pub no_proxy: Option<String>,
 }
 
 impl Default for Options {
@@ -50,6 +52,8 @@ impl Default for Options {
             store_cookies: true,
             user_agent: Some(concat!("insomnia-rs/", env!("CARGO_PKG_VERSION")).to_string()),
             timeline_body_limit: 10 * 1024,
+            proxy: None,
+            no_proxy: None,
         }
     }
 }
@@ -315,7 +319,24 @@ pub async fn send(
     }
     let body = wire_body(&req.body)?;
 
-    let client = reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder();
+    if let Some(p) = opts
+        .proxy
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        let proxy = reqwest::Proxy::all(p)
+            .map_err(|e| HttpError::InvalidUrl(p.to_string(), format!("proxy: {e}")))?
+            .no_proxy(
+                opts.no_proxy
+                    .as_deref()
+                    .and_then(reqwest::NoProxy::from_string),
+            );
+        builder = builder.proxy(proxy);
+        tl.push("info", format!("Using proxy {p}"));
+    }
+    let client = builder
         .redirect(reqwest::redirect::Policy::none())
         .danger_accept_invalid_certs(!opts.validate_certificates)
         .timeout(opts.timeout)

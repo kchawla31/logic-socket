@@ -438,6 +438,9 @@ export interface Settings extends Meta {
   maxHistoryPerRequest: number;
   theme: string;
   maxConcurrentRequests: number;
+  scriptTimeoutMs: number;
+  proxyUrl: string;
+  noProxy: string;
 }
 
 // ---- MCP

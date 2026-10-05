@@ -197,8 +197,17 @@ export function GrpcView({ id, workspaceId }: { id: string; workspaceId: string 
           value={req.method}
           onChange={e => {
             const m = services.flatMap(s => s.methods).find(x => x.path === e.target.value);
-            const emptyBody = !req.message.trim() || req.message.trim() === '{}';
-            update({ method: e.target.value, ...(m && emptyBody ? { message: JSON.stringify(m.example, null, 2) } : {}) });
+            const prev = services.flatMap(s => s.methods).find(x => x.path === req.method);
+            const normalized = (t: string) => {
+              try {
+                return JSON.stringify(JSON.parse(t));
+              } catch {
+                return t.trim();
+              }
+            };
+            // replace the message if it is empty or still the previous method's untouched example
+            const untouched = !req.message.trim() || req.message.trim() === '{}' || (prev && normalized(req.message) === JSON.stringify(prev.example));
+            update({ method: e.target.value, ...(m && untouched ? { message: JSON.stringify(m.example, null, 2) } : {}) });
           }}
         >
           <option value="">{loading ? 'Loading methods…' : services.length ? 'Select a method…' : 'No methods — load the schema'}</option>

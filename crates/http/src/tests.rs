@@ -554,3 +554,47 @@ async fn digest_oauth1_and_sigv4_end_to_end() {
     assert!(j["headers"]["x-amz-date"].is_string());
     assert_eq!(j["headers"]["x-amz-security-token"], "sess");
 }
+
+#[tokio::test]
+async fn requests_go_through_the_proxy_unless_bypassed() {
+    let base = server().await; // the echo server doubles as a forward proxy for plain HTTP
+    let opts = Options {
+        proxy: Some(base.clone()),
+        no_proxy: Some("bypass.invalid".into()),
+        ..Default::default()
+    };
+    let res = send(
+        &req("GET", "http://api.example.invalid/echo?via=proxy".into()),
+        &Auth::None,
+        &opts,
+        &mut vec![],
+    )
+    .await
+    .unwrap();
+    let j = json_of(&res);
+    assert_eq!(
+        (j["path"].as_str(), j["query"].as_str()),
+        (Some("/echo"), Some("via=proxy"))
+    );
+    assert_eq!(
+        j["headers"]["host"], "api.example.invalid",
+        "absolute-form request reached the proxy"
+    );
+    assert!(
+        res.timeline
+            .iter()
+            .any(|t| t.text.starts_with("Using proxy"))
+    );
+    let err = send(
+        &req("GET", "http://bypass.invalid/echo".into()),
+        &Auth::None,
+        &opts,
+        &mut vec![],
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(err, HttpError::Network(_)),
+        "no_proxy host is resolved directly (and fails)"
+    );
+}

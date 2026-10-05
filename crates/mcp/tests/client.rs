@@ -191,17 +191,18 @@ async fn stdio_end_to_end_with_roots_and_stderr() {
 #[tokio::test]
 async fn timeouts_and_bad_commands() {
     let mut opts = stdio();
-    opts.request_timeout = Duration::from_millis(200);
+    // generous enough for the initialize handshake on a loaded machine
+    opts.request_timeout = Duration::from_millis(1500);
     let client = Client::connect(opts).await.unwrap();
     let err = client
-        .call_tool("slow", json!({"ms": 2000}))
+        .call_tool("slow", json!({"ms": 6000}))
         .await
         .unwrap_err();
     assert_eq!(
         err,
         McpError::Timeout {
             method: "tools/call".into(),
-            ms: 200
+            ms: 1500
         }
     );
     assert!(

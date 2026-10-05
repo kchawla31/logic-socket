@@ -262,11 +262,16 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                 .meta
                 .id
         }
-        "GrpcRequest" => store
-            .insert(parent.as_deref(), serde_json::from_value::<irs_core::GrpcRequest>(data).map_err(e)?)
-            .map_err(e)?
-            .meta
-            .id,
+        "GrpcRequest" => {
+            store
+                .insert(
+                    parent.as_deref(),
+                    serde_json::from_value::<irs_core::GrpcRequest>(data).map_err(e)?,
+                )
+                .map_err(e)?
+                .meta
+                .id
+        }
         "RealtimeRequest" => {
             store
                 .insert(
@@ -309,7 +314,11 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                         }
                         "GrpcRequest" => {
                             store
-                                .insert(Some(dst), serde_json::from_value::<irs_core::GrpcRequest>(c.data).map_err(e)?)
+                                .insert(
+                                    Some(dst),
+                                    serde_json::from_value::<irs_core::GrpcRequest>(c.data)
+                                        .map_err(e)?,
+                                )
                                 .map_err(e)?;
                         }
                         "RealtimeRequest" => {
@@ -1008,6 +1017,7 @@ pub const APP_EVENTS: &[&str] = &[
     "runner-event",
     "llm-event",
     "rt-event",
+    "grpc-event",
 ];
 
 /// Register state, events and commands. Shared by `run` and the IPC tests.

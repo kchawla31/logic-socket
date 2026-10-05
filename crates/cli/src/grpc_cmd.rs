@@ -40,18 +40,35 @@ pub async fn run(engine: &Engine, a: GrpcArgs) -> Result<()> {
     let (url, schema, method, data, metadata) = match &saved {
         Some(r) => {
             let p = engine.grpc_prepare(r.id())?;
-            (p.url, engine.grpc_schema(r.id()).await?, a.method.clone().unwrap_or(p.method), p.body, p.metadata)
+            (
+                p.url,
+                engine.grpc_schema(r.id()).await?,
+                a.method.clone().unwrap_or(p.method),
+                p.body,
+                p.metadata,
+            )
         }
         None => {
             let schema = if a.protos.is_empty() {
-                irs_grpc::reflect(irs_grpc::connect(&a.target).await?).await.map_err(|e| anyhow!("{e} (pass --proto files if the server has no reflection)"))?
+                irs_grpc::reflect(irs_grpc::connect(&a.target).await?)
+                    .await
+                    .map_err(|e| {
+                        anyhow!("{e} (pass --proto files if the server has no reflection)")
+                    })?
             } else {
-                let dir = a.protos[0].parent().map(|p| p.to_path_buf()).unwrap_or_default();
+                let dir = a.protos[0]
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_default();
                 let files = a
                     .protos
                     .iter()
                     .map(|p| {
-                        let name = p.strip_prefix(&dir).unwrap_or(p).to_string_lossy().into_owned();
+                        let name = p
+                            .strip_prefix(&dir)
+                            .unwrap_or(p)
+                            .to_string_lossy()
+                            .into_owned();
                         Ok((name, std::fs::read_to_string(p)?))
                     })
                     .collect::<std::io::Result<Vec<_>>>()?;
@@ -60,9 +77,19 @@ pub async fn run(engine: &Engine, a: GrpcArgs) -> Result<()> {
             let md = a
                 .headers
                 .iter()
-                .map(|h| h.split_once(':').map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).ok_or_else(|| anyhow!("metadata must be 'key: value'")))
+                .map(|h| {
+                    h.split_once(':')
+                        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+                        .ok_or_else(|| anyhow!("metadata must be 'key: value'"))
+                })
                 .collect::<Result<Vec<_>>>()?;
-            (a.target.clone(), schema, a.method.clone().unwrap_or_default(), a.data.clone(), md)
+            (
+                a.target.clone(),
+                schema,
+                a.method.clone().unwrap_or_default(),
+                a.data.clone(),
+                md,
+            )
         }
     };
 
@@ -76,7 +103,12 @@ pub async fn run(engine: &Engine, a: GrpcArgs) -> Result<()> {
                     (false, true) => green("server stream"),
                     _ => dim("unary"),
                 };
-                println!("  {} {kind}  {} → {}", cyan(&m.name), dim(&m.input_type), dim(&m.output_type));
+                println!(
+                    "  {} {kind}  {} → {}",
+                    cyan(&m.name),
+                    dim(&m.input_type),
+                    dim(&m.output_type)
+                );
                 println!("    {}", dim(&format!("example: {}", m.example)));
             }
         }
@@ -86,7 +118,12 @@ pub async fn run(engine: &Engine, a: GrpcArgs) -> Result<()> {
     let path = if method.matches('/').count() == 1 && !method.contains('.') {
         // Service/Method without package: resolve by suffix
         let (svc, m) = method.split_once('/').unwrap();
-        schema.services().into_iter().find(|s| s.name.ends_with(svc)).map(|s| format!("{}/{m}", s.name)).unwrap_or(method.clone())
+        schema
+            .services()
+            .into_iter()
+            .find(|s| s.name.ends_with(svc))
+            .map(|s| format!("{}/{m}", s.name))
+            .unwrap_or(method.clone())
     } else {
         method.clone()
     };
@@ -95,7 +132,16 @@ pub async fn run(engine: &Engine, a: GrpcArgs) -> Result<()> {
     if !m.is_client_streaming() && !m.is_server_streaming() {
         let r = irs_grpc::unary(channel, &m, &data, &metadata, Duration::from_secs(30)).await?;
         let status = format!("{} {}", r.status.code, r.status.code_name);
-        eprintln!("{} {} {}", if r.status.code == 0 { green(&status) } else { red(&status) }, dim(&format!("{:.0} ms", r.latency_ms)), r.status.message);
+        eprintln!(
+            "{} {} {}",
+            if r.status.code == 0 {
+                green(&status)
+            } else {
+                red(&status)
+            },
+            dim(&format!("{:.0} ms", r.latency_ms)),
+            r.status.message
+        );
         if let Some(resp) = r.response {
             println!("{}", serde_json::to_string_pretty(&resp)?);
         }
@@ -150,7 +196,11 @@ pub async fn run(engine: &Engine, a: GrpcArgs) -> Result<()> {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    let failed = tokio::time::timeout(Duration::from_secs(2), printer).await.ok().and_then(|r| r.ok()).unwrap_or(false);
+    let failed = tokio::time::timeout(Duration::from_secs(2), printer)
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .unwrap_or(false);
     if failed {
         bail!("stream ended with an error");
     }

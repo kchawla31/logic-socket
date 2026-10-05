@@ -21,15 +21,27 @@ impl Engine {
 
     fn render(&self, id: &str, field: &str, text: &str) -> Result<String> {
         let ctx = self.context(id)?;
-        self.renderer().render_str(text, &ctx, Mode::Throw).map_err(|source| EngineError::Render { field: field.into(), source })
+        self.renderer()
+            .render_str(text, &ctx, Mode::Throw)
+            .map_err(|source| EngineError::Render {
+                field: field.into(),
+                source,
+            })
     }
 
     /// Render URL, body and metadata of a gRPC request.
     pub fn grpc_prepare(&self, id: &str) -> Result<GrpcPrepared> {
         let r: Doc<GrpcRequest> = self.store.get(id)?;
         let mut metadata = vec![];
-        for m in r.metadata.iter().filter(|m| !m.disabled && !m.name.trim().is_empty()) {
-            metadata.push((self.render(id, "metadata name", &m.name)?, self.render(id, &format!("metadata '{}'", m.name), &m.value)?));
+        for m in r
+            .metadata
+            .iter()
+            .filter(|m| !m.disabled && !m.name.trim().is_empty())
+        {
+            metadata.push((
+                self.render(id, "metadata name", &m.name)?,
+                self.render(id, &format!("metadata '{}'", m.name), &m.value)?,
+            ));
         }
         Ok(GrpcPrepared {
             url: self.render(id, "URL", &r.url)?,
@@ -46,16 +58,29 @@ impl Engine {
         let r: Doc<GrpcRequest> = self.store.get(id)?;
         if r.schema_source == "protos" {
             let ws = self.workspace_of(id)?;
-            let files: Vec<(String, String)> = self.proto_files(ws.id())?.into_iter().map(|f| (f.body.name.clone(), f.body.contents.clone())).collect();
+            let files: Vec<(String, String)> = self
+                .proto_files(ws.id())?
+                .into_iter()
+                .map(|f| (f.body.name.clone(), f.body.contents.clone()))
+                .collect();
             if files.is_empty() {
-                return Err(EngineError::Message("No proto files in this collection — add one or switch to server reflection".into()));
+                return Err(EngineError::Message(
+                    "No proto files in this collection — add one or switch to server reflection"
+                        .into(),
+                ));
             }
             return Schema::from_protos(&files).map_err(|e| EngineError::Message(e.to_string()));
         }
         let url = self.render(id, "URL", &r.url)?;
-        let channel = irs_grpc::connect(&url).await.map_err(|e| EngineError::Message(e.to_string()))?;
+        let channel = irs_grpc::connect(&url)
+            .await
+            .map_err(|e| EngineError::Message(e.to_string()))?;
         irs_grpc::reflect(channel).await.map_err(|e| {
-            let hint = if e.to_string().contains("Unimplemented") { " — the server has no reflection service; add its .proto files instead" } else { "" };
+            let hint = if e.to_string().contains("Unimplemented") {
+                " — the server has no reflection service; add its .proto files instead"
+            } else {
+                ""
+            };
             EngineError::Message(format!("{e}{hint}"))
         })
     }

@@ -346,6 +346,8 @@ impl Engine {
             validate_certificates: settings.validate_certificates,
             send_cookies: req.settings.send_cookies,
             store_cookies: req.settings.store_cookies,
+            proxy: Some(settings.proxy_url.clone()).filter(|p| !p.trim().is_empty()),
+            no_proxy: Some(settings.no_proxy.clone()).filter(|p| !p.trim().is_empty()),
             ..Default::default()
         };
         Ok(Prepared {

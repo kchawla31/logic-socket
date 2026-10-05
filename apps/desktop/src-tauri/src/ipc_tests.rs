@@ -559,7 +559,10 @@ fn grpc_commands_with_protos_and_reflection() {
     let h = Harness::new();
     let ws = h.ok("workspace_create", json!({"name": "G"}));
     let r = h.ok("grpc_create", json!({"parentId": ws["id"]}));
-    assert_eq!(h.ok("tree_get", json!({"workspaceId": ws["id"]}))[0]["kind"], "grpc");
+    assert_eq!(
+        h.ok("tree_get", json!({"workspaceId": ws["id"]}))[0]["kind"],
+        "grpc"
+    );
     let mut doc = r.clone();
     doc["url"] = json!(url);
     doc["method"] = json!("/demo.Greeter/SayHello");
@@ -578,9 +581,21 @@ fn grpc_commands_with_protos_and_reflection() {
     // proto files instead of reflection
     doc["schemaSource"] = json!("protos");
     h.ok("grpc_update", json!({"doc": doc.clone()}));
-    assert!(h.call("grpc_methods", json!({"id": r["id"], "refresh": true})).unwrap_err().as_str().unwrap().contains("No proto files"));
+    assert!(
+        h.call("grpc_methods", json!({"id": r["id"], "refresh": true}))
+            .unwrap_err()
+            .as_str()
+            .unwrap()
+            .contains("No proto files")
+    );
     h.ok("proto_file_create", json!({"workspaceId": ws["id"], "name": "demo.proto", "contents": irs_grpc::demo::DEMO_PROTO}));
-    assert_eq!(h.ok("grpc_methods", json!({"id": r["id"], "refresh": true}))[0]["methods"].as_array().unwrap().len(), 4);
+    assert_eq!(
+        h.ok("grpc_methods", json!({"id": r["id"], "refresh": true}))[0]["methods"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
 
     // bidi stream via commands
     doc["method"] = json!("/demo.Greeter/Chat");
@@ -593,8 +608,33 @@ fn grpc_commands_with_protos_and_reflection() {
         .find_map(|_| {
             std::thread::sleep(std::time::Duration::from_millis(20));
             let l = h.ok("grpc_log", json!({"id": r["id"]}));
-            l.as_array().unwrap().iter().any(|e| e["kind"] == "close").then_some(l)
+            l.as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["kind"] == "close")
+                .then_some(l)
         })
         .expect("stream finished");
     assert!(log.as_array().unwrap().iter().any(|e| e["direction"] == "in" && e["data"].as_str().unwrap().contains("you said: yo")));
+}
+
+#[test]
+fn every_emitted_event_is_listed_in_app_events() {
+    let sources = [
+        include_str!("lib.rs"),
+        include_str!("ai.rs"),
+        include_str!("rt.rs"),
+        include_str!("grpc.rs"),
+        include_str!("auth.rs"),
+    ];
+    let mut missing = vec![];
+    for src in sources {
+        for part in src.split("emit(\"").skip(1) {
+            let name = part.split('"').next().unwrap();
+            if !crate::APP_EVENTS.contains(&name) {
+                missing.push(name.to_string());
+            }
+        }
+    }
+    assert!(missing.is_empty(), "add to APP_EVENTS: {missing:?}");
 }

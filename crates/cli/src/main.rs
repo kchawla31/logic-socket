@@ -1,7 +1,7 @@
 //! `irs` — insomnia-rs command line.
 
-mod llm_cmd;
 mod grpc_cmd;
+mod llm_cmd;
 mod mcp_cmd;
 mod mock_gql;
 mod out;

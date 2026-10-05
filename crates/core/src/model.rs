@@ -808,6 +808,10 @@ pub struct Settings {
     pub theme: String,
     pub max_concurrent_requests: usize,
     pub script_timeout_ms: u64,
+    /// e.g. `http://proxy.corp:3128` (applies to HTTP and HTTPS); empty = no proxy.
+    pub proxy_url: String,
+    /// Comma-separated hosts/domains/CIDRs that bypass the proxy.
+    pub no_proxy: String,
 }
 
 impl Default for Settings {
@@ -821,6 +825,8 @@ impl Default for Settings {
             theme: "system".into(),
             max_concurrent_requests: 8,
             script_timeout_ms: 5_000,
+            proxy_url: String::new(),
+            no_proxy: "localhost,127.0.0.1".into(),
         }
     }
 }

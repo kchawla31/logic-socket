@@ -44,11 +44,15 @@ fn msg(s: &Schema, name: &str, fields: &[(&str, PValue)]) -> DynamicMessage {
 }
 
 fn get_str(m: &DynamicMessage, f: &str) -> String {
-    m.get_field_by_name(f).and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default()
+    m.get_field_by_name(f)
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default()
 }
 
 fn get_i64(m: &DynamicMessage, f: &str) -> i64 {
-    m.get_field_by_name(f).and_then(|v| v.as_i64().or(v.as_i32().map(i64::from))).unwrap_or(0)
+    m.get_field_by_name(f)
+        .and_then(|v| v.as_i64().or(v.as_i32().map(i64::from)))
+        .unwrap_or(0)
 }
 
 struct Unary(Schema);
@@ -66,11 +70,29 @@ impl tonic::server::UnaryService<DynamicMessage> for Unary {
                 return Err(Status::invalid_argument("name is required"));
             }
             let text = format!("Hello, {name}!");
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
-            let ts = msg(&s, "google.protobuf.Timestamp", &[("seconds", PValue::I64(now.as_secs() as i64)), ("nanos", PValue::I32(0))]);
-            let reply = msg(&s, "demo.HelloReply", &[("message", PValue::String(text.clone())), ("length", PValue::I32(text.len() as i32)), ("at", PValue::Message(ts))]);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap();
+            let ts = msg(
+                &s,
+                "google.protobuf.Timestamp",
+                &[
+                    ("seconds", PValue::I64(now.as_secs() as i64)),
+                    ("nanos", PValue::I32(0)),
+                ],
+            );
+            let reply = msg(
+                &s,
+                "demo.HelloReply",
+                &[
+                    ("message", PValue::String(text.clone())),
+                    ("length", PValue::I32(text.len() as i32)),
+                    ("at", PValue::Message(ts)),
+                ],
+            );
             let mut r = Response::new(reply);
-            r.metadata_mut().insert("x-served-by", "irs-demo".parse().unwrap());
+            r.metadata_mut()
+                .insert("x-served-by", "irs-demo".parse().unwrap());
             Ok(r)
         })
     }
@@ -85,8 +107,12 @@ impl tonic::server::ServerStreamingService<DynamicMessage> for Count {
         let s = self.0.clone();
         Box::pin(async move {
             let to = get_i64(req.get_ref(), "to").clamp(0, 100);
-            let items: Vec<Result<DynamicMessage, Status>> = (1..=to).map(|i| Ok(msg(&s, "demo.Number", &[("value", PValue::I64(i))]))).collect();
-            Ok(Response::new(Box::pin(futures::stream::iter(items)) as BoxStream))
+            let items: Vec<Result<DynamicMessage, Status>> = (1..=to)
+                .map(|i| Ok(msg(&s, "demo.Number", &[("value", PValue::I64(i))])))
+                .collect();
+            Ok(Response::new(
+                Box::pin(futures::stream::iter(items)) as BoxStream
+            ))
         })
     }
 }
@@ -103,7 +129,11 @@ impl tonic::server::ClientStreamingService<DynamicMessage> for Sum {
             while let Some(m) = stream.message().await? {
                 total += get_i64(&m, "value");
             }
-            Ok(Response::new(msg(&s, "demo.Number", &[("value", PValue::I64(total))])))
+            Ok(Response::new(msg(
+                &s,
+                "demo.Number",
+                &[("value", PValue::I64(total))],
+            )))
         })
     }
 }
@@ -118,7 +148,17 @@ impl tonic::server::StreamingService<DynamicMessage> for Chat {
         Box::pin(async move {
             let stream = req.into_inner().map(move |m| {
                 let m = m?;
-                Ok(msg(&s, "demo.ChatMessage", &[("user", PValue::String("bot".into())), ("text", PValue::String(format!("you said: {}", get_str(&m, "text"))))]))
+                Ok(msg(
+                    &s,
+                    "demo.ChatMessage",
+                    &[
+                        ("user", PValue::String("bot".into())),
+                        (
+                            "text",
+                            PValue::String(format!("you said: {}", get_str(&m, "text"))),
+                        ),
+                    ],
+                ))
             });
             Ok(Response::new(Box::pin(stream) as BoxStream))
         })
@@ -132,7 +172,8 @@ where
 {
     type Response = http::Response<Body>;
     type Error = Infallible;
-    type Future = Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Infallible>> + Send>>;
+    type Future =
+        Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Infallible>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
         Poll::Ready(Ok(()))
@@ -144,10 +185,26 @@ where
         Box::pin(async move {
             let input = |m: &str| DynamicCodec::new(desc(&s, m));
             let res = match path.as_str() {
-                "/demo.Greeter/SayHello" => tonic::server::Grpc::new(input("demo.HelloRequest")).unary(Unary(s.clone()), req).await,
-                "/demo.Greeter/CountUp" => tonic::server::Grpc::new(input("demo.CountRequest")).server_streaming(Count(s.clone()), req).await,
-                "/demo.Greeter/Sum" => tonic::server::Grpc::new(input("demo.Number")).client_streaming(Sum(s.clone()), req).await,
-                "/demo.Greeter/Chat" => tonic::server::Grpc::new(input("demo.ChatMessage")).streaming(Chat(s.clone()), req).await,
+                "/demo.Greeter/SayHello" => {
+                    tonic::server::Grpc::new(input("demo.HelloRequest"))
+                        .unary(Unary(s.clone()), req)
+                        .await
+                }
+                "/demo.Greeter/CountUp" => {
+                    tonic::server::Grpc::new(input("demo.CountRequest"))
+                        .server_streaming(Count(s.clone()), req)
+                        .await
+                }
+                "/demo.Greeter/Sum" => {
+                    tonic::server::Grpc::new(input("demo.Number"))
+                        .client_streaming(Sum(s.clone()), req)
+                        .await
+                }
+                "/demo.Greeter/Chat" => {
+                    tonic::server::Grpc::new(input("demo.ChatMessage"))
+                        .streaming(Chat(s.clone()), req)
+                        .await
+                }
                 _ => Status::unimplemented(format!("no method {path}")).into_http(),
             };
             Ok(res)
@@ -166,7 +223,10 @@ pub async fn spawn(port: u16, with_reflection: bool) -> std::io::Result<String> 
         let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
         let mut router = tonic::transport::Server::builder().add_service(greeter);
         if with_reflection {
-            let reflection = tonic_reflection::server::Builder::configure().register_encoded_file_descriptor_set(&fds).build_v1().expect("reflection");
+            let reflection = tonic_reflection::server::Builder::configure()
+                .register_encoded_file_descriptor_set(&fds)
+                .build_v1()
+                .expect("reflection");
             router = router.add_service(reflection);
         }
         let _ = router.serve_with_incoming(incoming).await;

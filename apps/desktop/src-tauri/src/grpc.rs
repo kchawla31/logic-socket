@@ -11,34 +11,60 @@ use tauri::{Emitter, State};
 use crate::{AppState, CmdResult, e};
 
 #[tauri::command]
-pub fn proto_file_list(state: State<'_, AppState>, workspace_id: String) -> CmdResult<Vec<Doc<ProtoFile>>> {
+pub fn proto_file_list(
+    state: State<'_, AppState>,
+    workspace_id: String,
+) -> CmdResult<Vec<Doc<ProtoFile>>> {
     state.engine.proto_files(&workspace_id).map_err(e)
 }
 
 #[tauri::command]
-pub fn proto_file_create(state: State<'_, AppState>, workspace_id: String, name: String, contents: String) -> CmdResult<Doc<ProtoFile>> {
-    state.engine.store.insert(Some(&workspace_id), ProtoFile { name, contents }).map_err(e)
+pub fn proto_file_create(
+    state: State<'_, AppState>,
+    workspace_id: String,
+    name: String,
+    contents: String,
+) -> CmdResult<Doc<ProtoFile>> {
+    state
+        .engine
+        .store
+        .insert(Some(&workspace_id), ProtoFile { name, contents })
+        .map_err(e)
 }
 
 #[tauri::command]
-pub fn proto_file_update(state: State<'_, AppState>, doc: Doc<ProtoFile>) -> CmdResult<Doc<ProtoFile>> {
+pub fn proto_file_update(
+    state: State<'_, AppState>,
+    doc: Doc<ProtoFile>,
+) -> CmdResult<Doc<ProtoFile>> {
     state.grpc_schemas.lock().unwrap().clear(); // protos changed: recompile on next use
     state.engine.store.update(&doc).map_err(e)
 }
 
 #[tauri::command]
 pub fn grpc_create(state: State<'_, AppState>, parent_id: String) -> CmdResult<Doc<GrpcRequest>> {
-    state.engine.store.insert(Some(&parent_id), GrpcRequest::default()).map_err(e)
+    state
+        .engine
+        .store
+        .insert(Some(&parent_id), GrpcRequest::default())
+        .map_err(e)
 }
 
 #[tauri::command]
-pub fn grpc_update(state: State<'_, AppState>, doc: Doc<GrpcRequest>) -> CmdResult<Doc<GrpcRequest>> {
+pub fn grpc_update(
+    state: State<'_, AppState>,
+    doc: Doc<GrpcRequest>,
+) -> CmdResult<Doc<GrpcRequest>> {
     state.engine.store.update(&doc).map_err(e)
 }
 
 /// Services and methods (cached per request; `refresh` reloads protos/reflection).
 #[tauri::command]
-pub async fn grpc_methods(state: State<'_, AppState>, id: String, refresh: bool) -> CmdResult<Vec<ServiceInfo>> {
+pub async fn grpc_methods(
+    state: State<'_, AppState>,
+    id: String,
+    refresh: bool,
+) -> CmdResult<Vec<ServiceInfo>> {
     if !refresh && let Some(s) = state.grpc_schemas.lock().unwrap().get(&id) {
         return Ok(s.services());
     }
@@ -48,7 +74,11 @@ pub async fn grpc_methods(state: State<'_, AppState>, id: String, refresh: bool)
     Ok(services)
 }
 
-async fn method(state: &AppState, id: &str, path: &str) -> CmdResult<prost_reflect::MethodDescriptor> {
+async fn method(
+    state: &AppState,
+    id: &str,
+    path: &str,
+) -> CmdResult<prost_reflect::MethodDescriptor> {
     if path.is_empty() {
         return Err("Pick a method first".into());
     }
@@ -57,7 +87,11 @@ async fn method(state: &AppState, id: &str, path: &str) -> CmdResult<prost_refle
         Some(s) => s,
         None => {
             let s = state.engine.grpc_schema(id).await.map_err(e)?;
-            state.grpc_schemas.lock().unwrap().insert(id.to_string(), s.clone());
+            state
+                .grpc_schemas
+                .lock()
+                .unwrap()
+                .insert(id.to_string(), s.clone());
             s
         }
     };
@@ -72,18 +106,26 @@ pub async fn grpc_invoke(state: State<'_, AppState>, id: String) -> CmdResult<Un
         return Err("This is a streaming method — use Start".into());
     }
     let channel = irs_grpc::connect(&p.url).await.map_err(e)?;
-    irs_grpc::unary(channel, &m, &p.body, &p.metadata, p.timeout).await.map_err(e)
+    irs_grpc::unary(channel, &m, &p.body, &p.metadata, p.timeout)
+        .await
+        .map_err(e)
 }
 
 #[tauri::command]
-pub async fn grpc_stream_start<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, AppState>, id: String) -> CmdResult<()> {
+pub async fn grpc_stream_start<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, AppState>,
+    id: String,
+) -> CmdResult<()> {
     if let Some(old) = state.grpc_calls.lock().unwrap().remove(&id) {
         old.lock().unwrap().cancel();
     }
     let p = state.engine.grpc_prepare(&id).map_err(e)?;
     let m = method(&state, &id, &p.method).await?;
     let channel = irs_grpc::connect(&p.url).await.map_err(e)?;
-    let call = irs_grpc::start_stream(channel, &m, Some(&p.body), &p.metadata).await.map_err(e)?;
+    let call = irs_grpc::start_stream(channel, &m, Some(&p.body), &p.metadata)
+        .await
+        .map_err(e)?;
     let mut rx = call.log.subscribe();
     for ev in call.log.entries() {
         let _ = app.emit("grpc-event", json!({ "id": id, "event": ev }));
@@ -94,12 +136,22 @@ pub async fn grpc_stream_start<R: tauri::Runtime>(app: tauri::AppHandle<R>, stat
             let _ = app.emit("grpc-event", json!({ "id": id2, "event": ev }));
         }
     });
-    state.grpc_calls.lock().unwrap().insert(id, Arc::new(Mutex::new(call)));
+    state
+        .grpc_calls
+        .lock()
+        .unwrap()
+        .insert(id, Arc::new(Mutex::new(call)));
     Ok(())
 }
 
 fn call(state: &AppState, id: &str) -> CmdResult<Arc<Mutex<StreamCall>>> {
-    state.grpc_calls.lock().unwrap().get(id).cloned().ok_or_else(|| "No active stream — press Start".to_string())
+    state
+        .grpc_calls
+        .lock()
+        .unwrap()
+        .get(id)
+        .cloned()
+        .ok_or_else(|| "No active stream — press Start".to_string())
 }
 
 /// Send the request's current message (rendered) on a client/bidi stream.
@@ -129,5 +181,11 @@ pub fn grpc_cancel(state: State<'_, AppState>, id: String) {
 
 #[tauri::command]
 pub fn grpc_log(state: State<'_, AppState>, id: String) -> Vec<RtEvent> {
-    state.grpc_calls.lock().unwrap().get(&id).map(|c| c.lock().unwrap().log.entries()).unwrap_or_default()
+    state
+        .grpc_calls
+        .lock()
+        .unwrap()
+        .get(&id)
+        .map(|c| c.lock().unwrap().log.entries())
+        .unwrap_or_default()
 }

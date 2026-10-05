@@ -80,7 +80,7 @@ function defaults(t: Auth['type']): Auth {
   }
 }
 
-function OAuth2Token({ ownerId }: { ownerId: string }) {
+function OAuth2Token({ ownerId, grantType }: { ownerId: string; grantType: string }) {
   const toast = useToast();
   const [status, setStatus] = useState<TokenStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -111,7 +111,9 @@ function OAuth2Token({ ownerId }: { ownerId: string }) {
             {status.hasRefreshToken && <Badge>refreshable</Badge>}
           </>
         ) : (
-          <span className="text-[12.5px] text-muted">none yet — fetched automatically on send, or click Get token</span>
+          <span className="text-[12.5px] text-muted">
+            {grantType === 'authorization_code' ? 'none yet — click Get token to sign in in your browser' : 'none yet — fetched automatically on send, or click Get token'}
+          </span>
         )}
         <div className="flex-1" />
         <Button size="sm" variant="primary" onClick={get} loading={busy}>
@@ -217,7 +219,7 @@ export function AuthEditor({
             <Toggle checked={auth.credentialsInBody} onChange={credentialsInBody => onChange({ ...auth, credentialsInBody })} label={auth.credentialsInBody ? 'in the form body' : 'HTTP Basic header'} />
           </Field>
           <Field label="Header prefix">{v(auth.tokenPrefix, tokenPrefix => onChange({ ...auth, tokenPrefix }), 'Bearer')}</Field>
-          <OAuth2Token ownerId={contextId} />
+          <OAuth2Token ownerId={contextId} grantType={auth.grantType} />
         </>
       )}
       {auth.type === 'oauth1' && (

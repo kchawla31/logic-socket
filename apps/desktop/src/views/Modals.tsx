@@ -179,6 +179,14 @@ export function SettingsModal({
               onChange={e => update({ maxHistoryPerRequest: Number(e.target.value) || 1 })}
             />
           </Row>
+          <Row label="Script timeout (ms)">
+            <Input type="number" className="w-32" value={s.scriptTimeoutMs} onChange={e => update({ scriptTimeoutMs: Number(e.target.value) || 5000 })} />
+          </Row>
+          <div className="flex flex-col gap-1.5 border-t border-app pt-3">
+            <span>Proxy</span>
+            <Input value={s.proxyUrl} placeholder="http://proxy.example.com:3128 (empty: HTTP(S)_PROXY env vars)" onChange={e => update({ proxyUrl: e.target.value })} />
+            <Input value={s.noProxy} placeholder="Bypass: localhost,127.0.0.1,.internal" onChange={e => update({ noProxy: e.target.value })} />
+          </div>
           <p className="text-[12px] text-muted">Settings are saved immediately and shared with the irs command-line tool.</p>
         </div>
       )}
