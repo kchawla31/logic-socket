@@ -6,6 +6,8 @@ members = [
   "crates/http",
   "crates/mcp",
   "crates/engine",
+  "crates/scripting",
+  "crates/runner",
   "crates/cli",
   "apps/desktop/src-tauri",
 ]
@@ -21,6 +23,8 @@ irs-templating = { path = "crates/templating" }
 irs-http = { path = "crates/http" }
 irs-mcp = { path = "crates/mcp" }
 irs-engine = { path = "crates/engine" }
+irs-scripting = { path = "crates/scripting" }
+irs-runner = { path = "crates/runner" }
 
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "multipart", "stream", "gzip", "brotli", "deflate", "zstd"] }
@@ -41,6 +45,8 @@ futures = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 tempfile = "3"
 axum = "0.8"
+rquickjs = { version = "0.14", features = ["futures", "parallel"] }
+csv = "1"
 
 [profile.release]
 lto = "thin"
