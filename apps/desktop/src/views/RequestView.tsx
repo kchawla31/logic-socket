@@ -1,14 +1,15 @@
-import { Braces, Send } from 'lucide-react';
+import { Braces, FileCode2, Send } from 'lucide-react';
 import { type ClipboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { CodeEditor, KeyValueEditor } from '../components/editors';
 import { GraphQLEditor } from '../components/GraphQLEditor';
 import { ScriptEditor } from '../components/ScriptEditor';
-import { Button, Empty, Input, Kbd, Select, Split, Tabs, Toggle, useToast } from '../components/ui';
+import { Button, Empty, IconButton, Input, Kbd, Select, Split, Tabs, Toggle, useToast } from '../components/ui';
 import { VarInput } from '../components/VarInput';
 import { api, type Body, errorText, type KeyValue, type Preview, type Request, type ResponseView } from '../lib/api';
 import { cn, METHODS, methodColor, modKey, pathParamsInUrl, prettyJson, splitQuery } from '../lib/utils';
 import { AuthEditor } from './AuthEditor';
+import { CodeModal } from './ImportExport';
 import { ResponsePane } from './ResponsePane';
 
 const BODY_TYPES: { id: string; label: string }[] = [
@@ -67,6 +68,7 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
   const [tab, setTab] = useState('params');
   const [scriptPhase, setScriptPhase] = useState<'pre' | 'after'>('pre');
   const [sending, setSending] = useState(false);
+  const [codeOpen, setCodeOpen] = useState(false);
   const [response, setResponse] = useState<ResponseView | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const urlRef = useRef<HTMLInputElement>(null);
@@ -185,6 +187,10 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
           <Button variant="primary" onClick={send} loading={sending} title={`Send (${modKey()}+Enter)`}>
             {!sending && <Send className="size-3.5" />} Send
           </Button>
+          <IconButton label="Generate code (curl, JavaScript, Python, Go, Rust…)" onClick={() => setCodeOpen(true)}>
+            <FileCode2 className="size-4" />
+          </IconButton>
+          <CodeModal open={codeOpen} onClose={() => setCodeOpen(false)} requestId={id} requestName={req.name} />
         </div>
         {preview && req.url.includes('{') && (
           <div

@@ -7,6 +7,7 @@ mod mock_gql;
 mod out;
 mod rt_cmd;
 mod run_cmd;
+mod transfer_cmd;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
@@ -19,7 +20,7 @@ use serde_json::Value;
 #[command(
     name = "irs",
     version,
-    about = "insomnia-rs: API client for HTTP and MCP",
+    about = "insomnia-rs: API client for HTTP, GraphQL, gRPC, WebSocket, MCP and AI",
     propagate_version = true
 )]
 struct Cli {
@@ -76,6 +77,18 @@ enum Cmd {
     /// Local demo servers for trying features without external services
     #[command(subcommand)]
     Mock(MockCmd),
+    /// Import Insomnia, Postman, OpenAPI/Swagger, HAR or curl files
+    Import(transfer_cmd::ImportArgs),
+    /// Export a workspace (Insomnia v5, Postman v2.1, HAR)
+    Export(transfer_cmd::ExportArgs),
+    /// Generate code for a request (curl, HTTPie, JavaScript, Python, Go, Rust)
+    Code(transfer_cmd::CodeArgs),
+    /// Encrypted secrets: key status, move the key between machines
+    #[command(subcommand)]
+    Vault(transfer_cmd::VaultCmd),
+    /// Sync workspaces with Git repositories
+    #[command(subcommand)]
+    Git(transfer_cmd::GitCmd),
 }
 
 #[derive(Subcommand, Debug)]
@@ -161,6 +174,16 @@ enum EnvCmd {
         key: String,
         /// Value; parsed as JSON when possible, otherwise a string
         value: String,
+        #[arg(long, short)]
+        env: Option<String>,
+        /// Store as an encrypted secret (use `-` as the value to read it from stdin)
+        #[arg(long)]
+        secret: bool,
+    },
+    /// Print a secret's value
+    Reveal {
+        workspace: String,
+        key: String,
         #[arg(long, short)]
         env: Option<String>,
     },
@@ -283,6 +306,14 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Workspace(c) => workspace(&engine, c),
         Cmd::Request(c) => request_cmd(&engine, c),
         Cmd::Env(c) => env_cmd(&engine, c),
+        Cmd::Import(a) => transfer_cmd::import(&engine, a),
+        Cmd::Export(a) => transfer_cmd::export(&engine, a),
+        Cmd::Code(a) => transfer_cmd::code(&engine, a),
+        Cmd::Vault(c) => transfer_cmd::vault(&engine, c),
+        Cmd::Git(c) => {
+            let engine = engine.clone();
+            tokio::task::spawn_blocking(move || transfer_cmd::git(&engine, c)).await?
+        }
         Cmd::Render { target, template } => {
             let id = find_any(&engine, &target)?;
             let (r, refs) = engine.preview(&id, &template)?;
@@ -568,6 +599,17 @@ fn request_cmd(engine: &Engine, c: RequestCmd) -> Result<()> {
     Ok(())
 }
 
+fn pick_env(engine: &Engine, ws_id: &str, env: Option<String>) -> Result<Doc<Environment>> {
+    Ok(match env {
+        None => engine.base_environment(ws_id)?,
+        Some(n) => engine
+            .sub_environments(ws_id)?
+            .into_iter()
+            .find(|e| e.id() == n || e.name.eq_ignore_ascii_case(&n))
+            .ok_or_else(|| anyhow!("no sub-environment '{n}'"))?,
+    })
+}
+
 fn env_cmd(engine: &Engine, c: EnvCmd) -> Result<()> {
     match c {
         EnvCmd::List { workspace } => {
@@ -602,20 +644,35 @@ fn env_cmd(engine: &Engine, c: EnvCmd) -> Result<()> {
             key,
             value,
             env,
+            secret,
         } => {
             let ws = find::<Workspace>(engine, &workspace)?;
-            let mut target = match env {
-                None => engine.base_environment(ws.id())?,
-                Some(n) => engine
-                    .sub_environments(ws.id())?
-                    .into_iter()
-                    .find(|e| e.id() == n || e.name.eq_ignore_ascii_case(&n))
-                    .ok_or_else(|| anyhow!("no sub-environment '{n}'"))?,
+            let target = pick_env(engine, ws.id(), env)?;
+            let value = if value == "-" {
+                let mut line = String::new();
+                std::io::stdin().read_line(&mut line)?;
+                line.trim_end_matches(['\r', '\n']).to_string()
+            } else {
+                value
             };
-            let v: Value = serde_json::from_str(&value).unwrap_or(Value::String(value));
-            target.data.insert(key.clone(), v);
-            engine.store.update(&target)?;
-            println!("{} {} {} {}", green("✓"), key, dim("in"), target.name);
+            let v: Value = if secret {
+                Value::String(value)
+            } else {
+                serde_json::from_str(&value).unwrap_or(Value::String(value))
+            };
+            let secret = secret || target.secret_keys.contains(&key);
+            engine.set_env_var(target.id(), &key, v, secret)?;
+            let lock = if secret { " 🔒" } else { "" };
+            println!("{} {}{lock} {} {}", green("✓"), key, dim("in"), target.name);
+        }
+        EnvCmd::Reveal {
+            workspace,
+            key,
+            env,
+        } => {
+            let ws = find::<Workspace>(engine, &workspace)?;
+            let target = pick_env(engine, ws.id(), env)?;
+            println!("{}", engine.reveal_secret(target.id(), &key)?);
         }
         EnvCmd::Create { workspace, name } => {
             let ws = find::<Workspace>(engine, &workspace)?;

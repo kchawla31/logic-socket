@@ -20,6 +20,8 @@ irs-runner.workspace = true
 irs-llm.workspace = true
 irs-realtime.workspace = true
 irs-grpc.workspace = true
+irs-convert.workspace = true
+reqwest.workspace = true
 prost-reflect = "0.16"
 futures.workspace = true
 tauri = { version = "2", features = [] }

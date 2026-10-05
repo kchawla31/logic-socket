@@ -1,9 +1,9 @@
-import { Check, Plus } from 'lucide-react';
+import { Check, Eye, EyeOff, KeyRound, Lock, LockOpen, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { CodeEditor } from '../components/editors';
-import { Button, Input, Modal, Select, Toggle, useDialog, useToast } from '../components/ui';
-import { api, type EnvList, type Environment, errorText, type Settings } from '../lib/api';
+import { Button, CopyButton, IconButton, Input, Modal, Select, Toggle, useDialog, useToast } from '../components/ui';
+import { api, type EnvList, type Environment, errorText, type Settings, type VaultStatus } from '../lib/api';
 import { cn } from '../lib/utils';
 
 export function EnvironmentModal({ open, onClose, workspaceId }: { open: boolean; onClose: () => void; workspaceId: string }) {
@@ -23,14 +23,20 @@ export function EnvironmentModal({ open, onClose, workspaceId }: { open: boolean
   const all = useMemo(() => (list ? [list.base, ...list.subs] : []), [list]);
   const sel = all.find(e => e.id === selId) ?? all[0];
   useEffect(() => {
-    if (sel) setText(JSON.stringify(sel.data, null, 2));
+    if (sel) setText(JSON.stringify(plainData(sel), null, 2));
     setErr(null);
   }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // the JSON editor holds plain variables; secrets are edited separately and kept as stored
+  const merged = (env: Environment, t: string) => {
+    const data = JSON.parse(t || '{}');
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('must be a JSON object');
+    const secrets = Object.fromEntries(env.secretKeys.filter(k => k in env.data).map(k => [k, env.data[k]]));
+    return { ...secrets, ...data };
+  };
   const save = async (env: Environment, t: string) => {
     try {
-      const data = JSON.parse(t || '{}');
-      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('must be a JSON object');
+      const data = merged(env, t);
       setErr(null);
       await api.envUpdate({ ...env, data });
     } catch (e) {
@@ -78,7 +84,7 @@ export function EnvironmentModal({ open, onClose, workspaceId }: { open: boolean
                 value={sel.name}
                 disabled={sel.id === list.base.id}
                 onChange={e => setList({ ...list, subs: list.subs.map(s => (s.id === sel.id ? { ...s, name: e.target.value } : s)) })}
-                onBlur={() => api.envUpdate({ ...sel, data: JSON.parse(text || '{}') }).catch(() => {})}
+                onBlur={() => api.envUpdate({ ...sel, data: merged(sel, text) }).catch(() => {})}
               />
               <div className="flex-1" />
               {sel.id !== list.base.id &&
@@ -120,10 +126,141 @@ export function EnvironmentModal({ open, onClose, workspaceId }: { open: boolean
                 save(sel, t);
               }}
             />
+            <SecretsPanel
+              env={sel}
+              onChanged={async () => {
+                const l = await api.envList(workspaceId);
+                setList(l);
+                const fresh = [l.base, ...l.subs].find(e => e.id === sel.id);
+                if (fresh) setText(JSON.stringify(plainData(fresh), null, 2));
+              }}
+            />
           </div>
         </div>
       )}
     </Modal>
+  );
+}
+
+function plainData(env: Environment) {
+  return Object.fromEntries(Object.entries(env.data).filter(([k]) => !env.secretKeys.includes(k)));
+}
+
+function SecretsPanel({ env, onChanged }: { env: Environment; onChanged: () => void }) {
+  const toast = useToast();
+  const dialog = useDialog();
+  const [shown, setShown] = useState<Record<string, string>>({});
+  const [name, setName] = useState('');
+  const [value, setValue] = useState('');
+  const [editing, setEditing] = useState<string | null>(null);
+  useEffect(() => {
+    setShown({});
+    setEditing(null);
+  }, [env.id]);
+  const run = async (f: () => Promise<unknown>) => {
+    try {
+      await f();
+      onChanged();
+    } catch (e) {
+      toast(errorText(e), 'error');
+    }
+  };
+  const plainKeys = Object.keys(env.data).filter(k => !env.secretKeys.includes(k));
+  return (
+    <div className="shrink-0 border-t border-app bg-subtle px-3 py-2.5">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[12.5px] font-semibold">
+        <Lock className="size-3.5" /> Secrets
+        <span className="font-normal text-muted">— encrypted on this computer, never exported or committed. Use like any variable.</span>
+      </div>
+      {env.secretKeys.map(k => (
+        <div key={k} className="flex h-8 items-center gap-2">
+          <KeyRound className="size-3.5 text-amber-600" />
+          <span className="w-40 truncate font-mono text-[12.5px]">{k}</span>
+          {editing === k ? (
+            <Input
+              autoFocus
+              type="password"
+              className="h-7 flex-1"
+              placeholder="New value"
+              onKeyDown={e => {
+                if (e.key === 'Escape') setEditing(null);
+                if (e.key === 'Enter') {
+                  const v = (e.target as HTMLInputElement).value;
+                  setEditing(null);
+                  run(() => api.envSetVar(env.id, k, v, true));
+                }
+              }}
+            />
+          ) : (
+            <button className="min-w-0 flex-1 truncate text-left font-mono text-[12.5px] text-muted hover:text-app" title="Click to change" onClick={() => setEditing(k)}>
+              {k in shown ? shown[k] || '(empty)' : env.data[k] ? '••••••••••' : '(not set on this computer)'}
+            </button>
+          )}
+          {k in shown && <CopyButton text={shown[k]} />}
+          <IconButton
+            label={k in shown ? 'Hide' : 'Reveal'}
+            onClick={async () => {
+              if (k in shown) {
+                const { [k]: _, ...rest } = shown;
+                setShown(rest);
+              } else {
+                try {
+                  setShown({ ...shown, [k]: await api.envReveal(env.id, k) });
+                } catch (e) {
+                  toast(errorText(e), 'error');
+                }
+              }
+            }}
+          >
+            {k in shown ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+          </IconButton>
+          <IconButton
+            label="Make it a plain variable"
+            onClick={async () => {
+              if (!(await dialog.confirm(`Store “${k}” unencrypted?`, { message: 'It will be visible in the editor, exports and Git.', confirmLabel: 'Make plain' }))) return;
+              run(async () => api.envSetVar(env.id, k, await api.envReveal(env.id, k), false));
+            }}
+          >
+            <LockOpen className="size-3.5" />
+          </IconButton>
+          <IconButton
+            label="Delete"
+            onClick={async () => {
+              if (!(await dialog.confirm(`Delete secret “${k}”?`, { danger: true, confirmLabel: 'Delete' }))) return;
+              const data = { ...env.data };
+              delete data[k];
+              run(() => api.envUpdate({ ...env, data, secretKeys: env.secretKeys.filter(x => x !== k) }));
+            }}
+          >
+            <Trash2 className="size-3.5" />
+          </IconButton>
+        </div>
+      ))}
+      <form
+        className="mt-1 flex items-center gap-2"
+        onSubmit={e => {
+          e.preventDefault();
+          if (!name.trim()) return;
+          const key = name.trim();
+          run(async () => {
+            await api.envSetVar(env.id, key, value, true);
+            setName('');
+            setValue('');
+          });
+        }}
+      >
+        <Input className="h-7 w-44 font-mono" list={`plain-${env.id}`} placeholder="name (or an existing variable)" value={name} onChange={e => setName(e.target.value)} />
+        <datalist id={`plain-${env.id}`}>
+          {plainKeys.map(k => (
+            <option key={k} value={k} />
+          ))}
+        </datalist>
+        <Input className="h-7 flex-1" type="password" placeholder="value" value={value} onChange={e => setValue(e.target.value)} />
+        <Button size="sm" type="submit" disabled={!name.trim()}>
+          <Plus className="size-3.5" /> Add secret
+        </Button>
+      </form>
+    </div>
   );
 }
 
@@ -187,6 +324,7 @@ export function SettingsModal({
             <Input value={s.proxyUrl} placeholder="http://proxy.example.com:3128 (empty: HTTP(S)_PROXY env vars)" onChange={e => update({ proxyUrl: e.target.value })} />
             <Input value={s.noProxy} placeholder="Bypass: localhost,127.0.0.1,.internal" onChange={e => update({ noProxy: e.target.value })} />
           </div>
+          <VaultSection />
           <p className="text-[12px] text-muted">Settings are saved immediately and shared with the irs command-line tool.</p>
         </div>
       )}
@@ -199,6 +337,78 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex items-center justify-between gap-4">
       <span>{label}</span>
       {children}
+    </div>
+  );
+}
+
+function VaultSection() {
+  const toast = useToast();
+  const dialog = useDialog();
+  const [st, setSt] = useState<VaultStatus | null>(null);
+  const [key, setKey] = useState<string | null>(null);
+  const [importing, setImporting] = useState('');
+  const reload = () => api.vaultStatus().then(setSt).catch(() => {});
+  useEffect(() => {
+    reload();
+  }, []);
+  if (!st) return null;
+  return (
+    <div className="flex flex-col gap-2 border-t border-app pt-3">
+      <div className="flex items-center gap-2">
+        <Lock className="size-3.5" />
+        <span>Secrets vault</span>
+        <span className="flex-1" />
+        <span className="text-[12px] text-muted">
+          {st.hasKey ? 'key in your keychain' : 'no key yet'} · {st.sealedValues} encrypted value{st.sealedValues === 1 ? '' : 's'}
+        </span>
+      </div>
+      <p className="text-[12px] text-muted">To use your secrets on another computer, copy the recovery key there (Settings → Secrets vault → Import key, or <code className="font-mono">irs vault import-key</code>).</p>
+      <div className="flex flex-wrap gap-2">
+        {key ? (
+          <>
+            <Input readOnly value={key} className="flex-1 font-mono text-[11.5px]" />
+            <CopyButton text={key} />
+            <Button size="sm" variant="ghost" onClick={() => setKey(null)}>
+              Hide
+            </Button>
+          </>
+        ) : (
+          <Button
+            size="sm"
+            onClick={async () => {
+              if (await dialog.confirm('Show the vault recovery key?', { message: 'Anyone with this key and your database can read your secrets. Store it in a password manager.', confirmLabel: 'Show key' }))
+                api.vaultExportKey().then(k => (setKey(k), reload())).catch(e => toast(errorText(e), 'error'));
+            }}
+          >
+            Show recovery key
+          </Button>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <Input type="password" placeholder="Paste a recovery key from another computer" value={importing} onChange={e => setImporting(e.target.value)} />
+        <Button
+          size="sm"
+          disabled={!importing.trim()}
+          onClick={() =>
+            api
+              .vaultImportKey(importing.trim())
+              .then(() => (setImporting(''), reload(), toast('Vault key installed', 'success')))
+              .catch(e => toast(errorText(e), 'error'))
+          }
+        >
+          Import key
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={async () => {
+            if (!(await dialog.confirm('Reset the vault?', { message: 'Deletes the key and blanks every secret value. This cannot be undone.', danger: true, confirmLabel: 'Reset' }))) return;
+            api.vaultReset().then(n => (reload(), toast(`${n} secret value(s) cleared`, 'info'))).catch(e => toast(errorText(e), 'error'));
+          }}
+        >
+          Reset
+        </Button>
+      </div>
     </div>
   );
 }

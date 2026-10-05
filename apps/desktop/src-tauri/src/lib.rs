@@ -5,6 +5,7 @@ mod ai;
 mod auth;
 mod grpc;
 mod rt;
+mod sync;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -566,7 +567,8 @@ fn env_create(
 
 #[tauri::command]
 fn env_update(state: State<'_, AppState>, doc: Doc<Environment>) -> CmdResult<Doc<Environment>> {
-    state.engine.store.update(&doc).map_err(e)
+    // secret values are (re)encrypted before they reach the database
+    state.engine.update_environment(&doc).map_err(e)
 }
 
 #[tauri::command]
@@ -1121,6 +1123,40 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             grpc::grpc_commit,
             grpc::grpc_cancel,
             grpc::grpc_log,
+            sync::import_preview,
+            sync::import_apply,
+            sync::fetch_text,
+            sync::export_workspace,
+            sync::save_to_downloads,
+            sync::reveal_path,
+            sync::code_targets,
+            sync::code_generate,
+            sync::env_set_var,
+            sync::env_reveal,
+            sync::vault_status,
+            sync::vault_export_key,
+            sync::vault_import_key,
+            sync::vault_reset,
+            sync::git_repo_list,
+            sync::git_default_dir,
+            sync::git_open,
+            sync::git_clone,
+            sync::git_repo_update,
+            sync::git_set_token,
+            sync::git_remove,
+            sync::git_link,
+            sync::git_unlink,
+            sync::git_status,
+            sync::git_diff,
+            sync::git_commit,
+            sync::git_pull,
+            sync::git_push,
+            sync::git_resolve,
+            sync::git_abort_merge,
+            sync::git_discard,
+            sync::git_log,
+            sync::git_branches,
+            sync::git_checkout,
         ])
 }
 

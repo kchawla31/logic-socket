@@ -1,9 +1,9 @@
-import { Command as CommandIcon, Folder, Layers, ListChecks, Moon, Network, Plug, Plus, Radio, Send, Settings as SettingsIcon, Sparkles, Sun, X } from 'lucide-react';
+import { Command as CommandIcon, Download, FileCode2, Folder, GitBranch, Layers, Upload, ListChecks, Moon, Network, Plug, Plus, Radio, Send, Settings as SettingsIcon, Sparkles, Sun, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type Command, CommandPalette } from './components/CommandPalette';
 import { Button, DialogProvider, Empty, IconButton, Kbd, Select, Split, ToastProvider, useDialog, useToast } from './components/ui';
-import { api, type EnvList, errorText, onDbChanged, type TreeNode, type Workspace } from './lib/api';
+import { api, type EnvList, errorText, type GitRepo, onDbChanged, type TreeNode, type Workspace } from './lib/api';
 import { cn, methodColor, methodShort, modKey } from './lib/utils';
 import { AiProvidersModal } from './views/AiProviders';
 import { FolderView } from './views/FolderView';
@@ -11,6 +11,8 @@ import { GrpcView } from './views/GrpcView';
 import { LlmView } from './views/LlmView';
 import { RealtimeView } from './views/RealtimeView';
 import { McpView } from './views/McpView';
+import { GitModal } from './views/GitPanel';
+import { CodeModal, ExportModal, ImportModal } from './views/ImportExport';
 import { EnvironmentModal, SettingsModal } from './views/Modals';
 import { RequestView } from './views/RequestView';
 import { RunnerView } from './views/RunnerView';
@@ -87,16 +89,28 @@ function Shell() {
   const [envOpen, setEnvOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [gitOpen, setGitOpen] = useState(false);
+  const [codeFor, setCodeFor] = useState<string | null>(null);
+  const [repos, setRepos] = useState<GitRepo[]>([]);
 
+  // Only the newest refresh may write state (a slow one for the previous
+  // workspace must not overwrite the tree after a switch).
+  const refreshSeq = useRef(0);
   const refresh = useCallback(async () => {
+    const seq = ++refreshSeq.current;
     const ws = await api.workspaceList();
+    if (seq !== refreshSeq.current) return;
     setWorkspaces(ws);
     const current = ws.find(w => w.id === wsId) ?? ws[0];
     if (!current) return;
     if (current.id !== wsId) setWsId(current.id);
-    const [t, e] = await Promise.all([api.treeGet(current.id), api.envList(current.id)]);
+    const [t, e, r] = await Promise.all([api.treeGet(current.id), api.envList(current.id), api.gitRepoList().catch(() => [])]);
+    if (seq !== refreshSeq.current) return;
     setTree(t);
     setEnvs(e);
+    setRepos(r);
   }, [wsId]);
 
   useEffect(() => {
@@ -229,6 +243,12 @@ function Shell() {
         keywords: 'grpc protobuf proto rpc',
         run: async () => wsId && open((await api.grpcCreate(wsId)).id, 'grpc'),
       },
+      { id: 'import', group: 'Actions', label: 'Import…', icon: <Download className="size-4" />, keywords: 'postman insomnia openapi swagger har curl yaml json', run: () => setImportOpen(true) },
+      { id: 'export', group: 'Actions', label: 'Export collection…', icon: <Upload className="size-4" />, keywords: 'postman insomnia har yaml json backup', run: () => setExportOpen(true) },
+      { id: 'git', group: 'Actions', label: 'Git sync', icon: <GitBranch className="size-4" />, keywords: 'commit pull push branch repository github gitlab', run: () => setGitOpen(true) },
+      ...(active && byId.get(active)?.kind === 'request'
+        ? [{ id: 'code', group: 'Actions', label: 'Generate code for this request', icon: <FileCode2 className="size-4" />, keywords: 'curl python javascript fetch go rust httpie snippet', run: () => setCodeFor(active) }]
+        : []),
       { id: 'ai-providers', group: 'Actions', label: 'AI providers', icon: <Sparkles className="size-4" />, keywords: 'llm api key anthropic openai ollama', run: () => setAiOpen(true) },
       {
         id: 'run-collection',
@@ -282,7 +302,7 @@ function Shell() {
         run: () => open(n.id, n.kind),
       });
     return cmds;
-  }, [nodes, envs, workspaces, wsId, newRequest, newWorkspace, open, setTheme]);
+  }, [nodes, envs, workspaces, wsId, newRequest, newWorkspace, open, setTheme, active, byId]);
 
   const ws = workspaces.find(w => w.id === wsId);
   const activeTab = tabs.find(t => t.id === active);
@@ -295,13 +315,21 @@ function Shell() {
           <span className="flex size-5 items-center justify-center rounded-md bg-accent text-[11px] text-white">rs</span>
           insomnia-rs
         </div>
-        <Select aria-label="Collection" value={wsId ?? ''} onChange={e => (e.target.value === '__new' ? newWorkspace() : setWsId(e.target.value))} className="h-7 max-w-52 text-[12.5px]">
+        <Select aria-label="Collection" value={wsId ?? ''} onChange={e => {
+            const v = e.target.value;
+            if (v === '__new') newWorkspace();
+            else if (v === '__import') setImportOpen(true);
+            else if (v === '__export') setExportOpen(true);
+            else setWsId(v);
+          }} className="h-7 max-w-52 text-[12.5px]">
           {workspaces.map(w => (
             <option key={w.id} value={w.id}>
               {w.name}
             </option>
           ))}
           <option value="__new">+ New collection…</option>
+          <option value="__import">↓ Import…</option>
+          <option value="__export">↑ Export this collection…</option>
         </Select>
         <Select
           aria-label="Environment"
@@ -320,6 +348,14 @@ function Shell() {
           <Layers className="size-3.5" /> Environments
         </Button>
         <div data-tauri-drag-region className="flex-1" />
+        {(() => {
+          const repo = repos.find(r => r.files.some(f => f.workspaceId === wsId));
+          return (
+            <Button size="sm" variant="ghost" onClick={() => setGitOpen(true)} title="Git sync">
+              <GitBranch className="size-3.5" /> {repo ? repo.name : 'Git'}
+            </Button>
+          );
+        })()}
         <button
           onClick={() => setPalette(true)}
           className="flex h-7 w-64 items-center gap-2 rounded-md border border-app bg-app px-2.5 text-[12.5px] text-muted hover:border-accent"
@@ -349,6 +385,7 @@ function Shell() {
             onCreated={(id, kind) => open(id, kind)}
             onDeleted={ids => ids.forEach(close)}
             onRun={targetId => open(`${RUNNER}${targetId}`, 'runner')}
+            onImport={() => setImportOpen(true)}
           />
           <main className="flex h-full min-h-0 flex-col">
             {tabs.length > 0 && (
@@ -417,6 +454,9 @@ function Shell() {
                       <Button onClick={async () => wsId && open((await api.llmRequestCreate(wsId, 'New AI Request')).id, 'llm')}>
                         <Sparkles className="size-3.5" /> AI request
                       </Button>
+                      <Button onClick={() => setImportOpen(true)}>
+                        <Download className="size-3.5" /> Import
+                      </Button>
                     </div>
                     <span className="text-[12px]">
                       <Kbd>{modKey()} K</Kbd> command palette · <Kbd>{modKey()} N</Kbd> new request · <Kbd>{modKey()} E</Kbd> environments · paste a cURL into the URL bar
@@ -434,6 +474,10 @@ function Shell() {
       <CommandPalette open={palette} onClose={() => setPalette(false)} commands={commands} />
       {wsId && <EnvironmentModal open={envOpen} onClose={() => setEnvOpen(false)} workspaceId={wsId} />}
       <AiProvidersModal open={aiOpen} onClose={() => setAiOpen(false)} />
+      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} workspaceId={wsId} workspaceName={ws?.name} onImported={id => setWsId(id)} />
+      {wsId && <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} workspaceId={wsId} workspaceName={ws?.name ?? 'Collection'} />}
+      {wsId && <GitModal open={gitOpen} onClose={() => (setGitOpen(false), refresh())} workspaceId={wsId} workspaceName={ws?.name ?? 'Collection'} onOpenWorkspace={setWsId} />}
+      {codeFor && <CodeModal open onClose={() => setCodeFor(null)} requestId={codeFor} requestName={byId.get(codeFor)?.name ?? 'request'} />}
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} theme={theme} setTheme={setTheme} />
     </div>
   );

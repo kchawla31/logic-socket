@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 irs-core.workspace = true
 irs-engine.workspace = true
+irs-convert.workspace = true
 irs-mcp.workspace = true
 irs-templating.workspace = true
 irs-runner.workspace = true

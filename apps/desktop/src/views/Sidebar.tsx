@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Copy, Folder, FolderPlus, ListChecks, Network, Pencil, Plug, Plus, Radio, Search, Sparkles, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Download, Folder, FolderPlus, ListChecks, Network, Pencil, Plug, Plus, Radio, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { IconButton, useDialog, useToast } from '../components/ui';
@@ -13,6 +13,7 @@ interface Props {
   onCreated: (id: string, kind: TreeNode['kind'], name: string) => void;
   onDeleted: (ids: string[]) => void;
   onRun: (targetId: string) => void;
+  onImport?: () => void;
 }
 
 function useExpanded(workspaceId: string) {
@@ -59,7 +60,7 @@ interface Menu {
   node: TreeNode | null;
 }
 
-export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDeleted, onRun }: Props) {
+export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDeleted, onRun, onImport }: Props) {
   const toast = useToast();
   const dialog = useDialog();
   const [q, setQ] = useState('');
@@ -259,7 +260,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
         {renderNodes(visible, 0, workspaceId)}
         {visible.length === 0 && (
           <div className="p-4 text-center text-[12.5px] text-muted">
-            {q ? 'No matches' : 'Nothing here yet — create a request, folder or MCP server above.'}
+            {q ? 'No matches' : 'Nothing here yet — create a request, folder or MCP server above, or import a Postman/Insomnia/OpenAPI file.'}
           </div>
         )}
       </div>
@@ -298,6 +299,11 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
               <MenuItem icon={<ListChecks className="size-3.5" />} onClick={() => onRun(menu.node?.id ?? workspaceId)}>
                 {menu.node ? 'Run folder' : 'Run collection'}
               </MenuItem>
+              {!menu.node && onImport && (
+                <MenuItem icon={<Download className="size-3.5" />} onClick={onImport}>
+                  Import…
+                </MenuItem>
+              )}
             </>
           )}
           {menu.node && (

@@ -46,8 +46,16 @@ pub struct VaultStatus {
 }
 
 impl Engine {
+    fn vault_key_b64(&self) -> Option<String> {
+        // CI and scripted runs can supply the key without a keychain
+        std::env::var("IRS_VAULT_KEY")
+            .ok()
+            .filter(|k| !k.trim().is_empty())
+            .or_else(|| self.secrets.get(KEY_ID))
+    }
+
     fn vault_cipher(&self, create: bool) -> Result<Option<Aes256Gcm>> {
-        if let Some(k) = self.secrets.get(KEY_ID) {
+        if let Some(k) = self.vault_key_b64() {
             let bytes = B64
                 .decode(k.trim())
                 .map_err(|_| err("the vault key in the keychain is corrupt"))?;
@@ -188,7 +196,7 @@ impl Engine {
             .map(|e| e.data.values().filter(|v| is_sealed(v)).count())
             .sum();
         Ok(VaultStatus {
-            has_key: self.secrets.get(KEY_ID).is_some(),
+            has_key: self.vault_key_b64().is_some(),
             sealed_values,
         })
     }
@@ -196,7 +204,7 @@ impl Engine {
     /// The vault key as base64, to move secrets to another machine.
     pub fn vault_export_key(&self) -> Result<String> {
         self.vault_cipher(true)?;
-        self.secrets.get(KEY_ID).ok_or_else(|| err("no vault key"))
+        self.vault_key_b64().ok_or_else(|| err("no vault key"))
     }
 
     /// Install a vault key from another machine. Refused when it can't decrypt

@@ -638,3 +638,139 @@ fn every_emitted_event_is_listed_in_app_events() {
     }
     assert!(missing.is_empty(), "add to APP_EVENTS: {missing:?}");
 }
+
+#[test]
+fn import_export_secrets_code_and_git_commands() {
+    let h = Harness::new();
+    let postman = json!({
+        "info": {"name": "Shop", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+        "variable": [{"key": "base", "value": "https://shop.test"}],
+        "item": [{"name": "List", "request": {"method": "GET", "url": "{{base}}/orders", "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{token}}"}]}}}]
+    })
+    .to_string();
+
+    let p = h.ok("import_preview", json!({"text": postman}));
+    assert_eq!(p["formatLabel"], "Postman collection");
+    assert_eq!(p["workspaces"][0]["name"], "Shop");
+    assert_eq!(p["workspaces"][0]["requests"], 1);
+    assert!(
+        h.call("import_preview", json!({"text": "not a collection"}))
+            .is_err()
+    );
+    let s = h.ok(
+        "import_apply",
+        json!({"text": postman, "intoWorkspaceId": null, "replace": false}),
+    );
+    let ws_id = s["workspaceIds"][0].as_str().unwrap().to_string();
+
+    // secrets: set, masked in the env doc, revealed on demand, used by code generation
+    let envs = h.ok("env_list", json!({"workspaceId": ws_id}));
+    let base_id = envs["base"]["id"].as_str().unwrap();
+    let env = h.ok(
+        "env_set_var",
+        json!({"envId": base_id, "key": "token", "value": "t-secret", "secret": true}),
+    );
+    assert!(
+        env["data"]["token"]
+            .as_str()
+            .unwrap()
+            .starts_with("vault:v1:")
+    );
+    assert_eq!(env["secretKeys"], json!(["token"]));
+    assert_eq!(
+        h.ok("env_reveal", json!({"envId": base_id, "key": "token"})),
+        json!("t-secret")
+    );
+    // the JSON editor saves the doc back with a plaintext edit → re-sealed
+    let mut doc = env.clone();
+    doc["data"]["token"] = json!("typed");
+    let saved = h.ok("env_update", json!({"doc": doc}));
+    assert!(
+        saved["data"]["token"]
+            .as_str()
+            .unwrap()
+            .starts_with("vault:v1:")
+    );
+    assert_eq!(h.ok("vault_status", json!({}))["sealedValues"], 1);
+
+    let tree = h.ok("tree_get", json!({"workspaceId": ws_id}));
+    let req_id = tree[0]["id"].as_str().unwrap();
+    let targets = h.ok("code_targets", json!({}));
+    assert_eq!(targets.as_array().unwrap().len(), 6);
+    let code = h.ok(
+        "code_generate",
+        json!({"requestId": req_id, "target": "python-requests"}),
+    );
+    assert!(
+        code["code"]
+            .as_str()
+            .unwrap()
+            .contains("\"Authorization\": \"Bearer typed\""),
+        "{code}"
+    );
+
+    let out = h.ok("export_workspace", json!({"workspaceId": ws_id, "format": "insomnia-v5", "includePrivate": false, "includeCookies": false}));
+    assert_eq!(out["fileName"], "insomnia.shop.yaml");
+    assert!(!out["content"].as_str().unwrap().contains("typed"));
+    let out = h.ok("export_workspace", json!({"workspaceId": ws_id, "format": "postman", "includePrivate": false, "includeCookies": false}));
+    assert!(
+        out["content"]
+            .as_str()
+            .unwrap()
+            .contains("\"{{base}}/orders\"")
+    );
+
+    // git: open a repo folder, link, status, commit, log
+    if std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("repo").to_string_lossy().into_owned();
+    let opened = h.ok("git_open", json!({"dir": dir, "name": "Team"}));
+    let repo_id = opened["repo"]["id"].as_str().unwrap().to_string();
+    let mut repo_doc = opened["repo"].clone();
+    repo_doc["authorName"] = json!("Ana");
+    repo_doc["authorEmail"] = json!("ana@example.com");
+    repo_doc.as_object_mut().unwrap().remove("workspaces");
+    h.ok("git_repo_update", json!({"doc": repo_doc}));
+    let linked = h.ok("git_link", json!({"repoId": repo_id, "workspaceId": ws_id}));
+    assert_eq!(linked["workspaces"][0]["name"], "Shop");
+    let st = h.ok("git_status", json!({"repoId": repo_id}));
+    assert_eq!(st["branch"], "main");
+    assert_eq!(st["changes"][0]["status"], "untracked");
+    assert!(
+        h.ok(
+            "git_diff",
+            json!({"repoId": repo_id, "path": "insomnia.shop.yaml"})
+        )
+        .as_str()
+        .unwrap()
+        .contains("+name: Shop")
+    );
+    h.ok(
+        "git_commit",
+        json!({"repoId": repo_id, "message": "Add Shop", "paths": []}),
+    );
+    assert_eq!(
+        h.ok("git_log", json!({"repoId": repo_id, "limit": 5}))[0]["message"],
+        "Add Shop"
+    );
+    assert_eq!(
+        h.ok("git_branches", json!({"repoId": repo_id}))["current"],
+        "main"
+    );
+    assert_eq!(
+        h.ok("git_repo_list", json!({})).as_array().unwrap().len(),
+        1
+    );
+    assert!(
+        h.ok("git_status", json!({"repoId": repo_id}))["changes"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}

@@ -593,6 +593,81 @@ export function runFailed(r: RunResult): boolean {
   return !r.skipped && (!!r.error || !!r.scriptError || r.tests.some(t => !t.passed && !t.skipped));
 }
 
+// ---- import / export / code / vault / git (Phase 5)
+
+export interface ImportPreview {
+  format: string;
+  formatLabel: string;
+  workspaces: { name: string; scope: string; requests: number; folders: number; environments: number; exists: boolean }[];
+  warnings: string[];
+}
+
+export interface ImportSummary {
+  format: string;
+  workspaceIds: string[];
+  workspaces: string[];
+  requests: number;
+  folders: number;
+  environments: number;
+  warnings: string[];
+}
+
+export type ExportFormat = 'insomnia-v5' | 'postman' | 'har';
+
+export interface Exported {
+  fileName: string;
+  content: string;
+  warnings: string[];
+}
+
+export type CodeTargetId = 'curl' | 'httpie' | 'js-fetch' | 'python-requests' | 'go' | 'rust-reqwest';
+
+export interface VaultStatus {
+  hasKey: boolean;
+  sealedValues: number;
+}
+
+export interface GitRepo extends Meta {
+  name: string;
+  path: string;
+  remoteUrl: string;
+  authorName: string;
+  authorEmail: string;
+  files: { workspaceId: string; path: string }[];
+  workspaces: { workspaceId: string; name: string; path: string }[];
+}
+
+export interface GitChange {
+  path: string;
+  status: 'modified' | 'added' | 'deleted' | 'untracked' | 'conflict' | 'renamed';
+  workspaceId?: string | null;
+  workspace?: string | null;
+}
+
+export interface GitStatus {
+  branch: string;
+  upstream?: string | null;
+  ahead: number;
+  behind: number;
+  changes: GitChange[];
+  hasRemote: boolean;
+  hasToken: boolean;
+}
+
+export interface GitSyncResult {
+  workspaces: string[];
+  conflicts: string[];
+  warnings: string[];
+}
+
+export interface GitCommit {
+  hash: string;
+  author: string;
+  email: string;
+  timeMs: number;
+  message: string;
+}
+
 export const api = {
   treeGet: (workspaceId: string) => invoke<TreeNode[]>('tree_get', { workspaceId }),
   workspaceList: () => invoke<Workspace[]>('workspace_list'),
@@ -679,6 +754,45 @@ export const api = {
   grpcCommit: (id: string) => invoke<void>('grpc_commit', { id }),
   grpcCancel: (id: string) => invoke<void>('grpc_cancel', { id }),
   grpcLog: (id: string) => invoke<RtEvent[]>('grpc_log', { id }),
+  importPreview: (text: string) => invoke<ImportPreview>('import_preview', { text }),
+  importApply: (text: string, intoWorkspaceId: string | null, replace: boolean) =>
+    invoke<ImportSummary>('import_apply', { text, intoWorkspaceId, replace }),
+  fetchText: (url: string) => invoke<string>('fetch_text', { url }),
+  exportWorkspace: (workspaceId: string, format: ExportFormat, includePrivate: boolean, includeCookies: boolean) =>
+    invoke<Exported>('export_workspace', { workspaceId, format, includePrivate, includeCookies }),
+  saveToDownloads: (fileName: string, content: string) => invoke<string>('save_to_downloads', { fileName, content }),
+  revealPath: (path: string) => invoke<void>('reveal_path', { path }),
+  codeTargets: () => invoke<{ id: CodeTargetId; label: string }[]>('code_targets'),
+  codeGenerate: (requestId: string, target: CodeTargetId) => invoke<{ code: string; notes: string[] }>('code_generate', { requestId, target }),
+  envSetVar: (envId: string, key: string, value: unknown, secret: boolean) => invoke<Environment>('env_set_var', { envId, key, value, secret }),
+  envReveal: (envId: string, key: string) => invoke<string>('env_reveal', { envId, key }),
+  vaultStatus: () => invoke<VaultStatus>('vault_status'),
+  vaultExportKey: () => invoke<string>('vault_export_key'),
+  vaultImportKey: (key: string) => invoke<void>('vault_import_key', { key }),
+  vaultReset: () => invoke<number>('vault_reset'),
+  gitRepoList: () => invoke<GitRepo[]>('git_repo_list'),
+  gitDefaultDir: (name: string) => invoke<string>('git_default_dir', { name }),
+  gitOpen: (dir: string, name: string | null) => invoke<{ repo: GitRepo; sync: GitSyncResult }>('git_open', { dir, name }),
+  gitClone: (url: string, dir: string, token: string | null) => invoke<{ repo: GitRepo; sync: GitSyncResult }>('git_clone', { url, dir, token }),
+  gitRepoUpdate: (repo: GitRepo) => {
+    const { workspaces: _w, ...doc } = repo;
+    return invoke<GitRepo>('git_repo_update', { doc });
+  },
+  gitSetToken: (repoId: string, token: string | null) => invoke<void>('git_set_token', { repoId, token }),
+  gitRemove: (repoId: string) => invoke<void>('git_remove', { repoId }),
+  gitLink: (repoId: string, workspaceId: string) => invoke<GitRepo>('git_link', { repoId, workspaceId }),
+  gitUnlink: (repoId: string, workspaceId: string, deleteFile: boolean) => invoke<GitRepo>('git_unlink', { repoId, workspaceId, deleteFile }),
+  gitStatus: (repoId: string) => invoke<GitStatus>('git_status', { repoId }),
+  gitDiff: (repoId: string, path: string) => invoke<string>('git_diff', { repoId, path }),
+  gitCommit: (repoId: string, message: string, paths: string[]) => invoke<string>('git_commit', { repoId, message, paths }),
+  gitPull: (repoId: string) => invoke<GitSyncResult>('git_pull', { repoId }),
+  gitPush: (repoId: string) => invoke<string>('git_push', { repoId }),
+  gitResolve: (repoId: string, path: string, take: 'ours' | 'theirs') => invoke<GitSyncResult>('git_resolve', { repoId, path, take }),
+  gitAbortMerge: (repoId: string) => invoke<void>('git_abort_merge', { repoId }),
+  gitDiscard: (repoId: string, path: string) => invoke<GitSyncResult>('git_discard', { repoId, path }),
+  gitLog: (repoId: string, limit: number) => invoke<GitCommit[]>('git_log', { repoId, limit }),
+  gitBranches: (repoId: string) => invoke<{ current: string; all: string[] }>('git_branches', { repoId }),
+  gitCheckout: (repoId: string, branch: string, create: boolean) => invoke<GitSyncResult>('git_checkout', { repoId, branch, create }),
 };
 
 export function onRtEvent(cb: (id: string, ev: RtEvent) => void): Promise<UnlistenFn> {
