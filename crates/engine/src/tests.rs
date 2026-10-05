@@ -710,29 +710,41 @@ mod ai {
 #[test]
 fn realtime_options_render_and_inherit() {
     let f = fixture("http://x");
-    let rt = f
-        .e
-        .store
-        .insert(
-            Some(f.folder.id()),
-            irs_core::RealtimeRequest {
-                kind: "socketio".into(),
-                url: "{{ _.base }}/{{ path }}".into(),
-                headers: vec![KeyValue::new("X-User", "{{ user }}")],
-                socketio_auth: r#"{"token":"{{ token }}"}"#.into(),
-                namespace: "/chat".into(),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+    let rt =
+        f.e.store
+            .insert(
+                Some(f.folder.id()),
+                irs_core::RealtimeRequest {
+                    kind: "socketio".into(),
+                    url: "{{ _.base }}/{{ path }}".into(),
+                    headers: vec![KeyValue::new("X-User", "{{ user }}")],
+                    socketio_auth: r#"{"token":"{{ token }}"}"#.into(),
+                    namespace: "/chat".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
     let o = f.e.realtime_options(rt.id()).unwrap();
     assert_eq!(o.kind, irs_realtime::Kind::Socketio);
     assert_eq!(o.url, "http://x/users");
-    assert!(o.headers.contains(&("X-Outer".into(), "o".into())), "folder header inherited");
-    assert!(o.headers.contains(&("X-User".into(), "staging-user".into())));
-    assert!(o.headers.contains(&("Authorization".into(), "Bearer folder-token".into())), "folder auth inherited");
+    assert!(
+        o.headers.contains(&("X-Outer".into(), "o".into())),
+        "folder header inherited"
+    );
+    assert!(
+        o.headers
+            .contains(&("X-User".into(), "staging-user".into()))
+    );
+    assert!(
+        o.headers
+            .contains(&("Authorization".into(), "Bearer folder-token".into())),
+        "folder auth inherited"
+    );
     assert_eq!(o.auth, Some(json!({"token": "folder-token"})));
-    assert_eq!(f.e.realtime_payload(rt.id(), "hi {{ user }}").unwrap(), "hi staging-user");
+    assert_eq!(
+        f.e.realtime_payload(rt.id(), "hi {{ user }}").unwrap(),
+        "hi staging-user"
+    );
 }
 
 #[tokio::test]
@@ -741,7 +753,9 @@ async fn graphql_query_uses_request_endpoint_headers_and_auth() {
     let app = axum::Router::new().route(
         "/graphql",
         post(|headers: HeaderMap, Json(body): Json<Value>| async move {
-            if headers.get("authorization").and_then(|v| v.to_str().ok()) != Some("Bearer gql-token") {
+            if headers.get("authorization").and_then(|v| v.to_str().ok())
+                != Some("Bearer gql-token")
+            {
                 return Json(json!({"errors": [{"message": "unauthenticated"}]}));
             }
             Json(json!({"data": {"__schema": {"queryType": {"name": "Query"}}, "echo": body}}))
@@ -762,20 +776,311 @@ async fn graphql_query_uses_request_endpoint_headers_and_auth() {
             Request {
                 method: "GET".into(),
                 url: "{{ host }}/graphql".into(),
-                authentication: Auth::Bearer { token: "{{ tok }}".into(), prefix: None, disabled: false },
-                body: Body { mime_type: Some(mime::GRAPHQL.into()), text: Some(r#"{"query":"{ me }"}"#.into()), ..Default::default() },
+                authentication: Auth::Bearer {
+                    token: "{{ tok }}".into(),
+                    prefix: None,
+                    disabled: false,
+                },
+                body: Body {
+                    mime_type: Some(mime::GRAPHQL.into()),
+                    text: Some(r#"{"query":"{ me }"}"#.into()),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         )
         .unwrap();
-    let v = e.graphql_query(r.id(), "query IntrospectionQuery { __schema { queryType { name } } }", Some(json!({"a": 1}))).await.unwrap();
+    let v = e
+        .graphql_query(
+            r.id(),
+            "query IntrospectionQuery { __schema { queryType { name } } }",
+            Some(json!({"a": 1})),
+        )
+        .await
+        .unwrap();
     assert_eq!(v["data"]["__schema"]["queryType"]["name"], "Query");
     assert_eq!(v["data"]["echo"]["variables"], json!({"a": 1}));
-    assert!(e.responses(r.id()).unwrap().is_empty(), "introspection is not stored in history");
+    assert!(
+        e.responses(r.id()).unwrap().is_empty(),
+        "introspection is not stored in history"
+    );
 
     let mut no_auth = e.store.get::<Request>(r.id()).unwrap();
     no_auth.authentication = Auth::None;
     e.store.update(&no_auth).unwrap();
-    let err = e.graphql_query(r.id(), "{ __typename }", None).await.unwrap_err();
+    let err = e
+        .graphql_query(r.id(), "{ __typename }", None)
+        .await
+        .unwrap_err();
     assert_eq!(err.to_string(), "GraphQL errors: unauthenticated");
+}
+
+mod oauth {
+    use super::*;
+    use axum::{
+        Form, Json,
+        extract::Query,
+        extract::State,
+        http::StatusCode,
+        response::Redirect,
+        routing::{get, post},
+    };
+    use irs_core::OAuth2Config;
+    use sha2::Digest as _;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct St {
+        grants: Arc<Mutex<Vec<String>>>,
+        challenge: Arc<Mutex<Option<String>>>,
+    }
+
+    async fn authorize(State(st): State<St>, Query(q): Query<HashMap<String, String>>) -> Redirect {
+        *st.challenge.lock().unwrap() = q.get("code_challenge").cloned();
+        Redirect::to(&format!(
+            "{}?code=the-code&state={}",
+            q["redirect_uri"], q["state"]
+        ))
+    }
+
+    async fn token(
+        State(st): State<St>,
+        headers: HeaderMap,
+        Form(f): Form<HashMap<String, String>>,
+    ) -> (StatusCode, Json<Value>) {
+        let basic = headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let ok_client = basic
+            == format!(
+                "Basic {}",
+                base64::engine::general_purpose::STANDARD.encode("app:shh")
+            )
+            || f.get("client_secret").map(String::as_str) == Some("shh");
+        if !ok_client {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "invalid_client", "error_description": "bad client secret"})),
+            );
+        }
+        let grant = f["grant_type"].clone();
+        st.grants.lock().unwrap().push(grant.clone());
+        let n = st.grants.lock().unwrap().len();
+        match grant.as_str() {
+            "authorization_code" => {
+                let expected = st.challenge.lock().unwrap().clone().unwrap_or_default();
+                let got =
+                    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(
+                        f.get("code_verifier")
+                            .cloned()
+                            .unwrap_or_default()
+                            .as_bytes(),
+                    ));
+                if f["code"] != "the-code" || got != expected {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(
+                            json!({"error": "invalid_grant", "error_description": "PKCE verification failed"}),
+                        ),
+                    );
+                }
+                (
+                    StatusCode::OK,
+                    Json(
+                        json!({"access_token": "tok-code", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "r1"}),
+                    ),
+                )
+            }
+            // expires immediately, so the next send must refresh
+            "client_credentials" => (
+                StatusCode::OK,
+                Json(
+                    json!({"access_token": format!("tok-cc-{n}"), "expires_in": 1, "refresh_token": "r-cc"}),
+                ),
+            ),
+            "refresh_token" => (
+                StatusCode::OK,
+                Json(json!({"access_token": format!("tok-refreshed-{n}"), "expires_in": 3600})),
+            ),
+            "password" => (
+                StatusCode::OK,
+                Json(json!({"access_token": format!("tok-pw-{}", f["username"])})),
+            ),
+            _ => (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "unsupported_grant_type"})),
+            ),
+        }
+    }
+
+    async fn setup() -> (String, St) {
+        let st = St::default();
+        let app = axum::Router::new()
+            .route("/authorize", get(authorize))
+            .route("/token", post(token))
+            .route(
+                "/me",
+                get(|h: HeaderMap| async move {
+                    h.get("authorization")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("none")
+                        .to_string()
+                }),
+            )
+            .with_state(st.clone());
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        (format!("http://{addr}"), st)
+    }
+
+    fn cfg(base: &str, grant: &str) -> OAuth2Config {
+        OAuth2Config {
+            grant_type: grant.into(),
+            access_token_url: format!("{base}/token"),
+            authorization_url: format!("{base}/authorize"),
+            client_id: "app".into(),
+            client_secret: "{{ secret }}".into(),
+            username: "ada".into(),
+            password: "pw".into(),
+            ..Default::default()
+        }
+    }
+
+    fn engine_with(base: &str, auth: Auth, on_folder: bool) -> (Engine, String, String) {
+        let e = Engine::in_memory();
+        let ws = e.store.insert(None, Workspace::default()).unwrap();
+        let mut env = e.base_environment(ws.id()).unwrap();
+        env.data = vars(json!({"secret": "shh"}));
+        e.store.update(&env).unwrap();
+        let folder = e
+            .store
+            .insert(
+                Some(ws.id()),
+                Folder {
+                    authentication: if on_folder {
+                        auth.clone()
+                    } else {
+                        Auth::Inherit
+                    },
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let r = e
+            .store
+            .insert(
+                Some(folder.id()),
+                Request {
+                    url: format!("{base}/me"),
+                    authentication: if on_folder { Auth::Inherit } else { auth },
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        (e, r.meta.id.clone(), folder.meta.id.clone())
+    }
+
+    #[tokio::test]
+    async fn client_credentials_then_refresh_and_folder_ownership() {
+        let (base, st) = setup().await;
+        let (e, req, folder) =
+            engine_with(&base, Auth::OAuth2(cfg(&base, "client_credentials")), true);
+        let r1 = e.send(&req).await.unwrap();
+        assert_eq!(
+            String::from_utf8(e.response_body(&r1)).unwrap(),
+            "Bearer tok-cc-1"
+        );
+        assert!(
+            e.oauth2_cached(&folder).unwrap().is_some(),
+            "token cached on the folder that owns the auth"
+        );
+        let r2 = e.send(&req).await.unwrap();
+        assert_eq!(
+            String::from_utf8(e.response_body(&r2)).unwrap(),
+            "Bearer tok-refreshed-2",
+            "expired token refreshed"
+        );
+        let r3 = e.send(&req).await.unwrap();
+        assert_eq!(
+            String::from_utf8(e.response_body(&r3)).unwrap(),
+            "Bearer tok-refreshed-2",
+            "fresh token reused"
+        );
+        assert_eq!(
+            *st.grants.lock().unwrap(),
+            ["client_credentials", "refresh_token"]
+        );
+    }
+
+    #[tokio::test]
+    async fn password_grant_errors_and_code_flow_requires_sign_in() {
+        let (base, _) = setup().await;
+        let (e, req, _) = engine_with(
+            &base,
+            Auth::OAuth2(OAuth2Config {
+                credentials_in_body: true,
+                ..cfg(&base, "password")
+            }),
+            false,
+        );
+        assert_eq!(
+            String::from_utf8(e.response_body(&e.send(&req).await.unwrap())).unwrap(),
+            "Bearer tok-pw-ada"
+        );
+
+        let mut bad = cfg(&base, "client_credentials");
+        bad.client_secret = "wrong".into();
+        let (e, req, _) = engine_with(&base, Auth::OAuth2(bad), false);
+        let r = e.send(&req).await.unwrap();
+        assert_eq!(
+            r.error.as_deref(),
+            Some("OAuth 2 error invalid_client: bad client secret")
+        );
+
+        let (e, req, _) = engine_with(&base, Auth::OAuth2(cfg(&base, "authorization_code")), false);
+        assert!(
+            e.send(&req)
+                .await
+                .unwrap()
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("click “Get token”")
+        );
+    }
+
+    #[tokio::test]
+    async fn authorization_code_with_pkce_via_local_redirect() {
+        let (base, st) = setup().await;
+        let mut c = cfg(&base, "authorization_code");
+        c.client_secret = "shh".into();
+        c.redirect_url = "http://127.0.0.1:18977/callback".into();
+        let (e, req, _) = engine_with(&base, Auth::OAuth2(c.clone()), false);
+        // the "browser": follow the authorization redirect to our localhost catcher
+        let opener = |url: &str| {
+            let url = url.to_string();
+            tokio::spawn(async move {
+                let body = reqwest::get(&url).await.unwrap().text().await.unwrap();
+                assert!(body.contains("Signed in"), "{body}");
+            });
+        };
+        let tok = e.oauth2_authorize(&req, &c, &opener).await.unwrap();
+        assert_eq!(
+            (tok.access_token.as_str(), tok.refresh_token.as_deref()),
+            ("tok-code", Some("r1"))
+        );
+        assert!(
+            st.challenge.lock().unwrap().is_some(),
+            "PKCE challenge sent"
+        );
+        assert_eq!(
+            String::from_utf8(e.response_body(&e.send(&req).await.unwrap())).unwrap(),
+            "Bearer tok-code"
+        );
+        e.oauth2_clear(&req).unwrap();
+        assert!(e.oauth2_cached(&req).unwrap().is_none());
+    }
 }

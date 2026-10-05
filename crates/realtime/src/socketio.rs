@@ -44,8 +44,17 @@ pub fn parse_packet(s: &str) -> Option<Packet> {
     let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
     let ack = (!digits.is_empty()).then(|| digits.parse().ok()).flatten();
     rest = &rest[digits.len()..];
-    let data = if rest.is_empty() { None } else { serde_json::from_str(rest).ok() };
-    Some(Packet { kind, namespace, ack, data })
+    let data = if rest.is_empty() {
+        None
+    } else {
+        serde_json::from_str(rest).ok()
+    };
+    Some(Packet {
+        kind,
+        namespace,
+        ack,
+        data,
+    })
 }
 
 fn encode(kind: u8, namespace: &str, ack: Option<u64>, data: Option<&Value>) -> String {
@@ -68,13 +77,21 @@ fn engine_url(raw: &str) -> Result<String, RtError> {
     let scheme = match u.scheme() {
         "http" | "ws" => "ws",
         "https" | "wss" => "wss",
-        other => return Err(RtError::Url(raw.to_string(), format!("unsupported scheme {other}"))),
+        other => {
+            return Err(RtError::Url(
+                raw.to_string(),
+                format!("unsupported scheme {other}"),
+            ));
+        }
     };
-    u.set_scheme(scheme).map_err(|_| RtError::Url(raw.to_string(), "bad scheme".into()))?;
+    u.set_scheme(scheme)
+        .map_err(|_| RtError::Url(raw.to_string(), "bad scheme".into()))?;
     if u.path() == "/" || u.path().is_empty() {
         u.set_path("/socket.io/");
     }
-    u.query_pairs_mut().append_pair("EIO", "4").append_pair("transport", "websocket");
+    u.query_pairs_mut()
+        .append_pair("EIO", "4")
+        .append_pair("transport", "websocket");
     Ok(u.to_string())
 }
 
@@ -85,22 +102,53 @@ pub(crate) async fn start(
     connected: Arc<AtomicBool>,
 ) -> Result<(), RtError> {
     let url = engine_url(&opts.url)?;
-    let namespace = opts.namespace.clone().filter(|n| !n.is_empty()).map(|n| if n.starts_with('/') { n } else { format!("/{n}") }).unwrap_or("/".into());
+    let namespace = opts
+        .namespace
+        .clone()
+        .filter(|n| !n.is_empty())
+        .map(|n| {
+            if n.starts_with('/') {
+                n
+            } else {
+                format!("/{n}")
+            }
+        })
+        .unwrap_or("/".into());
     let mut stream = crate::ws::open(&url, opts, &log).await?;
 
     // engine.io open packet
     let open = tokio::time::timeout(std::time::Duration::from_secs(10), stream.next())
         .await
-        .map_err(|_| RtError::Protocol("no engine.io handshake within 10 s (is this a Socket.IO v4 server?)".into()))?;
+        .map_err(|_| {
+            RtError::Protocol(
+                "no engine.io handshake within 10 s (is this a Socket.IO v4 server?)".into(),
+            )
+        })?;
     let handshake = match open {
-        Some(Ok(Message::Text(t))) if t.starts_with('0') => serde_json::from_str::<Value>(&t[1..]).unwrap_or(Value::Null),
-        other => return Err(RtError::Protocol(format!("unexpected first frame: {other:?}"))),
+        Some(Ok(Message::Text(t))) if t.starts_with('0') => {
+            serde_json::from_str::<Value>(&t[1..]).unwrap_or(Value::Null)
+        }
+        other => {
+            return Err(RtError::Protocol(format!(
+                "unexpected first frame: {other:?}"
+            )));
+        }
     };
-    log.info("info", format!("engine.io session {} (ping every {} ms)", handshake["sid"].as_str().unwrap_or("?"), handshake["pingInterval"]));
+    log.info(
+        "info",
+        format!(
+            "engine.io session {} (ping every {} ms)",
+            handshake["sid"].as_str().unwrap_or("?"),
+            handshake["pingInterval"]
+        ),
+    );
 
     // Socket.IO connect to the namespace
     let connect = encode(0, &namespace, None, opts.auth.as_ref());
-    stream.send(Message::Text(connect.clone().into())).await.map_err(|e| RtError::Connect(e.to_string()))?;
+    stream
+        .send(Message::Text(connect.clone().into()))
+        .await
+        .map_err(|e| RtError::Connect(e.to_string()))?;
     let ack = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         while let Some(m) = stream.next().await {
             match m {
@@ -117,15 +165,26 @@ pub(crate) async fn start(
     .await
     .map_err(|_| RtError::Protocol("no CONNECT answer from the namespace".into()))?;
     match ack {
-        Some(Packet { kind: 0, data, .. }) => {
-            log.info("open", format!("Joined namespace {namespace} (socket id {})", data.as_ref().and_then(|d| d["sid"].as_str()).unwrap_or("?")))
-        }
+        Some(Packet { kind: 0, data, .. }) => log.info(
+            "open",
+            format!(
+                "Joined namespace {namespace} (socket id {})",
+                data.as_ref().and_then(|d| d["sid"].as_str()).unwrap_or("?")
+            ),
+        ),
         Some(Packet { kind: 4, data, .. }) => {
-            let msg = data.as_ref().and_then(|d| d["message"].as_str().map(str::to_string)).unwrap_or_else(|| format!("{data:?}"));
+            let msg = data
+                .as_ref()
+                .and_then(|d| d["message"].as_str().map(str::to_string))
+                .unwrap_or_else(|| format!("{data:?}"));
             log.error(format!("Namespace refused the connection: {msg}"));
             return Err(RtError::Connect(format!("connect_error: {msg}")));
         }
-        other => return Err(RtError::Protocol(format!("unexpected answer to CONNECT: {other:?}"))),
+        other => {
+            return Err(RtError::Protocol(format!(
+                "unexpected answer to CONNECT: {other:?}"
+            )));
+        }
     }
     connected.store(true, Ordering::SeqCst);
 
@@ -199,12 +258,34 @@ mod tests {
 
     #[test]
     fn packets_round_trip() {
-        assert_eq!(parse_packet(r#"2["chat",{"a":1}]"#).unwrap(), Packet { kind: 2, namespace: "/".into(), ack: None, data: Some(json!(["chat", {"a": 1}])) });
-        assert_eq!(parse_packet(r#"2/admin,12["x"]"#).unwrap(), Packet { kind: 2, namespace: "/admin".into(), ack: Some(12), data: Some(json!(["x"])) });
+        assert_eq!(
+            parse_packet(r#"2["chat",{"a":1}]"#).unwrap(),
+            Packet {
+                kind: 2,
+                namespace: "/".into(),
+                ack: None,
+                data: Some(json!(["chat", {"a": 1}]))
+            }
+        );
+        assert_eq!(
+            parse_packet(r#"2/admin,12["x"]"#).unwrap(),
+            Packet {
+                kind: 2,
+                namespace: "/admin".into(),
+                ack: Some(12),
+                data: Some(json!(["x"]))
+            }
+        );
         assert_eq!(parse_packet("0/admin,").unwrap().namespace, "/admin");
         let bin = parse_packet(r#"51-["x",{"_placeholder":true,"num":0}]"#).unwrap();
         assert_eq!((bin.kind, bin.data.unwrap()[0].clone()), (5, json!("x")));
-        assert_eq!(encode(2, "/chat", Some(3), Some(&json!(["hi"]))), r#"42/chat,3["hi"]"#);
-        assert_eq!(engine_url("https://x.io").unwrap(), "wss://x.io/socket.io/?EIO=4&transport=websocket");
+        assert_eq!(
+            encode(2, "/chat", Some(3), Some(&json!(["hi"]))),
+            r#"42/chat,3["hi"]"#
+        );
+        assert_eq!(
+            engine_url("https://x.io").unwrap(),
+            "wss://x.io/socket.io/?EIO=4&transport=websocket"
+        );
     }
 }

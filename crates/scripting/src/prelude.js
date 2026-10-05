@@ -379,11 +379,15 @@
         return { type: 'apikey', apikey: kv({ key: a.key, value: a.value, in: a.addTo || 'header' }), disabled: !!a.disabled };
       case 'none':
         return { type: 'noauth' };
-      default:
+      case 'inherit':
         return { type: 'inherit' };
+      default:
+        // oauth2, oauth1, iam, digest, netrc: visible by type, preserved verbatim
+        return { type: a.type, _raw: a };
     }
   }
   function authFromScript(s) {
+    if (s._raw && s._raw.type === s.type) return s._raw;
     const get = (list, k) => ((list || []).find(x => x.key === k) || {}).value ?? '';
     switch (s.type) {
       case 'basic':

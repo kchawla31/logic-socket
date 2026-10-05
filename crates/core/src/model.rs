@@ -112,7 +112,11 @@ model!(Workspace, "Workspace", "wrk");
 // ---------------------------------------------------------------- Auth
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(
+    tag = "type",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Auth {
     /// Inherit from the nearest folder (Insomnia stores this as `{}`).
     #[default]
@@ -141,12 +145,143 @@ pub enum Auth {
         #[serde(default)]
         value: String,
         /// `header` (default) | `queryParams` | `cookie`
-        #[serde(default, rename = "addTo")]
+        #[serde(default)]
         add_to: Option<String>,
         #[serde(default)]
         disabled: bool,
     },
+    /// HTTP Digest (RFC 7616): answered after the server's 401 challenge.
+    Digest {
+        #[serde(default)]
+        username: String,
+        #[serde(default)]
+        password: String,
+        #[serde(default)]
+        disabled: bool,
+    },
+    #[serde(rename = "oauth2")]
+    OAuth2(OAuth2Config),
+    #[serde(rename = "oauth1")]
+    OAuth1(OAuth1Config),
+    /// AWS Signature Version 4.
+    Iam(AwsIamConfig),
+    /// Credentials for the request host from `~/.netrc`.
+    Netrc {
+        #[serde(default)]
+        disabled: bool,
+    },
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct OAuth2Config {
+    /// `client_credentials` | `password` | `authorization_code` | `refresh_token`
+    pub grant_type: String,
+    pub access_token_url: String,
+    pub authorization_url: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub scope: String,
+    pub audience: String,
+    pub resource: String,
+    pub username: String,
+    pub password: String,
+    /// Must be `http://localhost:<port>/...` or `http://127.0.0.1:<port>/...` for the code flow.
+    pub redirect_url: String,
+    pub use_pkce: bool,
+    /// Send client id/secret in the body instead of HTTP Basic.
+    pub credentials_in_body: bool,
+    /// Header prefix (default `Bearer`).
+    pub token_prefix: String,
+    pub disabled: bool,
+}
+
+impl Default for OAuth2Config {
+    fn default() -> Self {
+        Self {
+            grant_type: "client_credentials".into(),
+            access_token_url: String::new(),
+            authorization_url: String::new(),
+            client_id: String::new(),
+            client_secret: String::new(),
+            scope: String::new(),
+            audience: String::new(),
+            resource: String::new(),
+            username: String::new(),
+            password: String::new(),
+            redirect_url: "http://127.0.0.1:8970/callback".into(),
+            use_pkce: true,
+            credentials_in_body: false,
+            token_prefix: String::new(),
+            disabled: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct OAuth1Config {
+    pub consumer_key: String,
+    pub consumer_secret: String,
+    pub token_key: String,
+    pub token_secret: String,
+    /// `HMAC-SHA1` | `HMAC-SHA256` | `PLAINTEXT`
+    pub signature_method: String,
+    pub realm: String,
+    pub callback: String,
+    pub verifier: String,
+    /// Fixed values for testing; generated when empty.
+    pub nonce: String,
+    pub timestamp: String,
+    pub include_body_hash: bool,
+    pub disabled: bool,
+}
+
+impl Default for OAuth1Config {
+    fn default() -> Self {
+        Self {
+            consumer_key: String::new(),
+            consumer_secret: String::new(),
+            token_key: String::new(),
+            token_secret: String::new(),
+            signature_method: "HMAC-SHA1".into(),
+            realm: String::new(),
+            callback: String::new(),
+            verifier: String::new(),
+            nonce: String::new(),
+            timestamp: String::new(),
+            include_body_hash: false,
+            disabled: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AwsIamConfig {
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub session_token: String,
+    pub region: String,
+    pub service: String,
+    pub disabled: bool,
+}
+
+/// Cached OAuth 2 token, stored as a child of the request/folder that owns the auth.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct OAuth2Token {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub token_type: Option<String>,
+    /// Epoch ms; `None` = no expiry given.
+    pub expires_at: Option<i64>,
+    pub scope: Option<String>,
+    pub id_token: Option<String>,
+    /// Error from the last attempt, shown in the UI.
+    pub error: Option<String>,
+}
+model!(OAuth2Token, "OAuth2Token", "oa2");
 
 impl Auth {
     pub fn is_inherit(&self) -> bool {

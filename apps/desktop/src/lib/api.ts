@@ -24,7 +24,63 @@ export type Auth =
   | { type: 'none' }
   | { type: 'basic'; username: string; password: string; disabled?: boolean }
   | { type: 'bearer'; token: string; prefix?: string | null; disabled?: boolean }
-  | { type: 'apikey'; key: string; value: string; addTo?: string | null; disabled?: boolean };
+  | { type: 'apikey'; key: string; value: string; addTo?: string | null; disabled?: boolean }
+  | { type: 'digest'; username: string; password: string; disabled?: boolean }
+  | ({ type: 'oauth2' } & OAuth2Config)
+  | ({ type: 'oauth1' } & OAuth1Config)
+  | ({ type: 'iam' } & AwsIamConfig)
+  | { type: 'netrc'; disabled?: boolean };
+
+export interface OAuth2Config {
+  grantType: 'client_credentials' | 'password' | 'authorization_code';
+  accessTokenUrl: string;
+  authorizationUrl: string;
+  clientId: string;
+  clientSecret: string;
+  scope: string;
+  audience: string;
+  resource: string;
+  username: string;
+  password: string;
+  redirectUrl: string;
+  usePkce: boolean;
+  credentialsInBody: boolean;
+  tokenPrefix: string;
+  disabled?: boolean;
+}
+
+export interface OAuth1Config {
+  consumerKey: string;
+  consumerSecret: string;
+  tokenKey: string;
+  tokenSecret: string;
+  signatureMethod: 'HMAC-SHA1' | 'HMAC-SHA256' | 'PLAINTEXT';
+  realm: string;
+  callback: string;
+  verifier: string;
+  nonce: string;
+  timestamp: string;
+  includeBodyHash: boolean;
+  disabled?: boolean;
+}
+
+export interface AwsIamConfig {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken: string;
+  region: string;
+  service: string;
+  disabled?: boolean;
+}
+
+export interface TokenStatus {
+  hasToken: boolean;
+  preview?: string | null;
+  expiresAt?: number | null;
+  hasRefreshToken: boolean;
+  scope?: string | null;
+  tokenType?: string | null;
+}
 
 export interface BodyParam {
   id?: string | null;
@@ -564,6 +620,9 @@ export const api = {
   rtSend: (id: string, text: string, event: string | null, ack: boolean) => invoke<number | null>('rt_send', { id, text, event, ack }),
   rtDisconnect: (id: string) => invoke<void>('rt_disconnect', { id }),
   rtLog: (id: string) => invoke<RtEvent[]>('rt_log', { id }),
+  oauth2Status: (ownerId: string) => invoke<TokenStatus>('oauth2_status', { ownerId }),
+  oauth2Authorize: (ownerId: string) => invoke<TokenStatus>('oauth2_authorize', { ownerId }),
+  oauth2Clear: (ownerId: string) => invoke<void>('oauth2_clear', { ownerId }),
 };
 
 export function onRtEvent(cb: (id: string, ev: RtEvent) => void): Promise<UnlistenFn> {

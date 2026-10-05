@@ -496,8 +496,14 @@ fn realtime_commands_connect_send_and_log() {
     let base = rt.block_on(irs_realtime::mock::spawn(0)).unwrap();
     let h = Harness::new();
     let ws = h.ok("workspace_create", json!({"name": "RT"}));
-    let r = h.ok("rt_create", json!({"parentId": ws["id"], "kind": "websocket"}));
-    assert_eq!(h.ok("tree_get", json!({"workspaceId": ws["id"]}))[0]["kind"], "realtime");
+    let r = h.ok(
+        "rt_create",
+        json!({"parentId": ws["id"], "kind": "websocket"}),
+    );
+    assert_eq!(
+        h.ok("tree_get", json!({"workspaceId": ws["id"]}))[0]["kind"],
+        "realtime"
+    );
     let mut doc = r.clone();
     doc["url"] = json!(format!("{}/ws", base.replace("http", "ws")));
     doc["headers"] = json!([{"name": "X-Token", "value": "{{ _.who }}"}]);
@@ -506,17 +512,42 @@ fn realtime_commands_connect_send_and_log() {
     env["data"] = json!({"who": "ipc"});
     h.ok("env_update", json!({"doc": env}));
 
-    assert!(h.call("rt_send", json!({"id": r["id"], "text": "x", "event": null, "ack": false})).is_err(), "not connected yet");
-    assert_eq!(h.ok("rt_connect", json!({"id": r["id"]}))["connected"], true);
-    h.ok("rt_send", json!({"id": r["id"], "text": "hi {{ _.who }}", "event": null, "ack": false}));
+    assert!(
+        h.call(
+            "rt_send",
+            json!({"id": r["id"], "text": "x", "event": null, "ack": false})
+        )
+        .is_err(),
+        "not connected yet"
+    );
+    assert_eq!(
+        h.ok("rt_connect", json!({"id": r["id"]}))["connected"],
+        true
+    );
+    h.ok(
+        "rt_send",
+        json!({"id": r["id"], "text": "hi {{ _.who }}", "event": null, "ack": false}),
+    );
     let log = (0..100)
         .find_map(|_| {
             std::thread::sleep(std::time::Duration::from_millis(20));
             let l = h.ok("rt_log", json!({"id": r["id"]}));
-            l.as_array().unwrap().iter().any(|e| e["data"] == "echo: hi ipc").then_some(l)
+            l.as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["data"] == "echo: hi ipc")
+                .then_some(l)
         })
         .expect("echo received");
-    assert!(log.as_array().unwrap().iter().any(|e| e["data"] == "welcome ipc" && e["direction"] == "in"));
+    assert!(
+        log.as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["data"] == "welcome ipc" && e["direction"] == "in")
+    );
     h.ok("rt_disconnect", json!({"id": r["id"]}));
-    assert_eq!(h.ok("rt_status", json!({"id": r["id"]}))["connected"], false);
+    assert_eq!(
+        h.ok("rt_status", json!({"id": r["id"]}))["connected"],
+        false
+    );
 }

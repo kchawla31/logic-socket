@@ -638,3 +638,17 @@ async fn each_vendored_module_loads_alone() {
         assert!(o.error.is_none(), "{m}: {:?}", o.error);
     }
 }
+
+#[tokio::test]
+async fn oauth2_auth_is_preserved_through_scripts() {
+    let mut i = input("insomnia.environment.set('t', insomnia.request.auth.type);");
+    i.request.auth =
+        json!({"type": "oauth2", "grantType": "client_credentials", "clientId": "app"});
+    let o = exec(i).await;
+    ok(&o);
+    assert_eq!(o.environment["t"], json!("oauth2"));
+    assert_eq!(
+        o.request.unwrap().auth,
+        json!({"type": "oauth2", "grantType": "client_credentials", "clientId": "app"})
+    );
+}

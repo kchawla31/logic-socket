@@ -2,6 +2,7 @@
 //! SQLite or the network directly, so the CLI and desktop behave identically.
 
 mod ai;
+mod auth;
 mod rt;
 
 use std::collections::HashMap;
@@ -251,7 +252,10 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
         }
         "RealtimeRequest" => {
             store
-                .insert(parent.as_deref(), serde_json::from_value::<irs_core::RealtimeRequest>(data).map_err(e)?)
+                .insert(
+                    parent.as_deref(),
+                    serde_json::from_value::<irs_core::RealtimeRequest>(data).map_err(e)?,
+                )
                 .map_err(e)?
                 .meta
                 .id
@@ -288,7 +292,11 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                         }
                         "RealtimeRequest" => {
                             store
-                                .insert(Some(dst), serde_json::from_value::<irs_core::RealtimeRequest>(c.data).map_err(e)?)
+                                .insert(
+                                    Some(dst),
+                                    serde_json::from_value::<irs_core::RealtimeRequest>(c.data)
+                                        .map_err(e)?,
+                                )
                                 .map_err(e)?;
                         }
                         "Folder" => {
@@ -424,8 +432,17 @@ async fn request_send(state: State<'_, AppState>, request_id: String) -> CmdResu
 }
 
 #[tauri::command]
-async fn graphql_query(state: State<'_, AppState>, request_id: String, query: String, variables: Option<Value>) -> CmdResult<Value> {
-    state.engine.graphql_query(&request_id, &query, variables).await.map_err(e)
+async fn graphql_query(
+    state: State<'_, AppState>,
+    request_id: String,
+    query: String,
+    variables: Option<Value>,
+) -> CmdResult<Value> {
+    state
+        .engine
+        .graphql_query(&request_id, &query, variables)
+        .await
+        .map_err(e)
 }
 
 #[tauri::command]
@@ -963,7 +980,13 @@ fn seed_if_empty(engine: &Engine) -> irs_core::store::Result<()> {
 }
 
 /// Every event the backend emits to the UI (the dev web bridge forwards these).
-pub const APP_EVENTS: &[&str] = &["db-changed", "mcp-log", "runner-event", "llm-event", "rt-event"];
+pub const APP_EVENTS: &[&str] = &[
+    "db-changed",
+    "mcp-log",
+    "runner-event",
+    "llm-event",
+    "rt-event",
+];
 
 /// Register state, events and commands. Shared by `run` and the IPC tests.
 pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> tauri::Builder<R> {
@@ -1049,6 +1072,9 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             rt::rt_send,
             rt::rt_disconnect,
             rt::rt_log,
+            auth::oauth2_status,
+            auth::oauth2_authorize,
+            auth::oauth2_clear,
         ])
 }
 

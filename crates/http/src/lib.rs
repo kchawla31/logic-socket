@@ -2,6 +2,7 @@
 //! send it with manual redirect handling, and capture timings + a timeline.
 
 pub mod cookies;
+pub mod sign;
 
 use std::time::{Duration, Instant};
 
@@ -324,6 +325,9 @@ pub async fn send(
     let mut method = method;
     let mut body = body;
     let mut redirects = 0usize;
+    // Digest: (challenge, nonce count) once the server has challenged us.
+    let mut digest: Option<(sign::DigestChallenge, u32)> = None;
+    let mut digest_attempted = false;
     tl.push("info", format!("Preparing request to {url}"));
     tl.push(
         "info",
@@ -385,7 +389,8 @@ pub async fn send(
         for (k, v) in &sent_headers {
             rb = rb.header(k, v);
         }
-        let wire = rb.build().map_err(|e| HttpError::Network(e.to_string()))?;
+        let mut wire = rb.build().map_err(|e| HttpError::Network(e.to_string()))?;
+        apply_wire_auth(auth, &mut wire, &mut digest, &mut tl)?;
 
         tl.push(
             "header-out",
@@ -443,6 +448,30 @@ pub async fn send(
                     cookies::store(jar, c);
                 }
             }
+        }
+
+        if status == reqwest::StatusCode::UNAUTHORIZED
+            && !digest_attempted
+            && let Auth::Digest {
+                disabled: false, ..
+            } = auth
+            && let Some(c) = resp
+                .headers()
+                .get_all(reqwest::header::WWW_AUTHENTICATE)
+                .iter()
+                .filter_map(|v| v.to_str().ok())
+                .find_map(sign::parse_digest)
+        {
+            tl.push(
+                "info",
+                format!(
+                    "Digest challenge (realm \"{}\", {}); retrying with credentials",
+                    c.realm, c.algorithm
+                ),
+            );
+            digest = Some((c, 0));
+            digest_attempted = true;
+            continue;
         }
 
         let location = resp
@@ -514,6 +543,114 @@ pub async fn send(
             redirects,
         });
     }
+}
+
+/// Auth that signs the final wire request (OAuth 1, AWS SigV4, Digest).
+fn apply_wire_auth(
+    auth: &Auth,
+    wire: &mut reqwest::Request,
+    digest: &mut Option<(sign::DigestChallenge, u32)>,
+    tl: &mut Timeline,
+) -> Result<(), HttpError> {
+    let set = |wire: &mut reqwest::Request, name: &str, value: &str| -> Result<(), HttpError> {
+        let n = reqwest::header::HeaderName::from_bytes(name.as_bytes())
+            .map_err(|e| HttpError::Network(e.to_string()))?;
+        let v = reqwest::header::HeaderValue::from_str(value)
+            .map_err(|e| HttpError::Network(format!("header {name}: {e}")))?;
+        wire.headers_mut().insert(n, v);
+        Ok(())
+    };
+    match auth {
+        Auth::Digest {
+            username,
+            password,
+            disabled: false,
+        } => {
+            if let Some((c, nc)) = digest {
+                *nc += 1;
+                let cnonce = uuid::Uuid::new_v4().simple().to_string()[..16].to_string();
+                let h = sign::digest_authorization(
+                    c,
+                    username,
+                    password,
+                    wire.method().as_str(),
+                    &request_target(wire.url()),
+                    &cnonce,
+                    *nc,
+                );
+                set(wire, "authorization", &h)?;
+            }
+        }
+        Auth::OAuth1(cfg) if !cfg.disabled => {
+            let body = wire.body().and_then(|b| b.as_bytes()).map(|b| b.to_vec());
+            let is_form = wire
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|v| v.starts_with(irs_core::mime::FORM));
+            let form = if is_form {
+                body.as_deref().map(sign::form_pairs).unwrap_or_default()
+            } else {
+                vec![]
+            };
+            let h = sign::oauth1_authorization(
+                cfg,
+                wire.method().as_str(),
+                wire.url(),
+                &form,
+                body.as_deref(),
+            );
+            set(wire, "authorization", &h)?;
+            tl.push(
+                "info",
+                format!(
+                    "Signed with OAuth 1.0a ({})",
+                    if cfg.signature_method.is_empty() {
+                        "HMAC-SHA1"
+                    } else {
+                        &cfg.signature_method
+                    }
+                ),
+            );
+        }
+        Auth::Iam(cfg) if !cfg.disabled => {
+            let mut headers: Vec<(String, String)> = wire
+                .headers()
+                .iter()
+                .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
+                .collect();
+            if !headers.iter().any(|(k, _)| k == "host") {
+                headers.push(("host".into(), host_header(wire.url())));
+            }
+            let body = wire
+                .body()
+                .and_then(|b| b.as_bytes())
+                .map(|b| b.to_vec())
+                .or(if wire.body().is_none() {
+                    Some(vec![])
+                } else {
+                    None
+                });
+            let signed = sign::aws_sigv4_headers(
+                cfg,
+                wire.method().as_str(),
+                wire.url().as_str(),
+                &headers,
+                body.as_deref(),
+                std::time::SystemTime::now(),
+            )
+            .map_err(|e| HttpError::Network(format!("AWS SigV4 signing failed: {e}")))?;
+            for (k, v) in signed {
+                set(wire, &k, &v)?;
+            }
+            tl.push(
+                "info",
+                format!("Signed with AWS SigV4 ({}/{})", cfg.region, cfg.service),
+            );
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn ms(d: Duration) -> f64 {

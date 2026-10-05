@@ -11,29 +11,42 @@ use axum::{
 use serde_json::json;
 
 async fn ws_echo(ws: WebSocketUpgrade, headers: HeaderMap) -> Response {
-    let token = headers.get("x-token").and_then(|v| v.to_str().ok()).unwrap_or("none").to_string();
-    ws.protocols(["chat.v1"]).on_upgrade(move |mut socket: WebSocket| async move {
-        let _ = socket.send(WsMsg::Text(format!("welcome {token}").into())).await;
-        while let Some(Ok(m)) = socket.recv().await {
-            match m {
-                WsMsg::Text(t) if t.as_str() == "bye" => {
-                    let _ = socket.send(WsMsg::Close(Some(axum::extract::ws::CloseFrame { code: 1000, reason: "see you".into() }))).await;
-                    break;
+    let token = headers
+        .get("x-token")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("none")
+        .to_string();
+    ws.protocols(["chat.v1"])
+        .on_upgrade(move |mut socket: WebSocket| async move {
+            let _ = socket
+                .send(WsMsg::Text(format!("welcome {token}").into()))
+                .await;
+            while let Some(Ok(m)) = socket.recv().await {
+                match m {
+                    WsMsg::Text(t) if t.as_str() == "bye" => {
+                        let _ = socket
+                            .send(WsMsg::Close(Some(axum::extract::ws::CloseFrame {
+                                code: 1000,
+                                reason: "see you".into(),
+                            })))
+                            .await;
+                        break;
+                    }
+                    WsMsg::Text(t) => {
+                        let _ = socket.send(WsMsg::Text(format!("echo: {t}").into())).await;
+                    }
+                    WsMsg::Binary(b) => {
+                        let _ = socket.send(WsMsg::Binary(b)).await;
+                    }
+                    _ => {}
                 }
-                WsMsg::Text(t) => {
-                    let _ = socket.send(WsMsg::Text(format!("echo: {t}").into())).await;
-                }
-                WsMsg::Binary(b) => {
-                    let _ = socket.send(WsMsg::Binary(b)).await;
-                }
-                _ => {}
             }
-        }
-    })
+        })
 }
 
 async fn sse() -> impl IntoResponse {
-    let body = ": keep-alive\n\nevent: greeting\ndata: hello\n\nid: 2\ndata: {\"n\":1}\ndata: line2\n\n";
+    let body =
+        ": keep-alive\n\nevent: greeting\ndata: hello\n\nid: 2\ndata: {\"n\":1}\ndata: line2\n\n";
     ([("content-type", "text/event-stream")], body)
 }
 
@@ -79,7 +92,10 @@ async fn socketio(ws: WebSocketUpgrade) -> Response {
 }
 
 pub fn router() -> Router {
-    Router::new().route("/ws", get(ws_echo)).route("/events", get(sse)).route("/socket.io/", get(socketio))
+    Router::new()
+        .route("/ws", get(ws_echo))
+        .route("/events", get(sse))
+        .route("/socket.io/", get(socketio))
 }
 
 /// Serve on 127.0.0.1:`port` (0 = random); returns `http://host:port`.
@@ -91,4 +107,3 @@ pub async fn spawn(port: u16) -> std::io::Result<String> {
     });
     Ok(format!("http://{addr}"))
 }
-

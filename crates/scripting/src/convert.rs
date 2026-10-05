@@ -236,6 +236,21 @@ mod tests {
     }
 
     #[test]
+    fn non_scriptable_auth_survives_a_script_round_trip() {
+        let r = Request {
+            authentication: Auth::Iam(irs_core::AwsIamConfig {
+                region: "eu-west-1".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let s = to_script_request("req_1", &r);
+        let mut back = r.clone();
+        apply_script_request(&mut back, &s);
+        assert_eq!(back.authentication, r.authentication);
+    }
+
+    #[test]
     fn script_changes_apply() {
         let mut r = Request {
             headers: vec![KeyValue {

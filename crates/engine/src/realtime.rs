@@ -19,38 +19,83 @@ pub fn parse_kind(k: &str) -> Kind {
 impl Engine {
     fn render_field(&self, id: &str, field: &str, text: &str) -> Result<String> {
         let ctx = self.context(id)?;
-        self.renderer().render_str(text, &ctx, Mode::Throw).map_err(|source| EngineError::Render { field: field.to_string(), source })
+        self.renderer()
+            .render_str(text, &ctx, Mode::Throw)
+            .map_err(|source| EngineError::Render {
+                field: field.to_string(),
+                source,
+            })
     }
 
     /// Connection options with variables rendered and folder headers/auth inherited.
     pub fn realtime_options(&self, id: &str) -> Result<ConnectOptions> {
         let r: Doc<RealtimeRequest> = self.store.get(id)?;
-        let folders: Vec<Doc<Folder>> =
-            self.store.ancestors(id)?.iter().filter(|d| d.meta.kind == "Folder").map(RawDoc::typed).collect::<std::result::Result<_, _>>()?;
+        let folders: Vec<Doc<Folder>> = self
+            .store
+            .ancestors(id)?
+            .iter()
+            .filter(|d| d.meta.kind == "Folder")
+            .map(RawDoc::typed)
+            .collect::<std::result::Result<_, _>>()?;
         let mut headers: Vec<(String, String)> = vec![];
-        for h in folders.iter().rev().flat_map(|f| f.headers.iter()).chain(r.headers.iter()).filter(|h| !h.disabled && !h.name.trim().is_empty()) {
+        for h in folders
+            .iter()
+            .rev()
+            .flat_map(|f| f.headers.iter())
+            .chain(r.headers.iter())
+            .filter(|h| !h.disabled && !h.name.trim().is_empty())
+        {
             let name = self.render_field(id, "header name", &h.name)?;
             let value = self.render_field(id, &format!("header '{}'", h.name), &h.value)?;
             headers.retain(|(k, _)| !k.eq_ignore_ascii_case(&name));
             headers.push((name, value));
         }
         let auth = if r.authentication.is_inherit() {
-            folders.iter().map(|f| f.authentication.clone()).find(|a| !a.is_inherit()).unwrap_or(Auth::None)
+            folders
+                .iter()
+                .map(|f| f.authentication.clone())
+                .find(|a| !a.is_inherit())
+                .unwrap_or(Auth::None)
         } else {
             r.authentication.clone()
         };
         let mut url = self.render_field(id, "URL", &r.url)?;
         match auth {
-            Auth::Bearer { token, prefix, disabled: false } if !token.is_empty() => {
+            Auth::Bearer {
+                token,
+                prefix,
+                disabled: false,
+            } if !token.is_empty() => {
                 let t = self.render_field(id, "bearer token", &token)?;
-                headers.push(("Authorization".into(), format!("{} {t}", prefix.filter(|p| !p.is_empty()).unwrap_or("Bearer".into()))));
+                headers.push((
+                    "Authorization".into(),
+                    format!(
+                        "{} {t}",
+                        prefix.filter(|p| !p.is_empty()).unwrap_or("Bearer".into())
+                    ),
+                ));
             }
-            Auth::Basic { username, password, disabled: false } => {
+            Auth::Basic {
+                username,
+                password,
+                disabled: false,
+            } => {
                 let u = self.render_field(id, "username", &username)?;
                 let p = self.render_field(id, "password", &password)?;
-                headers.push(("Authorization".into(), format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(format!("{u}:{p}")))));
+                headers.push((
+                    "Authorization".into(),
+                    format!(
+                        "Basic {}",
+                        base64::engine::general_purpose::STANDARD.encode(format!("{u}:{p}"))
+                    ),
+                ));
             }
-            Auth::ApiKey { key, value, add_to, disabled: false } if !key.is_empty() => {
+            Auth::ApiKey {
+                key,
+                value,
+                add_to,
+                disabled: false,
+            } if !key.is_empty() => {
                 let k = self.render_field(id, "API key name", &key)?;
                 let v = self.render_field(id, "API key", &value)?;
                 if add_to.as_deref() == Some("queryParams") {
@@ -66,14 +111,22 @@ impl Engine {
             None
         } else {
             let s = self.render_field(id, "Socket.IO auth", &r.socketio_auth)?;
-            Some(serde_json::from_str::<Value>(&s).map_err(|e| EngineError::Llm(format!("Socket.IO auth must be JSON: {e}")))?)
+            Some(
+                serde_json::from_str::<Value>(&s)
+                    .map_err(|e| EngineError::Llm(format!("Socket.IO auth must be JSON: {e}")))?,
+            )
         };
         let settings = self.store.settings()?;
         Ok(ConnectOptions {
             kind: parse_kind(&r.kind),
             url,
             headers,
-            subprotocols: r.subprotocols.iter().filter(|s| !s.trim().is_empty()).cloned().collect(),
+            subprotocols: r
+                .subprotocols
+                .iter()
+                .filter(|s| !s.trim().is_empty())
+                .cloned()
+                .collect(),
             method: Some(r.method.clone()).filter(|m| !m.is_empty()),
             body: Some(self.render_field(id, "body", &r.body.body)?).filter(|b| !b.is_empty()),
             namespace: Some(r.namespace.clone()),

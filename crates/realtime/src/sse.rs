@@ -39,7 +39,10 @@ impl Parser {
                     f.comment = true;
                     continue;
                 }
-                let (field, value) = line.split_once(':').map(|(a, b)| (a, b.strip_prefix(' ').unwrap_or(b))).unwrap_or((line, ""));
+                let (field, value) = line
+                    .split_once(':')
+                    .map(|(a, b)| (a, b.strip_prefix(' ').unwrap_or(b)))
+                    .unwrap_or((line, ""));
                 any = true;
                 match field {
                     "data" => data.push(value.to_string()),
@@ -70,8 +73,18 @@ pub(crate) async fn start(
         .connect_timeout(std::time::Duration::from_secs(20))
         .build()
         .map_err(|e| RtError::Connect(e.to_string()))?;
-    let method = reqwest::Method::from_bytes(opts.method.as_deref().unwrap_or("GET").to_uppercase().as_bytes()).unwrap_or(reqwest::Method::GET);
-    let mut rb = client.request(method, &opts.url).header("Accept", "text/event-stream").header("Cache-Control", "no-cache");
+    let method = reqwest::Method::from_bytes(
+        opts.method
+            .as_deref()
+            .unwrap_or("GET")
+            .to_uppercase()
+            .as_bytes(),
+    )
+    .unwrap_or(reqwest::Method::GET);
+    let mut rb = client
+        .request(method, &opts.url)
+        .header("Accept", "text/event-stream")
+        .header("Cache-Control", "no-cache");
     for (k, v) in &opts.headers {
         rb = rb.header(k, v);
     }
@@ -85,17 +98,35 @@ pub(crate) async fn start(
         RtError::Connect(e.to_string())
     })?;
     let status = resp.status();
-    let ctype = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let ctype = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        let msg = format!("HTTP {status}: {}", body.chars().take(300).collect::<String>());
+        let msg = format!(
+            "HTTP {status}: {}",
+            body.chars().take(300).collect::<String>()
+        );
         log.error(msg.clone());
         return Err(RtError::Connect(msg));
     }
     if !ctype.starts_with("text/event-stream") {
-        log.info("info", format!("Warning: content-type is '{ctype}', not text/event-stream"));
+        log.info(
+            "info",
+            format!("Warning: content-type is '{ctype}', not text/event-stream"),
+        );
     }
-    log.info("open", format!("Connected ({}) in {:.0} ms", status.as_u16(), started.elapsed().as_secs_f64() * 1000.0));
+    log.info(
+        "open",
+        format!(
+            "Connected ({}) in {:.0} ms",
+            status.as_u16(),
+            started.elapsed().as_secs_f64() * 1000.0
+        ),
+    );
     connected.store(true, Ordering::SeqCst);
     let mut stream = resp.bytes_stream();
     tokio::spawn(async move {
@@ -139,6 +170,15 @@ mod tests {
         let mut p = Parser::default();
         assert!(p.feed(b": keep-alive\n\nid: 7\nevent: tick\ndata: a").len() == 1);
         let f = p.feed(b"\ndata: b\nretry: 3000\n\n");
-        assert_eq!(f, vec![SseFrame { event: Some("tick".into()), data: "a\nb".into(), id: Some("7".into()), retry: Some(3000), comment: false }]);
+        assert_eq!(
+            f,
+            vec![SseFrame {
+                event: Some("tick".into()),
+                data: "a\nb".into(),
+                id: Some("7".into()),
+                retry: Some(3000),
+                comment: false
+            }]
+        );
     }
 }

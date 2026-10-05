@@ -16,14 +16,33 @@ async fn handle(Json(req): Json<Value>) -> Json<Value> {
     ]);
     if q.contains("addBook") {
         let input = &req["variables"]["input"];
-        return Json(json!({"data": {"addBook": {"id": "3", "title": input["title"], "year": input["year"], "tags": [], "author": {"id": input["authorId"], "name": "New Author"}}}}));
+        return Json(
+            json!({"data": {"addBook": {"id": "3", "title": input["title"], "year": input["year"], "tags": [], "author": {"id": input["authorId"], "name": "New Author"}}}}),
+        );
     }
     if q.contains("books") {
-        let search = req["variables"]["search"].as_str().unwrap_or("").to_lowercase();
-        let list: Vec<Value> = books.as_array().unwrap().iter().filter(|b| b["title"].as_str().unwrap_or("").to_lowercase().contains(&search)).cloned().collect();
+        let search = req["variables"]["search"]
+            .as_str()
+            .unwrap_or("")
+            .to_lowercase();
+        let list: Vec<Value> = books
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|b| {
+                b["title"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&search)
+            })
+            .cloned()
+            .collect();
         return Json(json!({"data": {"books": list}}));
     }
-    Json(json!({"errors": [{"message": "This mock only answers introspection, books and addBook"}]}))
+    Json(
+        json!({"errors": [{"message": "This mock only answers introspection, books and addBook"}]}),
+    )
 }
 
 pub async fn spawn(port: u16) -> std::io::Result<String> {

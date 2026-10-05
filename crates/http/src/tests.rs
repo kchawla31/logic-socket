@@ -52,6 +52,30 @@ pub(crate) async fn server() -> String {
         .route("/loop", get(|| async { Redirect::temporary("/loop") }))
         .route("/keep", post(|| async { Redirect::temporary("/echo") }))
         .route(
+            "/digest",
+            get(|headers: HeaderMap| async move {
+                let auth = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+                if !auth.starts_with("Digest ") {
+                    return (
+                        StatusCode::UNAUTHORIZED,
+                        [("www-authenticate", r#"Digest realm="irs", qop="auth", nonce="abc123", opaque="xyz", algorithm=MD5"#)],
+                        String::new(),
+                    );
+                }
+                // verify like a server would
+                let get = |k: &str| auth.split(&format!("{k}=\"")).nth(1).and_then(|r| r.split('"').next()).unwrap_or("").to_string();
+                let nc = auth.split("nc=").nth(1).and_then(|r| r.split(',').next()).unwrap_or("").to_string();
+                let ha1 = format!("{:x}", md5::compute("ada:irs:lovelace"));
+                let ha2 = format!("{:x}", md5::compute(format!("GET:{}", get("uri"))));
+                let expected = format!("{:x}", md5::compute(format!("{ha1}:abc123:{nc}:{}:auth:{ha2}", get("cnonce"))));
+                if get("response") == expected {
+                    (StatusCode::OK, [("www-authenticate", "")], "welcome ada".to_string())
+                } else {
+                    (StatusCode::UNAUTHORIZED, [("www-authenticate", "")], "bad".to_string())
+                }
+            }),
+        )
+        .route(
             "/status/{code}",
             get(|Path(c): Path<u16>| async move { StatusCode::from_u16(c).unwrap() }),
         )
@@ -432,4 +456,101 @@ fn build_url_raw_query_when_encoding_disabled() {
         build_url(&r, true).unwrap().as_str(),
         "http://x.io/a?z=1&q=a+b"
     );
+}
+
+#[tokio::test]
+async fn digest_oauth1_and_sigv4_end_to_end() {
+    let base = server().await;
+    let res = send(
+        &req("GET", format!("{base}/digest?x=1")),
+        &Auth::Digest {
+            username: "ada".into(),
+            password: "lovelace".into(),
+            disabled: false,
+        },
+        &Options::default(),
+        &mut vec![],
+    )
+    .await
+    .unwrap();
+    assert_eq!((res.status, res.text().as_str()), (200, "welcome ada"));
+    assert!(
+        res.timeline
+            .iter()
+            .any(|t| t.text.contains("Digest challenge"))
+    );
+    let bad = send(
+        &req("GET", format!("{base}/digest")),
+        &Auth::Digest {
+            username: "ada".into(),
+            password: "nope".into(),
+            disabled: false,
+        },
+        &Options::default(),
+        &mut vec![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        bad.status, 401,
+        "wrong password: one retry, then the 401 is returned"
+    );
+
+    let mut r = req("POST", format!("{base}/echo?a=1"));
+    r.body = Body {
+        mime_type: Some(mime::FORM.into()),
+        params: vec![BodyParam {
+            name: "status".into(),
+            value: "hi there".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let cfg = irs_core::OAuth1Config {
+        consumer_key: "ck".into(),
+        consumer_secret: "cs".into(),
+        token_key: "tk".into(),
+        token_secret: "ts".into(),
+        ..Default::default()
+    };
+    let j = json_of(
+        &send(&r, &Auth::OAuth1(cfg), &Options::default(), &mut vec![])
+            .await
+            .unwrap(),
+    );
+    let h = j["headers"]["authorization"].as_str().unwrap();
+    assert!(
+        h.starts_with("OAuth ")
+            && h.contains(r#"oauth_consumer_key="ck""#)
+            && h.contains("oauth_signature=\""),
+        "{h}"
+    );
+
+    let iam = irs_core::AwsIamConfig {
+        access_key_id: "AKID".into(),
+        secret_access_key: "secret".into(),
+        region: "eu-west-1".into(),
+        service: "execute-api".into(),
+        session_token: "sess".into(),
+        ..Default::default()
+    };
+    let mut r = req("PUT", format!("{base}/echo"));
+    r.body = Body {
+        mime_type: Some(mime::JSON.into()),
+        text: Some("{}".into()),
+        ..Default::default()
+    };
+    let j = json_of(
+        &send(&r, &Auth::Iam(iam), &Options::default(), &mut vec![])
+            .await
+            .unwrap(),
+    );
+    let a = j["headers"]["authorization"].as_str().unwrap();
+    assert!(
+        a.starts_with("AWS4-HMAC-SHA256 Credential=AKID/")
+            && a.contains("/eu-west-1/execute-api/aws4_request"),
+        "{a}"
+    );
+    assert!(j["headers"]["x-amz-date"].is_string());
+    assert_eq!(j["headers"]["x-amz-security-token"], "sess");
 }

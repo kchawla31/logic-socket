@@ -4,6 +4,7 @@
 pub mod curl;
 pub mod llm;
 pub mod mcp;
+pub mod oauth2;
 pub mod pipeline;
 pub mod realtime;
 
@@ -76,6 +77,8 @@ pub struct Engine {
 #[derive(Debug, Clone)]
 pub struct Prepared {
     pub workspace_id: String,
+    /// Request or folder whose auth applies (OAuth 2 tokens are cached under it).
+    pub auth_owner: Option<String>,
     pub request: Request,
     pub auth: Auth,
     pub options: irs_http::Options,
@@ -274,14 +277,14 @@ impl Engine {
         }
         merge_headers(&mut headers, &req.headers);
 
-        let auth = if req.authentication.is_inherit() {
+        let (auth, auth_owner) = if req.authentication.is_inherit() {
             folders
                 .iter()
-                .map(|f| f.authentication.clone())
-                .find(|a| !a.is_inherit())
-                .unwrap_or(Auth::None)
+                .find(|f| !f.authentication.is_inherit())
+                .map(|f| (f.authentication.clone(), Some(f.meta.id.clone())))
+                .unwrap_or((Auth::None, None))
         } else {
-            req.authentication.clone()
+            (req.authentication.clone(), Some(request_id.to_string()))
         };
 
         let r = |field: &str, s: &str| -> Result<String> {
@@ -345,6 +348,7 @@ impl Engine {
             ..Default::default()
         };
         Ok(Prepared {
+            auth_owner,
             workspace_id: ws.meta.id.clone(),
             request: out,
             auth,
@@ -363,6 +367,47 @@ impl Engine {
 
     /// Send a prepared request without persisting the response.
     pub async fn execute(&self, p: &Prepared) -> Result<(Response, Option<Doc<CookieJar>>)> {
+        // Resolve auth that needs I/O first (OAuth 2 token, netrc).
+        let resolved = match &p.auth {
+            Auth::OAuth2(cfg) if !cfg.disabled => match self
+                .oauth2_token(p.auth_owner.as_deref().unwrap_or(&p.workspace_id), cfg)
+                .await
+            {
+                Ok(token) => Auth::Bearer {
+                    token,
+                    prefix: Some(cfg.token_prefix.clone()).filter(|x| !x.is_empty()),
+                    disabled: false,
+                },
+                Err(e) => {
+                    let resp = Response {
+                        method: p.request.method.clone(),
+                        url: p.request.url.clone(),
+                        error: Some(e.to_string()),
+                        ..Default::default()
+                    };
+                    return Ok((resp, None));
+                }
+            },
+            Auth::Netrc { disabled: false } => {
+                let host = irs_http::build_url(&p.request, true)
+                    .ok()
+                    .and_then(|u| u.host_str().map(str::to_string))
+                    .unwrap_or_default();
+                match oauth2::netrc_lookup(&host) {
+                    Some((username, password)) => Auth::Basic {
+                        username,
+                        password,
+                        disabled: false,
+                    },
+                    None => Auth::None,
+                }
+            }
+            other => other.clone(),
+        };
+        let p = &Prepared {
+            auth: resolved,
+            ..p.clone()
+        };
         let mut jar = self.cookie_jar(&p.workspace_id)?;
         let mut cookies = jar.cookies.clone();
         let result = irs_http::send(&p.request, &p.auth, &p.options, &mut cookies).await;
@@ -445,15 +490,26 @@ impl Engine {
 
     /// Run a GraphQL query (e.g. introspection) against a request's endpoint,
     /// reusing its rendered URL, headers, auth and cookies. Nothing is persisted.
-    pub async fn graphql_query(&self, request_id: &str, query: &str, variables: Option<serde_json::Value>) -> Result<serde_json::Value> {
+    pub async fn graphql_query(
+        &self,
+        request_id: &str,
+        query: &str,
+        variables: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
         let mut p = self.prepare(request_id, &[])?;
         p.request.method = "POST".into();
         let mut body = serde_json::json!({ "query": query });
         if let Some(v) = variables {
             body["variables"] = v;
         }
-        p.request.body = irs_core::Body { mime_type: Some(irs_core::mime::JSON.into()), text: Some(body.to_string()), ..Default::default() };
-        p.request.headers.retain(|h| !h.name.eq_ignore_ascii_case("content-type"));
+        p.request.body = irs_core::Body {
+            mime_type: Some(irs_core::mime::JSON.into()),
+            text: Some(body.to_string()),
+            ..Default::default()
+        };
+        p.request
+            .headers
+            .retain(|h| !h.name.eq_ignore_ascii_case("content-type"));
         let (resp, _) = self.execute(&p).await?;
         if let Some(e) = resp.error {
             return Err(EngineError::Message(e));
@@ -464,14 +520,23 @@ impl Engine {
                 "HTTP {} {} — response is not JSON: {}",
                 resp.status_code,
                 resp.status_message,
-                String::from_utf8_lossy(&bytes).chars().take(200).collect::<String>()
+                String::from_utf8_lossy(&bytes)
+                    .chars()
+                    .take(200)
+                    .collect::<String>()
             ))
         })?;
         if v.get("data").is_none_or(|d| d.is_null())
             && let Some(errs) = v.get("errors").and_then(|e| e.as_array())
         {
-            let msgs: Vec<String> = errs.iter().filter_map(|e| e["message"].as_str().map(str::to_string)).collect();
-            return Err(EngineError::Message(format!("GraphQL errors: {}", msgs.join("; "))));
+            let msgs: Vec<String> = errs
+                .iter()
+                .filter_map(|e| e["message"].as_str().map(str::to_string))
+                .collect();
+            return Err(EngineError::Message(format!(
+                "GraphQL errors: {}",
+                msgs.join("; ")
+            )));
         }
         Ok(v)
     }
@@ -538,7 +603,7 @@ fn merge_headers(into: &mut Vec<KeyValue>, from: &[KeyValue]) {
     }
 }
 
-fn render_auth(auth: &Auth, r: &dyn Fn(&str, &str) -> Result<String>) -> Result<Auth> {
+pub(crate) fn render_auth(auth: &Auth, r: &dyn Fn(&str, &str) -> Result<String>) -> Result<Auth> {
     Ok(match auth {
         Auth::Basic {
             username,
@@ -569,6 +634,46 @@ fn render_auth(auth: &Auth, r: &dyn Fn(&str, &str) -> Result<String>) -> Result<
             add_to: add_to.clone(),
             disabled: *disabled,
         },
+        Auth::Digest {
+            username,
+            password,
+            disabled,
+        } => Auth::Digest {
+            username: r("digest username", username)?,
+            password: r("digest password", password)?,
+            disabled: *disabled,
+        },
+        Auth::OAuth1(c) => Auth::OAuth1(irs_core::OAuth1Config {
+            consumer_key: r("OAuth 1 consumer key", &c.consumer_key)?,
+            consumer_secret: r("OAuth 1 consumer secret", &c.consumer_secret)?,
+            token_key: r("OAuth 1 token", &c.token_key)?,
+            token_secret: r("OAuth 1 token secret", &c.token_secret)?,
+            realm: r("OAuth 1 realm", &c.realm)?,
+            callback: r("OAuth 1 callback", &c.callback)?,
+            verifier: r("OAuth 1 verifier", &c.verifier)?,
+            ..c.clone()
+        }),
+        Auth::Iam(c) => Auth::Iam(irs_core::AwsIamConfig {
+            access_key_id: r("AWS access key", &c.access_key_id)?,
+            secret_access_key: r("AWS secret key", &c.secret_access_key)?,
+            session_token: r("AWS session token", &c.session_token)?,
+            region: r("AWS region", &c.region)?,
+            service: r("AWS service", &c.service)?,
+            disabled: c.disabled,
+        }),
+        Auth::OAuth2(c) => Auth::OAuth2(irs_core::OAuth2Config {
+            access_token_url: r("OAuth 2 token URL", &c.access_token_url)?,
+            authorization_url: r("OAuth 2 authorization URL", &c.authorization_url)?,
+            client_id: r("OAuth 2 client id", &c.client_id)?,
+            client_secret: r("OAuth 2 client secret", &c.client_secret)?,
+            scope: r("OAuth 2 scope", &c.scope)?,
+            audience: r("OAuth 2 audience", &c.audience)?,
+            resource: r("OAuth 2 resource", &c.resource)?,
+            username: r("OAuth 2 username", &c.username)?,
+            password: r("OAuth 2 password", &c.password)?,
+            redirect_url: r("OAuth 2 redirect URL", &c.redirect_url)?,
+            ..c.clone()
+        }),
         other => other.clone(),
     })
 }

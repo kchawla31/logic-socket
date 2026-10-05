@@ -11,34 +11,65 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::{ConnectOptions, Direction, EventLog, Outgoing, RtError, preview_binary};
 
-pub(crate) type WsStream = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+pub(crate) type WsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// Open the socket, log the handshake, and return the stream.
-pub(crate) async fn open(url: &str, opts: &ConnectOptions, log: &EventLog) -> Result<WsStream, RtError> {
-    let mut req = url.into_client_request().map_err(|e| RtError::Url(url.to_string(), e.to_string()))?;
+pub(crate) async fn open(
+    url: &str,
+    opts: &ConnectOptions,
+    log: &EventLog,
+) -> Result<WsStream, RtError> {
+    let mut req = url
+        .into_client_request()
+        .map_err(|e| RtError::Url(url.to_string(), e.to_string()))?;
     for (k, v) in &opts.headers {
-        let name = tokio_tungstenite::tungstenite::http::HeaderName::from_bytes(k.as_bytes()).map_err(|e| RtError::Protocol(format!("header {k}: {e}")))?;
-        let value = HeaderValue::from_str(v).map_err(|e| RtError::Protocol(format!("header {k}: {e}")))?;
+        let name = tokio_tungstenite::tungstenite::http::HeaderName::from_bytes(k.as_bytes())
+            .map_err(|e| RtError::Protocol(format!("header {k}: {e}")))?;
+        let value =
+            HeaderValue::from_str(v).map_err(|e| RtError::Protocol(format!("header {k}: {e}")))?;
         req.headers_mut().insert(name, value);
     }
     if !opts.subprotocols.is_empty() {
-        req.headers_mut().insert("Sec-WebSocket-Protocol", HeaderValue::from_str(&opts.subprotocols.join(", ")).map_err(|e| RtError::Protocol(e.to_string()))?);
+        req.headers_mut().insert(
+            "Sec-WebSocket-Protocol",
+            HeaderValue::from_str(&opts.subprotocols.join(", "))
+                .map_err(|e| RtError::Protocol(e.to_string()))?,
+        );
     }
     log.info("info", format!("Connecting to {url}"));
     let started = std::time::Instant::now();
-    let (stream, resp) = tokio::time::timeout(std::time::Duration::from_secs(20), tokio_tungstenite::connect_async(req))
-        .await
-        .map_err(|_| RtError::Connect("timed out after 20 s".into()))?
-        .map_err(|e| {
-            let msg = match &e {
-                tokio_tungstenite::tungstenite::Error::Http(r) => format!("server answered HTTP {} instead of upgrading", r.status()),
-                other => other.to_string(),
-            };
-            log.error(msg.clone());
-            RtError::Connect(msg)
-        })?;
-    let proto = resp.headers().get("sec-websocket-protocol").and_then(|v| v.to_str().ok()).map(|p| format!(" · subprotocol {p}")).unwrap_or_default();
-    log.info("open", format!("Connected ({} {}) in {:.0} ms{proto}", resp.status().as_u16(), resp.status().canonical_reason().unwrap_or(""), started.elapsed().as_secs_f64() * 1000.0));
+    let (stream, resp) = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        tokio_tungstenite::connect_async(req),
+    )
+    .await
+    .map_err(|_| RtError::Connect("timed out after 20 s".into()))?
+    .map_err(|e| {
+        let msg = match &e {
+            tokio_tungstenite::tungstenite::Error::Http(r) => {
+                format!("server answered HTTP {} instead of upgrading", r.status())
+            }
+            other => other.to_string(),
+        };
+        log.error(msg.clone());
+        RtError::Connect(msg)
+    })?;
+    let proto = resp
+        .headers()
+        .get("sec-websocket-protocol")
+        .and_then(|v| v.to_str().ok())
+        .map(|p| format!(" · subprotocol {p}"))
+        .unwrap_or_default();
+    log.info(
+        "open",
+        format!(
+            "Connected ({} {}) in {:.0} ms{proto}",
+            resp.status().as_u16(),
+            resp.status().canonical_reason().unwrap_or(""),
+            started.elapsed().as_secs_f64() * 1000.0
+        ),
+    );
     Ok(stream)
 }
 

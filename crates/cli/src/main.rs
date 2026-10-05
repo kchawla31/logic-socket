@@ -247,11 +247,16 @@ async fn run(cli: Cli) -> Result<()> {
             let url = match m {
                 MockCmd::Realtime { port } => {
                     let u = irs_realtime::mock::spawn(port).await?;
-                    eprintln!("WebSocket  {}/ws\nSSE        {u}/events\nSocket.IO  {u}", u.replace("http", "ws"));
+                    eprintln!(
+                        "WebSocket  {}/ws\nSSE        {u}/events\nSocket.IO  {u}",
+                        u.replace("http", "ws")
+                    );
                     u
                 }
                 MockCmd::Llm { port } => irs_llm::mock::spawn(Default::default(), port).await?,
-                MockCmd::Mcp { port } => irs_mcp::mock::spawn_http(Default::default(), port).await?,
+                MockCmd::Mcp { port } => {
+                    irs_mcp::mock::spawn_http(Default::default(), port).await?
+                }
                 MockCmd::Graphql { port } => mock_gql::spawn(port).await?,
             };
             eprintln!("{} mock server on {url} — Ctrl-C to stop", green("●"));
@@ -421,7 +426,11 @@ fn print_tree(engine: &Engine, parent: &str, depth: usize) -> Result<()> {
             "McpServer" => println!("{pad}{:<7} {name} {}", magenta("MCP"), dim(&d.meta.id)),
             "LlmRequest" => println!("{pad}{:<7} {name} {}", cyan("AI"), dim(&d.meta.id)),
             "RealtimeRequest" => {
-                let k = match d.data["kind"].as_str() { Some("sse") => "SSE", Some("socketio") => "SIO", _ => "WS" };
+                let k = match d.data["kind"].as_str() {
+                    Some("sse") => "SSE",
+                    Some("socketio") => "SIO",
+                    _ => "WS",
+                };
                 println!("{pad}{:<7} {name} {}", blue(k), dim(&d.meta.id))
             }
             _ => {}

@@ -42,8 +42,16 @@ fn print(e: &RtEvent) {
         Direction::Info => dim("·"),
         Direction::Error => red("✗"),
     };
-    let name = e.name.as_ref().map(|n| format!("{} ", magenta(n))).unwrap_or_default();
-    let data = if e.direction == Direction::Info { dim(&e.data) } else { e.data.clone() };
+    let name = e
+        .name
+        .as_ref()
+        .map(|n| format!("{} ", magenta(n)))
+        .unwrap_or_default();
+    let data = if e.direction == Direction::Info {
+        dim(&e.data)
+    } else {
+        e.data.clone()
+    };
     println!("{arrow} {name}{data}");
 }
 
@@ -60,9 +68,23 @@ pub async fn run(engine: &Engine, a: RtArgs) -> Result<()> {
             let headers = a
                 .headers
                 .iter()
-                .map(|h| h.split_once(':').map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).ok_or_else(|| anyhow!("header must be 'Name: value'")))
+                .map(|h| {
+                    h.split_once(':')
+                        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+                        .ok_or_else(|| anyhow!("header must be 'Name: value'"))
+                })
                 .collect::<Result<_>>()?;
-            (ConnectOptions { kind, url: a.target.clone(), headers, namespace: a.namespace.clone(), validate_certificates: true, ..Default::default() }, None)
+            (
+                ConnectOptions {
+                    kind,
+                    url: a.target.clone(),
+                    headers,
+                    namespace: a.namespace.clone(),
+                    validate_certificates: true,
+                    ..Default::default()
+                },
+                None,
+            )
         }
         Err(e) => return Err(e),
     };
@@ -87,8 +109,15 @@ pub async fn run(engine: &Engine, a: RtArgs) -> Result<()> {
         session.send_text(text).map_err(|e| anyhow!("{e}"))?;
     }
     if let Some(ev) = &a.emit {
-        let args: serde_json::Value = serde_json::from_str(&a.args).map_err(|e| anyhow!("--args must be a JSON array: {e}"))?;
-        session.emit(ev, args.as_array().cloned().unwrap_or_else(|| vec![args]), false).map_err(|e| anyhow!("{e}"))?;
+        let args: serde_json::Value = serde_json::from_str(&a.args)
+            .map_err(|e| anyhow!("--args must be a JSON array: {e}"))?;
+        session
+            .emit(
+                ev,
+                args.as_array().cloned().unwrap_or_else(|| vec![args]),
+                false,
+            )
+            .map_err(|e| anyhow!("{e}"))?;
     }
     if a.wait == 0 {
         tokio::signal::ctrl_c().await?;

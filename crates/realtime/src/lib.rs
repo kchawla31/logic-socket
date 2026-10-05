@@ -62,12 +62,23 @@ pub struct EventLog {
 impl Default for EventLog {
     fn default() -> Self {
         let (tx, _) = broadcast::channel(2048);
-        Self { entries: Arc::default(), seq: Arc::default(), tx }
+        Self {
+            entries: Arc::default(),
+            seq: Arc::default(),
+            tx,
+        }
     }
 }
 
 impl EventLog {
-    pub fn push(&self, direction: Direction, kind: &str, name: Option<String>, data: impl Into<String>, size: usize) {
+    pub fn push(
+        &self,
+        direction: Direction,
+        kind: &str,
+        name: Option<String>,
+        data: impl Into<String>,
+        size: usize,
+    ) {
         let e = RtEvent {
             seq: self.seq.fetch_add(1, Ordering::SeqCst) + 1,
             direction,
@@ -131,7 +142,11 @@ pub(crate) enum Outgoing {
     Text(String),
     Binary(Vec<u8>),
     /// Socket.IO emit: event, args, optional ack id.
-    Emit { event: String, args: Vec<Value>, ack: Option<u64> },
+    Emit {
+        event: String,
+        args: Vec<Value>,
+        ack: Option<u64>,
+    },
     Close,
 }
 
@@ -151,33 +166,57 @@ impl Session {
 
     pub fn send_text(&self, text: impl Into<String>) -> Result<(), RtError> {
         match self.kind {
-            Kind::Sse => Err(RtError::Protocol("Server-Sent Events are receive-only".into())),
+            Kind::Sse => Err(RtError::Protocol(
+                "Server-Sent Events are receive-only".into(),
+            )),
             _ if !self.is_connected() => Err(RtError::Closed),
-            Kind::Websocket => self.tx.send(Outgoing::Text(text.into())).map_err(|_| RtError::Closed),
-            Kind::Socketio => Err(RtError::Protocol("use emit(event, args) for Socket.IO".into())),
+            Kind::Websocket => self
+                .tx
+                .send(Outgoing::Text(text.into()))
+                .map_err(|_| RtError::Closed),
+            Kind::Socketio => Err(RtError::Protocol(
+                "use emit(event, args) for Socket.IO".into(),
+            )),
         }
     }
 
     pub fn send_binary(&self, data: Vec<u8>) -> Result<(), RtError> {
         if self.kind != Kind::Websocket {
-            return Err(RtError::Protocol("binary frames are only supported on WebSocket".into()));
+            return Err(RtError::Protocol(
+                "binary frames are only supported on WebSocket".into(),
+            ));
         }
         if !self.is_connected() {
             return Err(RtError::Closed);
         }
-        self.tx.send(Outgoing::Binary(data)).map_err(|_| RtError::Closed)
+        self.tx
+            .send(Outgoing::Binary(data))
+            .map_err(|_| RtError::Closed)
     }
 
     /// Socket.IO: emit `event` with `args`; `want_ack` requests an acknowledgement.
-    pub fn emit(&self, event: &str, args: Vec<Value>, want_ack: bool) -> Result<Option<u64>, RtError> {
+    pub fn emit(
+        &self,
+        event: &str,
+        args: Vec<Value>,
+        want_ack: bool,
+    ) -> Result<Option<u64>, RtError> {
         if self.kind != Kind::Socketio {
-            return Err(RtError::Protocol("emit is only available for Socket.IO".into()));
+            return Err(RtError::Protocol(
+                "emit is only available for Socket.IO".into(),
+            ));
         }
         if !self.is_connected() {
             return Err(RtError::Closed);
         }
         let ack = want_ack.then(|| self.ack_seq.fetch_add(1, Ordering::SeqCst));
-        self.tx.send(Outgoing::Emit { event: event.to_string(), args, ack }).map_err(|_| RtError::Closed)?;
+        self.tx
+            .send(Outgoing::Emit {
+                event: event.to_string(),
+                args,
+                ack,
+            })
+            .map_err(|_| RtError::Closed)?;
         Ok(ack)
     }
 
@@ -196,7 +235,13 @@ pub async fn connect(opts: ConnectOptions) -> Result<Session, RtError> {
         Kind::Sse => sse::start(&opts, log.clone(), rx, connected.clone()).await?,
         Kind::Socketio => socketio::start(&opts, log.clone(), rx, connected.clone()).await?,
     }
-    Ok(Session { kind: opts.kind, log, tx, ack_seq: AtomicU64::new(0), connected })
+    Ok(Session {
+        kind: opts.kind,
+        log,
+        tx,
+        ack_seq: AtomicU64::new(0),
+        connected,
+    })
 }
 
 pub(crate) fn preview_binary(b: &[u8]) -> String {
