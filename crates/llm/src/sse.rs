@@ -26,7 +26,6 @@ impl SseParser {
         }
         out
     }
-
 }
 
 fn parse(raw: &str) -> Option<SseEvent> {
@@ -39,7 +38,10 @@ fn parse(raw: &str) -> Option<SseEvent> {
             event = e.trim().to_string();
         }
     }
-    (!data.is_empty()).then(|| SseEvent { event, data: data.join("\n") })
+    (!data.is_empty()).then(|| SseEvent {
+        event,
+        data: data.join("\n"),
+    })
 }
 
 #[cfg(test)]
@@ -51,8 +53,20 @@ mod tests {
         let mut p = SseParser::default();
         assert!(p.feed(b"event: message_start\ndata: {\"a\"").is_empty());
         let e = p.feed(b":1}\n\nevent: ping\ndata: {}\r\n\r\ndata: [DONE]\n\n");
-        assert_eq!(e[0], SseEvent { event: "message_start".into(), data: "{\"a\":1}".into() });
+        assert_eq!(
+            e[0],
+            SseEvent {
+                event: "message_start".into(),
+                data: "{\"a\":1}".into()
+            }
+        );
         assert_eq!(e[1].event, "ping");
-        assert_eq!(e[2], SseEvent { event: "message".into(), data: "[DONE]".into() });
+        assert_eq!(
+            e[2],
+            SseEvent {
+                event: "message".into(),
+                data: "[DONE]".into()
+            }
+        );
     }
 }

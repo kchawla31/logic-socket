@@ -41,7 +41,11 @@ fn last_user_text(messages: &[Value]) -> String {
             match &m["content"] {
                 Value::String(s) => return s.clone(),
                 Value::Array(a) => {
-                    let t: Vec<&str> = a.iter().filter(|b| b["type"] == "text").filter_map(|b| b["text"].as_str()).collect();
+                    let t: Vec<&str> = a
+                        .iter()
+                        .filter(|b| b["type"] == "text")
+                        .filter_map(|b| b["text"].as_str())
+                        .collect();
                     if !t.is_empty() {
                         return t.join(" ");
                     }
@@ -58,10 +62,14 @@ fn tool_result_text(messages: &[Value]) -> Option<String> {
     if last["role"] == "tool" {
         return last["content"].as_str().map(str::to_string);
     }
-    last["content"].as_array()?.iter().find(|b| b["type"] == "tool_result").map(|b| match &b["content"] {
-        Value::String(s) => s.clone(),
-        v => v.to_string(),
-    })
+    last["content"]
+        .as_array()?
+        .iter()
+        .find(|b| b["type"] == "tool_result")
+        .map(|b| match &b["content"] {
+            Value::String(s) => s.clone(),
+            v => v.to_string(),
+        })
 }
 
 fn plan(messages: &[Value], tool_names: &[String]) -> Plan {
@@ -79,19 +87,26 @@ fn plan(messages: &[Value], tool_names: &[String]) -> Plan {
             .nth(1)
             .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
             .unwrap_or_else(|| "Berlin".into());
-        return Plan::Tool { name: t.clone(), input: json!({ "city": city }) };
+        return Plan::Tool {
+            name: t.clone(),
+            input: json!({ "city": city }),
+        };
     }
     if lower.contains("delete")
         && let Some(t) = tool_names.iter().find(|n| n.ends_with("delete_repo"))
     {
-        return Plan::Tool { name: t.clone(), input: json!({ "repo": "acme/old", "confirm": true }) };
+        return Plan::Tool {
+            name: t.clone(),
+            input: json!({ "repo": "acme/old", "confirm": true }),
+        };
     }
     Plan::Text(format!("Echo: {text}"))
 }
 
 fn authorized(h: &HeaderMap) -> bool {
     h.get("x-api-key").and_then(|v| v.to_str().ok()) == Some(MOCK_KEY)
-        || h.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) == Some(&format!("Bearer {MOCK_KEY}"))
+        || h.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok())
+            == Some(&format!("Bearer {MOCK_KEY}"))
 }
 
 fn chunks(s: &str) -> Vec<String> {
@@ -110,16 +125,28 @@ fn sse(events: Vec<(Option<&str>, Value)>, done: bool) -> Response {
     if done {
         body.push_str("data: [DONE]\n\n");
     }
-    Response::builder().header(header::CONTENT_TYPE, "text/event-stream").body(Body::from(body)).unwrap()
+    Response::builder()
+        .header(header::CONTENT_TYPE, "text/event-stream")
+        .body(Body::from(body))
+        .unwrap()
 }
 
-async fn anthropic(State(st): State<MockLlm>, headers: HeaderMap, Json(req): Json<Value>) -> Response {
+async fn anthropic(
+    State(st): State<MockLlm>,
+    headers: HeaderMap,
+    Json(req): Json<Value>,
+) -> Response {
     st.requests.lock().unwrap().push(req.clone());
     if !authorized(&headers) {
         return (StatusCode::UNAUTHORIZED, Json(json!({"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}}))).into_response();
     }
     let messages = req["messages"].as_array().cloned().unwrap_or_default();
-    let tools: Vec<String> = req["tools"].as_array().into_iter().flatten().filter_map(|t| t["name"].as_str().map(str::to_string)).collect();
+    let tools: Vec<String> = req["tools"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t["name"].as_str().map(str::to_string))
+        .collect();
     let model = req["model"].as_str().unwrap_or("mock").to_string();
     let mut ev: Vec<(Option<&str>, Value)> = vec![(
         Some("message_start"),
@@ -130,27 +157,39 @@ async fn anthropic(State(st): State<MockLlm>, headers: HeaderMap, Json(req): Jso
     ev.push((Some("content_block_start"), json!({"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}})));
     ev.push((Some("content_block_delta"), json!({"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Let me think."}})));
     ev.push((Some("content_block_delta"), json!({"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "sig-abc"}})));
-    ev.push((Some("content_block_stop"), json!({"type": "content_block_stop", "index": 0})));
+    ev.push((
+        Some("content_block_stop"),
+        json!({"type": "content_block_stop", "index": 0}),
+    ));
     let stop = match plan(&messages, &tools) {
         Plan::Text(t) => {
             ev.push((Some("content_block_start"), json!({"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}})));
             for c in chunks(&t) {
                 ev.push((Some("content_block_delta"), json!({"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": c}})));
             }
-            ev.push((Some("content_block_stop"), json!({"type": "content_block_stop", "index": 1})));
+            ev.push((
+                Some("content_block_stop"),
+                json!({"type": "content_block_stop", "index": 1}),
+            ));
             "end_turn"
         }
         Plan::Tool { name, input } => {
             ev.push((Some("content_block_start"), json!({"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}})));
             ev.push((Some("content_block_delta"), json!({"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Let me check."}})));
-            ev.push((Some("content_block_stop"), json!({"type": "content_block_stop", "index": 1})));
+            ev.push((
+                Some("content_block_stop"),
+                json!({"type": "content_block_stop", "index": 1}),
+            ));
             ev.push((Some("content_block_start"), json!({"type": "content_block_start", "index": 2, "content_block": {"type": "tool_use", "id": "toolu_mock1", "name": name, "input": {}}})));
             let s = input.to_string();
             let (a, b) = s.split_at(s.len() / 2);
             for part in [a, b] {
                 ev.push((Some("content_block_delta"), json!({"type": "content_block_delta", "index": 2, "delta": {"type": "input_json_delta", "partial_json": part}})));
             }
-            ev.push((Some("content_block_stop"), json!({"type": "content_block_stop", "index": 2})));
+            ev.push((
+                Some("content_block_stop"),
+                json!({"type": "content_block_stop", "index": 2}),
+            ));
             "tool_use"
         }
     };
@@ -165,11 +204,18 @@ async fn openai(State(st): State<MockLlm>, headers: HeaderMap, Json(req): Json<V
         return (StatusCode::UNAUTHORIZED, Json(json!({"error": {"message": "Incorrect API key provided", "type": "invalid_request_error"}}))).into_response();
     }
     let messages = req["messages"].as_array().cloned().unwrap_or_default();
-    let tools: Vec<String> =
-        req["tools"].as_array().into_iter().flatten().filter_map(|t| t["function"]["name"].as_str().map(str::to_string)).collect();
+    let tools: Vec<String> = req["tools"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t["function"]["name"].as_str().map(str::to_string))
+        .collect();
     let model = req["model"].as_str().unwrap_or("mock").to_string();
     let chunk = |delta: Value, finish: Value| json!({"id": "chatcmpl-mock", "object": "chat.completion.chunk", "model": model, "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]});
-    let mut ev: Vec<(Option<&str>, Value)> = vec![(None, chunk(json!({"role": "assistant", "content": ""}), Value::Null))];
+    let mut ev: Vec<(Option<&str>, Value)> = vec![(
+        None,
+        chunk(json!({"role": "assistant", "content": ""}), Value::Null),
+    )];
     let finish = match plan(&messages, &tools) {
         Plan::Text(t) => {
             for c in chunks(&t) {
@@ -182,7 +228,13 @@ async fn openai(State(st): State<MockLlm>, headers: HeaderMap, Json(req): Json<V
             let s = input.to_string();
             let (a, b) = s.split_at(s.len() / 2);
             for part in [a, b] {
-                ev.push((None, chunk(json!({"tool_calls": [{"index": 0, "function": {"arguments": part}}]}), Value::Null)));
+                ev.push((
+                    None,
+                    chunk(
+                        json!({"tool_calls": [{"index": 0, "function": {"arguments": part}}]}),
+                        Value::Null,
+                    ),
+                ));
             }
             "tool_calls"
         }

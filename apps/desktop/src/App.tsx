@@ -1,11 +1,13 @@
-import { Command as CommandIcon, Folder, Layers, ListChecks, Moon, Plug, Plus, Send, Settings as SettingsIcon, Sun, X } from 'lucide-react';
+import { Command as CommandIcon, Folder, Layers, ListChecks, Moon, Plug, Plus, Send, Settings as SettingsIcon, Sparkles, Sun, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type Command, CommandPalette } from './components/CommandPalette';
 import { Button, DialogProvider, Empty, IconButton, Kbd, Select, Split, ToastProvider, useDialog, useToast } from './components/ui';
 import { api, type EnvList, errorText, onDbChanged, type TreeNode, type Workspace } from './lib/api';
 import { cn, methodColor, methodShort, modKey } from './lib/utils';
+import { AiProvidersModal } from './views/AiProviders';
 import { FolderView } from './views/FolderView';
+import { LlmView } from './views/LlmView';
 import { McpView } from './views/McpView';
 import { EnvironmentModal, SettingsModal } from './views/Modals';
 import { RequestView } from './views/RequestView';
@@ -82,6 +84,7 @@ function Shell() {
   const [palette, setPalette] = useState(false);
   const [envOpen, setEnvOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const ws = await api.workspaceList();
@@ -201,6 +204,15 @@ function Shell() {
       { id: 'new-folder', group: 'Actions', label: 'New folder', icon: <Folder className="size-4" />, run: async () => wsId && (await api.folderCreate(wsId, 'New Folder')) },
       { id: 'new-ws', group: 'Actions', label: 'New collection', icon: <Layers className="size-4" />, keywords: 'workspace', run: newWorkspace },
       {
+        id: 'new-ai',
+        group: 'Actions',
+        label: 'New AI request',
+        icon: <Sparkles className="size-4" />,
+        keywords: 'llm claude gpt chat agent mcp tools',
+        run: async () => wsId && open((await api.llmRequestCreate(wsId, 'New AI Request')).id, 'llm'),
+      },
+      { id: 'ai-providers', group: 'Actions', label: 'AI providers', icon: <Sparkles className="size-4" />, keywords: 'llm api key anthropic openai ollama', run: () => setAiOpen(true) },
+      {
         id: 'run-collection',
         group: 'Actions',
         label: 'Run collection',
@@ -240,6 +252,8 @@ function Shell() {
             <span className={cn('font-mono text-[9.5px] font-bold', methodColor(n.method))}>{methodShort(n.method)}</span>
           ) : n.kind === 'mcp' ? (
             <Plug className="size-4" />
+          ) : n.kind === 'llm' ? (
+            <Sparkles className="size-4" />
           ) : (
             <Folder className="size-4" />
           ),
@@ -295,6 +309,9 @@ function Shell() {
         <IconButton label="Toggle theme" onClick={() => setTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark')}>
           {theme === 'dark' || (theme === 'system' && document.documentElement.classList.contains('dark')) ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </IconButton>
+        <IconButton label="AI providers" onClick={() => setAiOpen(true)}>
+          <Sparkles className="size-4" />
+        </IconButton>
         <IconButton label="Settings" onClick={() => setSettingsOpen(true)}>
           <SettingsIcon className="size-4" />
         </IconButton>
@@ -332,6 +349,7 @@ function Shell() {
                       {t.kind === 'mcp' && <Plug className="size-3.5 shrink-0 text-violet-500" />}
                       {t.kind === 'folder' && <Folder className="size-3.5 shrink-0 text-muted" />}
                       {t.kind === 'runner' && <ListChecks className="size-3.5 shrink-0 text-emerald-500" />}
+                      {t.kind === 'llm' && <Sparkles className="size-3.5 shrink-0 text-accent" />}
                       <span className="truncate">{label}</span>
                       <button
                         aria-label="Close tab"
@@ -349,6 +367,7 @@ function Shell() {
               {activeTab?.kind === 'request' && <RequestView key={activeTab.id} id={activeTab.id} onRenamed={() => refresh()} />}
               {activeTab?.kind === 'folder' && <FolderView key={activeTab.id} id={activeTab.id} />}
               {activeTab?.kind === 'mcp' && <McpView key={activeTab.id} id={activeTab.id} />}
+              {activeTab?.kind === 'llm' && <LlmView key={activeTab.id} id={activeTab.id} tree={tree} onOpenProviders={() => setAiOpen(true)} />}
               {activeTab?.kind === 'runner' && wsId && (
                 <RunnerView
                   key={activeTab.id}
@@ -369,6 +388,9 @@ function Shell() {
                       <Button onClick={async () => wsId && open((await api.mcpServerCreate(wsId, 'New MCP Server')).id, 'mcp')}>
                         <Plug className="size-3.5" /> MCP server
                       </Button>
+                      <Button onClick={async () => wsId && open((await api.llmRequestCreate(wsId, 'New AI Request')).id, 'llm')}>
+                        <Sparkles className="size-3.5" /> AI request
+                      </Button>
                     </div>
                     <span className="text-[12px]">
                       <Kbd>{modKey()} K</Kbd> command palette · <Kbd>{modKey()} N</Kbd> new request · <Kbd>{modKey()} E</Kbd> environments · paste a cURL into the URL bar
@@ -385,6 +407,7 @@ function Shell() {
 
       <CommandPalette open={palette} onClose={() => setPalette(false)} commands={commands} />
       {wsId && <EnvironmentModal open={envOpen} onClose={() => setEnvOpen(false)} workspaceId={wsId} />}
+      <AiProvidersModal open={aiOpen} onClose={() => setAiOpen(false)} />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} theme={theme} setTheme={setTheme} />
     </div>
   );

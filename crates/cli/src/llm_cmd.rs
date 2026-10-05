@@ -8,7 +8,9 @@ use futures::future::BoxFuture;
 use irs_core::{KeySource, LlmPromptMessage, LlmProvider, LlmRequest, McpServer, Workspace};
 use irs_engine::Engine;
 use irs_engine::llm::{LlmPrepared, parse_kind};
-use irs_llm::agent::{AgentEvent, AgentOptions, AllowAll, Approval, Approver, AutoApprove, ToolCallInfo, ToolSource};
+use irs_llm::agent::{
+    AgentEvent, AgentOptions, AllowAll, Approval, Approver, AutoApprove, ToolCallInfo, ToolSource,
+};
 use irs_llm::{ChatRequest, Message, StreamEvent};
 
 use crate::out::*;
@@ -56,7 +58,9 @@ pub enum ProviderCmd {
         no_key: bool,
     },
     List,
-    Remove { provider: String },
+    Remove {
+        provider: String,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -133,11 +137,21 @@ impl Approver for TerminalApprover {
                     Some(h) if h.read_only => green("read-only"),
                     _ => yellow("may modify state"),
                 };
-                eprint!("\n  {} run {}.{} ({kind}) with {}? [y/N] ", yellow("?"), call.server, bold(&call.tool), call.input);
+                eprint!(
+                    "\n  {} run {}.{} ({kind}) with {}? [y/N] ",
+                    yellow("?"),
+                    call.server,
+                    bold(&call.tool),
+                    call.input
+                );
                 let _ = std::io::stderr().flush();
                 let mut line = String::new();
                 let _ = std::io::stdin().read_line(&mut line);
-                if matches!(line.trim().to_lowercase().as_str(), "y" | "yes") { Approval::Allow } else { Approval::Deny(String::new()) }
+                if matches!(line.trim().to_lowercase().as_str(), "y" | "yes") {
+                    Approval::Allow
+                } else {
+                    Approval::Deny(String::new())
+                }
             })
             .await
             .unwrap_or(Approval::Deny("prompt failed".into()))
@@ -161,7 +175,10 @@ fn find_provider(engine: &Engine, needle: Option<&str>) -> Result<irs_core::Doc<
 fn printer() -> impl FnMut(AgentEvent) + Send {
     let mut in_text = false;
     move |ev| match ev {
-        AgentEvent::Stream { event: StreamEvent::TextDelta { text }, .. } => {
+        AgentEvent::Stream {
+            event: StreamEvent::TextDelta { text },
+            ..
+        } => {
             print!("{text}");
             let _ = std::io::stdout().flush();
             in_text = true;
@@ -171,12 +188,35 @@ fn printer() -> impl FnMut(AgentEvent) + Send {
                 println!();
                 in_text = false;
             }
-            println!("\n  {} {}{} {}", cyan("⚙"), dim(&format!("{}.", call.server)), bold(&call.tool), dim(&call.input.to_string()));
+            println!(
+                "\n  {} {}{} {}",
+                cyan("⚙"),
+                dim(&format!("{}.", call.server)),
+                bold(&call.tool),
+                dim(&call.input.to_string())
+            );
         }
         AgentEvent::ToolResult { result, .. } => {
-            let first = result.text.lines().next().unwrap_or("").chars().take(160).collect::<String>();
-            let mark = if result.denied { yellow("⊘ denied") } else if result.is_error { red("✗") } else { green("✓") };
-            println!("    {mark} {} {}\n", first, dim(&format!("({:.0} ms)", result.latency_ms)));
+            let first = result
+                .text
+                .lines()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take(160)
+                .collect::<String>();
+            let mark = if result.denied {
+                yellow("⊘ denied")
+            } else if result.is_error {
+                red("✗")
+            } else {
+                green("✓")
+            };
+            println!(
+                "    {mark} {} {}\n",
+                first,
+                dim(&format!("({:.0} ms)", result.latency_ms))
+            );
         }
         AgentEvent::AssistantMessage { .. } => {
             if in_text {
@@ -189,25 +229,54 @@ fn printer() -> impl FnMut(AgentEvent) + Send {
     }
 }
 
-fn usage_line(model: &str, input: u64, output: u64, turns: u32, ms: f64, ttft: Option<f64>) -> String {
-    let ttft = ttft.map(|t| format!(" · first token {t:.0} ms")).unwrap_or_default();
-    dim(&format!("{model} · {input} in / {output} out tokens · {turns} turn{} · {ms:.0} ms{ttft}", if turns == 1 { "" } else { "s" }))
+fn usage_line(
+    model: &str,
+    input: u64,
+    output: u64,
+    turns: u32,
+    ms: f64,
+    ttft: Option<f64>,
+) -> String {
+    let ttft = ttft
+        .map(|t| format!(" · first token {t:.0} ms"))
+        .unwrap_or_default();
+    dim(&format!(
+        "{model} · {input} in / {output} out tokens · {turns} turn{} · {ms:.0} ms{ttft}",
+        if turns == 1 { "" } else { "s" }
+    ))
 }
 
 pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
     match cmd {
         LlmCmd::MockServer { port } => {
             let url = irs_llm::mock::spawn(Default::default(), port).await?;
-            eprintln!("mock LLM listening on {url} (API key: {})", irs_llm::mock::MOCK_KEY);
-            eprintln!("  irs llm provider add Mock --kind anthropic --base-url {url} --model mock-large");
+            eprintln!(
+                "mock LLM listening on {url} (API key: {})",
+                irs_llm::mock::MOCK_KEY
+            );
+            eprintln!(
+                "  irs llm provider add Mock --kind anthropic --base-url {url} --model mock-large"
+            );
             tokio::signal::ctrl_c().await?;
         }
-        LlmCmd::Provider(ProviderCmd::Add { name, kind, model, base_url, key_env, key_template, no_key }) => {
+        LlmCmd::Provider(ProviderCmd::Add {
+            name,
+            kind,
+            model,
+            base_url,
+            key_env,
+            key_template,
+            no_key,
+        }) => {
             let k = parse_kind(&kind);
             if !["anthropic", "openai", "ollama", "openai-compatible"].contains(&kind.as_str()) {
                 bail!("unknown kind '{kind}' (anthropic, openai, ollama, openai-compatible)");
             }
-            let key_source = if no_key || (k == irs_llm::ProviderKind::Ollama && key_env.is_none() && key_template.is_none()) {
+            let key_source = if no_key
+                || (k == irs_llm::ProviderKind::Ollama
+                    && key_env.is_none()
+                    && key_template.is_none())
+            {
                 KeySource::None
             } else if let Some(var) = key_env {
                 KeySource::Env { var }
@@ -223,7 +292,13 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
                     kind: kind.clone(),
                     base_url: base_url.unwrap_or_default(),
                     key_source: key_source.clone(),
-                    default_model: model.unwrap_or_else(|| k.suggested_models().first().copied().unwrap_or("").to_string()),
+                    default_model: model.unwrap_or_else(|| {
+                        k.suggested_models()
+                            .first()
+                            .copied()
+                            .unwrap_or("")
+                            .to_string()
+                    }),
                     headers: vec![],
                 },
             )?;
@@ -237,9 +312,18 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
                     engine.store.delete(p.id())?;
                     bail!("no key entered; provider not added");
                 }
-                engine.secrets().set(p.id(), key).map_err(|e| anyhow!("keychain: {e}"))?;
+                engine
+                    .secrets()
+                    .set(p.id(), key)
+                    .map_err(|e| anyhow!("keychain: {e}"))?;
             }
-            println!("{} {} {} {}", green("✓"), bold(&p.name), dim(&format!("{kind} · {}", p.default_model)), dim(p.id()));
+            println!(
+                "{} {} {} {}",
+                green("✓"),
+                bold(&p.name),
+                dim(&format!("{kind} · {}", p.default_model)),
+                dim(p.id())
+            );
         }
         LlmCmd::Provider(ProviderCmd::List) => {
             let rows: Vec<Vec<String>> = engine
@@ -250,15 +334,28 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
                     let key = match &p.key_source {
                         KeySource::None => "none".into(),
                         KeySource::Keychain => {
-                            if engine.secrets().get(p.id()).is_some() { "keychain ✓".into() } else { "keychain (missing)".into() }
+                            if engine.secrets().get(p.id()).is_some() {
+                                "keychain ✓".into()
+                            } else {
+                                "keychain (missing)".into()
+                            }
                         }
                         KeySource::Env { var } => format!("${var}"),
                         KeySource::Template { template } => template.clone(),
                     };
-                    vec![bold(&p.name), p.kind.clone(), p.default_model.clone(), key, dim(p.id())]
+                    vec![
+                        bold(&p.name),
+                        p.kind.clone(),
+                        p.default_model.clone(),
+                        key,
+                        dim(p.id()),
+                    ]
                 })
                 .collect();
-            print!("{}", table(&["NAME", "KIND", "DEFAULT MODEL", "KEY", "ID"], &rows, 0));
+            print!(
+                "{}",
+                table(&["NAME", "KIND", "DEFAULT MODEL", "KEY", "ID"], &rows, 0)
+            );
         }
         LlmCmd::Provider(ProviderCmd::Remove { provider }) => {
             let p = crate::find::<LlmProvider>(engine, &provider)?;
@@ -270,7 +367,11 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
             let p = crate::find::<LlmProvider>(engine, &provider)?;
             let (_, cfg) = engine.provider_config(p.id(), None)?;
             for m in irs_llm::list_models(&cfg).await? {
-                let mark = if m == p.default_model { green(" (default)") } else { String::new() };
+                let mark = if m == p.default_model {
+                    green(" (default)")
+                } else {
+                    String::new()
+                };
                 println!("{m}{mark}");
             }
         }
@@ -284,41 +385,105 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
             }
             let mut sources: Vec<ToolSource> = engine.connect_tool_sources(&ids).await?;
             for (i, url) in a.mcp_urls.iter().enumerate() {
-                let c = irs_mcp::Client::connect(irs_mcp::ConnectOptions::new(irs_mcp::TransportConfig::Http { url: url.clone(), headers: vec![], validate_certificates: true }))
-                    .await
-                    .with_context(|| format!("connecting to {url}"))?;
+                let c = irs_mcp::Client::connect(irs_mcp::ConnectOptions::new(
+                    irs_mcp::TransportConfig::Http {
+                        url: url.clone(),
+                        headers: vec![],
+                        validate_certificates: true,
+                    },
+                ))
+                .await
+                .with_context(|| format!("connecting to {url}"))?;
                 let tools = c.list_tools().await.map(|l| l.items).unwrap_or_default();
-                sources.push(ToolSource { server_name: format!("mcp{}", i + 1), client: std::sync::Arc::new(c), tools });
+                sources.push(ToolSource {
+                    server_name: format!("mcp{}", i + 1),
+                    client: std::sync::Arc::new(c),
+                    tools,
+                });
             }
             for cmd in &a.mcp_stdio {
                 let (command, args) = crate::mcp_cmd::split_command(cmd)?;
-                let c = irs_mcp::Client::connect(irs_mcp::ConnectOptions::new(irs_mcp::TransportConfig::Stdio { command: command.clone(), args, env: Default::default(), cwd: None }))
-                    .await
-                    .with_context(|| format!("starting {cmd}"))?;
+                let c = irs_mcp::Client::connect(irs_mcp::ConnectOptions::new(
+                    irs_mcp::TransportConfig::Stdio {
+                        command: command.clone(),
+                        args,
+                        env: Default::default(),
+                        cwd: None,
+                    },
+                ))
+                .await
+                .with_context(|| format!("starting {cmd}"))?;
                 let tools = c.list_tools().await.map(|l| l.items).unwrap_or_default();
-                let name = std::path::Path::new(&command).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or(command);
-                sources.push(ToolSource { server_name: name, client: std::sync::Arc::new(c), tools });
+                let name = std::path::Path::new(&command)
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or(command);
+                sources.push(ToolSource {
+                    server_name: name,
+                    client: std::sync::Arc::new(c),
+                    tools,
+                });
             }
             if !sources.is_empty() {
                 let n: usize = sources.iter().map(|s| s.tools.len()).sum();
-                eprintln!("{}", dim(&format!("{n} tools from {} MCP server(s)", sources.len())));
+                eprintln!(
+                    "{}",
+                    dim(&format!("{n} tools from {} MCP server(s)", sources.len()))
+                );
             }
             let prepared = LlmPrepared {
                 provider,
                 config,
-                chat: ChatRequest { model, system: a.system.clone(), messages: vec![Message::user(&a.prompt)], tools: vec![], max_tokens: a.max_tokens, temperature: None },
-                options: AgentOptions { max_turns: a.max_turns, auto_approve: if a.yes { AutoApprove::All } else { AutoApprove::ReadOnly }, ..Default::default() },
+                chat: ChatRequest {
+                    model,
+                    system: a.system.clone(),
+                    messages: vec![Message::user(&a.prompt)],
+                    tools: vec![],
+                    max_tokens: a.max_tokens,
+                    temperature: None,
+                },
+                options: AgentOptions {
+                    max_turns: a.max_turns,
+                    auto_approve: if a.yes {
+                        AutoApprove::All
+                    } else {
+                        AutoApprove::ReadOnly
+                    },
+                    ..Default::default()
+                },
                 mcp_server_ids: vec![],
             };
             let model = prepared.chat.model.clone();
-            let approver: Box<dyn Approver> = if a.yes { Box::new(AllowAll) } else { Box::new(TerminalApprover) };
+            let approver: Box<dyn Approver> = if a.yes {
+                Box::new(AllowAll)
+            } else {
+                Box::new(TerminalApprover)
+            };
             let mut print = printer();
-            let out = irs_llm::agent::run(&prepared.config, prepared.chat, &sources, &prepared.options, approver.as_ref(), &mut |e| print(e)).await;
+            let out = irs_llm::agent::run(
+                &prepared.config,
+                prepared.chat,
+                &sources,
+                &prepared.options,
+                approver.as_ref(),
+                &mut |e| print(e),
+            )
+            .await;
             for s in &sources {
                 s.client.close().await;
             }
             println!();
-            eprintln!("{}", usage_line(&model, out.usage.input_tokens, out.usage.output_tokens, out.turns, out.total_ms, None));
+            eprintln!(
+                "{}",
+                usage_line(
+                    &model,
+                    out.usage.input_tokens,
+                    out.usage.output_tokens,
+                    out.turns,
+                    out.total_ms,
+                    None
+                )
+            );
             if a.json {
                 println!("{}", serde_json::to_string_pretty(&out.messages)?);
             }
@@ -326,7 +491,16 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
                 bail!(e);
             }
         }
-        LlmCmd::Request(RequestCmd::Add { workspace, name, prompt, system, provider, model, mcp, auto_approve }) => {
+        LlmCmd::Request(RequestCmd::Add {
+            workspace,
+            name,
+            prompt,
+            system,
+            provider,
+            model,
+            mcp,
+            auto_approve,
+        }) => {
             let ws = crate::find::<Workspace>(engine, &workspace)?;
             let provider_id = match provider {
                 Some(p) => Some(crate::find::<LlmProvider>(engine, &p)?.meta.id),
@@ -343,7 +517,10 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
                     provider_id,
                     model: model.unwrap_or_default(),
                     system: system.unwrap_or_default(),
-                    messages: vec![LlmPromptMessage { role: "user".into(), text: prompt }],
+                    messages: vec![LlmPromptMessage {
+                        role: "user".into(),
+                        text: prompt,
+                    }],
                     mcp_server_ids: ids,
                     auto_approve,
                     ..Default::default()
@@ -353,11 +530,27 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
         }
         LlmCmd::Request(RequestCmd::Run { request, yes }) => {
             let r = crate::find::<LlmRequest>(engine, &request)?;
-            let approver: Box<dyn Approver> = if yes { Box::new(AllowAll) } else { Box::new(TerminalApprover) };
+            let approver: Box<dyn Approver> = if yes {
+                Box::new(AllowAll)
+            } else {
+                Box::new(TerminalApprover)
+            };
             let mut print = printer();
-            let run = engine.llm_run(r.id(), approver.as_ref(), &mut |e| print(e)).await?;
+            let run = engine
+                .llm_run(r.id(), approver.as_ref(), &mut |e| print(e))
+                .await?;
             println!();
-            eprintln!("{}", usage_line(&run.model, run.input_tokens, run.output_tokens, run.turns, run.total_ms, run.ttft_ms));
+            eprintln!(
+                "{}",
+                usage_line(
+                    &run.model,
+                    run.input_tokens,
+                    run.output_tokens,
+                    run.turns,
+                    run.total_ms,
+                    run.ttft_ms
+                )
+            );
             if let Some(e) = &run.error {
                 bail!("{e}");
             }

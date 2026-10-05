@@ -484,17 +484,42 @@ async fn without_sub_environment_insomnia_environment_is_the_base() {
 
 mod ai {
     use super::*;
-    use irs_core::{KeySource, LlmPromptMessage, LlmProvider, LlmRequest, McpSampling, McpServer, McpTransport};
+    use irs_core::{
+        KeySource, LlmPromptMessage, LlmProvider, LlmRequest, McpSampling, McpServer, McpTransport,
+    };
     use irs_llm::agent::{AgentEvent, AllowAll};
 
-    async fn setup() -> (Engine, Doc<Workspace>, Doc<LlmProvider>, irs_llm::mock::MockLlm) {
+    async fn setup() -> (
+        Engine,
+        Doc<Workspace>,
+        Doc<LlmProvider>,
+        irs_llm::mock::MockLlm,
+    ) {
         let mock = irs_llm::mock::MockLlm::default();
         let base = irs_llm::mock::spawn(mock.clone(), 0).await.unwrap();
         let e = Engine::in_memory();
-        let ws = e.store.insert(None, Workspace { name: "AI".into(), ..Default::default() }).unwrap();
+        let ws = e
+            .store
+            .insert(
+                None,
+                Workspace {
+                    name: "AI".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         let p = e
             .store
-            .insert(None, LlmProvider { name: "Mock Claude".into(), kind: "anthropic".into(), base_url: base, default_model: "mock-large".into(), ..Default::default() })
+            .insert(
+                None,
+                LlmProvider {
+                    name: "Mock Claude".into(),
+                    kind: "anthropic".into(),
+                    base_url: base,
+                    default_model: "mock-large".into(),
+                    ..Default::default()
+                },
+            )
             .unwrap();
         e.secrets().set(p.id(), irs_llm::mock::MOCK_KEY).unwrap();
         (e, ws, p, mock)
@@ -507,22 +532,50 @@ mod ai {
         assert_eq!(cfg.api_key.as_deref(), Some(irs_llm::mock::MOCK_KEY));
 
         let mut tpl = p.clone();
-        tpl.key_source = KeySource::Template { template: "{{ _.claude_key }}".into() };
+        tpl.key_source = KeySource::Template {
+            template: "{{ _.claude_key }}".into(),
+        };
         e.store.update(&tpl).unwrap();
-        let err = e.provider_config(p.id(), Some(ws.id())).unwrap_err().to_string();
+        let err = e
+            .provider_config(p.id(), Some(ws.id()))
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("claude_key"), "{err}");
         let mut env = e.base_environment(ws.id()).unwrap();
         env.data.insert("claude_key".into(), json!("from-env"));
         e.store.update(&env).unwrap();
-        assert_eq!(e.provider_config(p.id(), Some(ws.id())).unwrap().1.api_key.as_deref(), Some("from-env"));
+        assert_eq!(
+            e.provider_config(p.id(), Some(ws.id()))
+                .unwrap()
+                .1
+                .api_key
+                .as_deref(),
+            Some("from-env")
+        );
 
         let mut envvar = p.clone();
-        envvar.key_source = KeySource::Env { var: "IRS_TEST_SURELY_UNSET_KEY".into() };
+        envvar.key_source = KeySource::Env {
+            var: "IRS_TEST_SURELY_UNSET_KEY".into(),
+        };
         e.store.update(&envvar).unwrap();
         let err = e.provider_config(p.id(), None).unwrap_err().to_string();
-        assert!(err.contains("set the IRS_TEST_SURELY_UNSET_KEY environment variable"), "{err}");
+        assert!(
+            err.contains("set the IRS_TEST_SURELY_UNSET_KEY environment variable"),
+            "{err}"
+        );
 
-        let ollama = e.store.insert(None, LlmProvider { name: "Local".into(), kind: "ollama".into(), key_source: KeySource::None, ..Default::default() }).unwrap();
+        let ollama = e
+            .store
+            .insert(
+                None,
+                LlmProvider {
+                    name: "Local".into(),
+                    kind: "ollama".into(),
+                    key_source: KeySource::None,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         let (_, cfg) = e.provider_config(ollama.id(), None).unwrap();
         assert_eq!(cfg.base_url, "http://localhost:11434/v1");
     }
@@ -530,14 +583,24 @@ mod ai {
     #[tokio::test]
     async fn ai_request_renders_runs_with_mcp_tools_and_persists() {
         let (e, ws, p, mock) = setup().await;
-        let mcp_url = irs_mcp::mock::spawn_http(Default::default(), 0).await.unwrap();
+        let mcp_url = irs_mcp::mock::spawn_http(Default::default(), 0)
+            .await
+            .unwrap();
         let mut env = e.base_environment(ws.id()).unwrap();
         env.data.insert("city".into(), json!("Lisbon"));
-        env.data.insert("persona".into(), json!("a concise travel assistant"));
+        env.data
+            .insert("persona".into(), json!("a concise travel assistant"));
         e.store.update(&env).unwrap();
         let server = e
             .store
-            .insert(Some(ws.id()), McpServer { name: "Weather".into(), transport: McpTransport::StreamableHttp { url: mcp_url }, ..Default::default() })
+            .insert(
+                Some(ws.id()),
+                McpServer {
+                    name: "Weather".into(),
+                    transport: McpTransport::StreamableHttp { url: mcp_url },
+                    ..Default::default()
+                },
+            )
             .unwrap();
         let req = e
             .store
@@ -546,7 +609,10 @@ mod ai {
                 LlmRequest {
                     provider_id: Some(p.meta.id.clone()),
                     system: "You are {{ persona }}.".into(),
-                    messages: vec![LlmPromptMessage { role: "user".into(), text: "What's the weather in {{ _.city }}?".into() }],
+                    messages: vec![LlmPromptMessage {
+                        role: "user".into(),
+                        text: "What's the weather in {{ _.city }}?".into(),
+                    }],
                     mcp_server_ids: vec![server.meta.id.clone()],
                     ..Default::default()
                 },
@@ -555,21 +621,42 @@ mod ai {
 
         let prepared = e.llm_prepare(req.id()).unwrap();
         assert_eq!(prepared.chat.model, "mock-large", "provider default model");
-        assert_eq!(prepared.chat.system.as_deref(), Some("You are a concise travel assistant."));
+        assert_eq!(
+            prepared.chat.system.as_deref(),
+            Some("You are a concise travel assistant.")
+        );
 
         let mut events = vec![];
-        let run = e.llm_run(req.id(), &AllowAll, &mut |ev| events.push(ev)).await.unwrap();
+        let run = e
+            .llm_run(req.id(), &AllowAll, &mut |ev| events.push(ev))
+            .await
+            .unwrap();
         assert_eq!(run.error, None);
         assert_eq!(run.turns, 2);
         assert_eq!((run.input_tokens, run.output_tokens), (24, 42));
         assert_eq!(run.tool_calls.len(), 1);
         assert_eq!(run.tool_calls[0]["call"]["tool"], "get_weather");
-        assert_eq!(run.tool_calls[0]["result"]["text"], "Lisbon: 21°C, clear sky");
-        assert_eq!(run.transcript.last().unwrap()["content"][1]["text"], "Based on the tool: Lisbon: 21°C, clear sky");
+        assert_eq!(
+            run.tool_calls[0]["result"]["text"],
+            "Lisbon: 21°C, clear sky"
+        );
+        assert_eq!(
+            run.transcript.last().unwrap()["content"][1]["text"],
+            "Based on the tool: Lisbon: 21°C, clear sky"
+        );
         assert!(run.ttft_ms.is_some());
         assert_eq!(run.request_bodies.len(), 2);
-        assert!(!serde_json::to_string(&*run).unwrap().contains(irs_llm::mock::MOCK_KEY), "no secrets persisted");
-        assert!(events.iter().any(|ev| matches!(ev, AgentEvent::Done { .. })));
+        assert!(
+            !serde_json::to_string(&*run)
+                .unwrap()
+                .contains(irs_llm::mock::MOCK_KEY),
+            "no secrets persisted"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|ev| matches!(ev, AgentEvent::Done { .. }))
+        );
         assert_eq!(e.llm_runs(req.id()).unwrap().len(), 1);
         assert_eq!(mock.requests.lock().unwrap().len(), 2);
 
@@ -577,13 +664,21 @@ mod ai {
         let mut bad = e.store.get::<LlmRequest>(req.id()).unwrap();
         bad.messages[0].text = "{{ nope }}".into();
         e.store.update(&bad).unwrap();
-        assert!(e.llm_prepare(req.id()).err().unwrap().to_string().contains("nope"));
+        assert!(
+            e.llm_prepare(req.id())
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("nope")
+        );
     }
 
     #[tokio::test]
     async fn saved_server_with_sampling_enabled_uses_the_provider() {
         let (e, ws, p, _) = setup().await;
-        let mcp_url = irs_mcp::mock::spawn_http(Default::default(), 0).await.unwrap();
+        let mcp_url = irs_mcp::mock::spawn_http(Default::default(), 0)
+            .await
+            .unwrap();
         let server = e
             .store
             .insert(
@@ -591,13 +686,23 @@ mod ai {
                 McpServer {
                     name: "Sampler".into(),
                     transport: McpTransport::StreamableHttp { url: mcp_url },
-                    sampling: McpSampling { enabled: true, provider_id: Some(p.meta.id.clone()), model: None, max_tokens: 300 },
+                    sampling: McpSampling {
+                        enabled: true,
+                        provider_id: Some(p.meta.id.clone()),
+                        model: None,
+                        max_tokens: 300,
+                    },
                     ..Default::default()
                 },
             )
             .unwrap();
-        let client = irs_mcp::Client::connect(e.mcp_connect_options(server.id()).unwrap()).await.unwrap();
-        let r = client.call_tool("ask_llm", json!({"prompt": "ping"})).await.unwrap();
+        let client = irs_mcp::Client::connect(e.mcp_connect_options(server.id()).unwrap())
+            .await
+            .unwrap();
+        let r = client
+            .call_tool("ask_llm", json!({"prompt": "ping"}))
+            .await
+            .unwrap();
         assert_eq!(r.text(), "LLM said: Echo: ping");
     }
 }

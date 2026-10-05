@@ -1,6 +1,8 @@
 //! Tauri shell: thin commands over irs-engine / irs-mcp. The UI never touches
 //! SQLite or the network directly, so the CLI and desktop behave identically.
 
+mod ai;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -28,6 +30,7 @@ pub struct AppState {
     mcp: Mutex<HashMap<String, Arc<Client>>>,
     logs: std::sync::Mutex<HashMap<String, ProtocolLog>>,
     runs: std::sync::Mutex<HashMap<String, RunSlot>>,
+    ai_runs: std::sync::Mutex<HashMap<String, ai::AiRunSlot>>,
 }
 
 #[derive(Default)]
@@ -83,6 +86,15 @@ fn tree(engine: &Engine, parent: &str) -> CmdResult<Vec<TreeNode>> {
                 sort_key,
                 name,
                 transport: None,
+                children: vec![],
+            },
+            "LlmRequest" => TreeNode {
+                transport: d.data["model"].as_str().map(str::to_string),
+                id: d.meta.id,
+                kind: "llm".into(),
+                sort_key,
+                name,
+                method: None,
                 children: vec![],
             },
             "McpServer" => TreeNode {
@@ -216,6 +228,16 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                 .meta
                 .id
         }
+        "LlmRequest" => {
+            store
+                .insert(
+                    parent.as_deref(),
+                    serde_json::from_value::<irs_core::LlmRequest>(data).map_err(e)?,
+                )
+                .map_err(e)?
+                .meta
+                .id
+        }
         "Folder" => {
             // Deep copy: folder + all requests/folders/servers under it.
             fn copy(store: &irs_core::Store, src: &str, dst: &str) -> CmdResult<()> {
@@ -234,6 +256,15 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                                 .insert(
                                     Some(dst),
                                     serde_json::from_value::<McpServer>(c.data).map_err(e)?,
+                                )
+                                .map_err(e)?;
+                        }
+                        "LlmRequest" => {
+                            store
+                                .insert(
+                                    Some(dst),
+                                    serde_json::from_value::<irs_core::LlmRequest>(c.data)
+                                        .map_err(e)?,
                                 )
                                 .map_err(e)?;
                         }
@@ -911,6 +942,7 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             mcp: Mutex::default(),
             logs: Default::default(),
             runs: Default::default(),
+            ai_runs: Default::default(),
         })
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -965,6 +997,18 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             runner_start,
             runner_cancel,
             runner_export,
+            ai::llm_provider_list,
+            ai::llm_provider_create,
+            ai::llm_provider_update,
+            ai::llm_provider_delete,
+            ai::llm_provider_set_key,
+            ai::llm_models,
+            ai::llm_request_create,
+            ai::llm_request_update,
+            ai::llm_runs,
+            ai::llm_run_start,
+            ai::llm_approve,
+            ai::llm_cancel,
         ])
 }
 

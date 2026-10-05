@@ -78,10 +78,10 @@ Source paths are relative to `packages/`. Phase: 1 core/HTTP/env/MCP inspector �
 
 | Capability | Insomnia source | Rust target | Phase |
 |---|---|---|---|
-| AI settings (providers, keys) | ui/components/settings/ai-settings.tsx | llm::Provider config | 3 |
-| LLM request type (chat, streaming, tool calls) | — (new) | llm + desktop | 3 |
-| LLM ↔ MCP tool-calling bridge | — (new) | llm::agent | 3 |
-| MCP sampling responses via LLM | main/mcp-generate-sampling-response.mjs | llm + mcp | 3 |
+| AI settings (providers, keys) | ui/components/settings/ai-settings.tsx | core::LlmProvider + keychain | 3 ✅ |
+| LLM request type (chat, streaming, tool calls) | — (new) | core::LlmRequest/LlmRun + LlmView | 3 ✅ |
+| LLM ↔ MCP tool-calling bridge | — (new) | llm::agent (approvals) | 3 ✅ |
+| MCP sampling responses via LLM | main/mcp-generate-sampling-response.mjs | mcp::SamplingHandler + llm::agent::LlmSampler | 3 ✅ |
 
 ## Import / export / sync
 

@@ -321,10 +321,16 @@ async fn http_post(State(st): State<HttpState>, headers: HeaderMap, body: String
 /// Stream a `sampling/createMessage` request to the client, wait for its
 /// answer (POSTed separately), then stream the tool result.
 fn ask_llm_over_sse(st: &HttpState, msg: &Value, sid: Option<String>) -> Response {
-    let req_id = format!("srv-{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default());
+    let req_id = format!(
+        "srv-{}",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    );
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
     st.waiting.lock().unwrap().insert(req_id.clone(), tx);
-    let prompt = msg["params"]["arguments"]["prompt"].as_str().unwrap_or("hello").to_string();
+    let prompt = msg["params"]["arguments"]["prompt"]
+        .as_str()
+        .unwrap_or("hello")
+        .to_string();
     let sampling = serde_json::json!({"jsonrpc": "2.0", "id": req_id, "method": "sampling/createMessage", "params": {
         "messages": [{"role": "user", "content": {"type": "text", "text": prompt}}],
         "systemPrompt": "Answer briefly.", "maxTokens": 200
@@ -332,18 +338,30 @@ fn ask_llm_over_sse(st: &HttpState, msg: &Value, sid: Option<String>) -> Respons
     let call_id = msg["id"].clone();
     let (out_tx, out_rx) = tokio::sync::mpsc::channel::<Result<String, std::io::Error>>(4);
     tokio::spawn(async move {
-        let _ = out_tx.send(Ok(format!("event: message\ndata: {sampling}\n\n"))).await;
+        let _ = out_tx
+            .send(Ok(format!("event: message\ndata: {sampling}\n\n")))
+            .await;
         let result = match tokio::time::timeout(Duration::from_secs(30), rx).await {
             Ok(Ok(v)) if v.get("result").is_some() => {
                 serde_json::json!({"content": [{"type": "text", "text": format!("LLM said: {}", v["result"]["content"]["text"].as_str().unwrap_or(""))}]})
             }
-            Ok(Ok(v)) => serde_json::json!({"content": [{"type": "text", "text": format!("sampling failed: {}", v["error"]["message"])}], "isError": true}),
-            _ => serde_json::json!({"content": [{"type": "text", "text": "sampling timed out"}], "isError": true}),
+            Ok(Ok(v)) => {
+                serde_json::json!({"content": [{"type": "text", "text": format!("sampling failed: {}", v["error"]["message"])}], "isError": true})
+            }
+            _ => {
+                serde_json::json!({"content": [{"type": "text", "text": "sampling timed out"}], "isError": true})
+            }
         };
         let final_msg = serde_json::json!({"jsonrpc": "2.0", "id": call_id, "result": result});
-        let _ = out_tx.send(Ok(format!("event: message\ndata: {final_msg}\n\n"))).await;
+        let _ = out_tx
+            .send(Ok(format!("event: message\ndata: {final_msg}\n\n")))
+            .await;
     });
-    let stream = futures::stream::unfold(out_rx, |mut rx| async move { rx.recv().await.map(|x| (x, rx)) });
+    let stream =
+        futures::stream::unfold(
+            out_rx,
+            |mut rx| async move { rx.recv().await.map(|x| (x, rx)) },
+        );
     let mut b = Response::builder().header(header::CONTENT_TYPE, "text/event-stream");
     if let Some(s) = sid {
         b = b.header("mcp-session-id", s);

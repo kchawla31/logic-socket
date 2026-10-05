@@ -105,7 +105,7 @@ fn main() {
         .build()
         .unwrap();
     let (events_tx, _) = broadcast::channel::<String>(1024);
-    for name in ["db-changed", "mcp-log", "runner-event"] {
+    for name in ["db-changed", "mcp-log", "runner-event", "llm-event"] {
         let tx = events_tx.clone();
         app.listen_any(name, move |ev| {
             let _ = tx.send(serde_json::json!({ "event": name, "payload": serde_json::from_str::<Value>(ev.payload()).unwrap_or(Value::Null) }).to_string());

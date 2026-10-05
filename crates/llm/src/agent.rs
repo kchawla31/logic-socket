@@ -11,7 +11,10 @@ use irs_mcp::{Client, Hints, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::{Block, ChatRequest, LlmError, Message, ProviderConfig, Role, StopReason, StreamEvent, ToolSpec, Usage, ms_since, sanitize_tool_name, stream_chat};
+use crate::{
+    Block, ChatRequest, LlmError, Message, ProviderConfig, Role, StopReason, StreamEvent, ToolSpec,
+    Usage, ms_since, sanitize_tool_name, stream_chat,
+};
 
 /// MCP tools from one connected server.
 pub struct ToolSource {
@@ -87,20 +90,54 @@ pub struct AgentOptions {
 
 impl Default for AgentOptions {
     fn default() -> Self {
-        Self { max_turns: 8, auto_approve: AutoApprove::ReadOnly, cancel: None, max_tool_result_chars: 100_000 }
+        Self {
+            max_turns: 8,
+            auto_approve: AutoApprove::ReadOnly,
+            cancel: None,
+            max_tool_result_chars: 100_000,
+        }
     }
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum AgentEvent {
-    TurnStart { turn: u32 },
-    Stream { turn: u32, event: StreamEvent },
-    AssistantMessage { turn: u32, message: Message, stop_reason: StopReason, usage: Usage, ttft_ms: Option<f64>, total_ms: f64 },
-    ToolCall { turn: u32, call: ToolCallInfo, needs_approval: bool },
-    ToolResult { turn: u32, result: ToolResultInfo },
-    Done { usage: Usage, turns: u32, stop_reason: StopReason },
-    Error { message: String },
+    TurnStart {
+        turn: u32,
+    },
+    Stream {
+        turn: u32,
+        event: StreamEvent,
+    },
+    AssistantMessage {
+        turn: u32,
+        message: Message,
+        stop_reason: StopReason,
+        usage: Usage,
+        ttft_ms: Option<f64>,
+        total_ms: f64,
+    },
+    ToolCall {
+        turn: u32,
+        call: ToolCallInfo,
+        needs_approval: bool,
+    },
+    ToolResult {
+        turn: u32,
+        result: ToolResultInfo,
+    },
+    Done {
+        usage: Usage,
+        turns: u32,
+        stop_reason: StopReason,
+    },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -129,17 +166,31 @@ pub fn tool_specs(sources: &[ToolSource]) -> (Vec<ToolSpec>, HashMap<String, (us
     let mut map: HashMap<String, (usize, Tool)> = HashMap::new();
     for (si, s) in sources.iter().enumerate() {
         for t in &s.tools {
-            let base = if multi { format!("{}__{}", sanitize_tool_name(&s.server_name), t.name) } else { t.name.clone() };
+            let base = if multi {
+                format!("{}__{}", sanitize_tool_name(&s.server_name), t.name)
+            } else {
+                t.name.clone()
+            };
             let mut name = sanitize_tool_name(&base);
             let mut n = 2;
             while map.contains_key(&name) {
                 let suffix = format!("_{n}");
-                name = format!("{}{suffix}", &sanitize_tool_name(&base)[..sanitize_tool_name(&base).len().min(64 - suffix.len())]);
+                name = format!(
+                    "{}{suffix}",
+                    &sanitize_tool_name(&base)
+                        [..sanitize_tool_name(&base).len().min(64 - suffix.len())]
+                );
                 n += 1;
             }
             let h = t.hints();
             let mut desc = t.description.clone().unwrap_or_default();
-            let tag = if h.read_only { "read-only" } else if h.destructive { "destructive" } else { "modifies state" };
+            let tag = if h.read_only {
+                "read-only"
+            } else if h.destructive {
+                "destructive"
+            } else {
+                "modifies state"
+            };
             if multi {
                 desc = format!("[{} · {tag}] {desc}", s.server_name);
             } else {
@@ -149,7 +200,11 @@ pub fn tool_specs(sources: &[ToolSource]) -> (Vec<ToolSpec>, HashMap<String, (us
             if schema.get("type").is_none() {
                 schema["type"] = json!("object");
             }
-            specs.push(ToolSpec { name: name.clone(), description: desc.trim().to_string(), input_schema: schema });
+            specs.push(ToolSpec {
+                name: name.clone(),
+                description: desc.trim().to_string(),
+                input_schema: schema,
+            });
             map.insert(name, (si, t.clone()));
         }
     }
@@ -161,12 +216,23 @@ fn result_text(r: &irs_mcp::CallToolResult, max: usize) -> String {
     for c in &r.content {
         match c["type"].as_str() {
             Some("text") => parts.push(c["text"].as_str().unwrap_or("").to_string()),
-            Some("image") | Some("audio") => parts.push(format!("[{} {}]", c["type"].as_str().unwrap_or(""), c["mimeType"].as_str().unwrap_or(""))),
+            Some("image") | Some("audio") => parts.push(format!(
+                "[{} {}]",
+                c["type"].as_str().unwrap_or(""),
+                c["mimeType"].as_str().unwrap_or("")
+            )),
             Some("resource") => {
                 let res = &c["resource"];
-                parts.push(format!("[resource {}]\n{}", res["uri"].as_str().unwrap_or(""), res["text"].as_str().unwrap_or("")));
+                parts.push(format!(
+                    "[resource {}]\n{}",
+                    res["uri"].as_str().unwrap_or(""),
+                    res["text"].as_str().unwrap_or("")
+                ));
             }
-            Some("resource_link") => parts.push(format!("[resource link {}]", c["uri"].as_str().unwrap_or(""))),
+            Some("resource_link") => parts.push(format!(
+                "[resource link {}]",
+                c["uri"].as_str().unwrap_or("")
+            )),
             _ => parts.push(c.to_string()),
         }
     }
@@ -177,7 +243,10 @@ fn result_text(r: &irs_mcp::CallToolResult, max: usize) -> String {
     }
     let mut text = parts.join("\n");
     if text.chars().count() > max {
-        text = format!("{}… [truncated]", text.chars().take(max).collect::<String>());
+        text = format!(
+            "{}… [truncated]",
+            text.chars().take(max).collect::<String>()
+        );
     }
     text
 }
@@ -201,10 +270,17 @@ pub async fn run(
 ) -> AgentOutcome {
     let started = Instant::now();
     let (specs, map) = tool_specs(sources);
-    let map: HashMap<String, Mapped> = map.into_iter().map(|(k, (source, tool))| (k, Mapped { source, tool })).collect();
+    let map: HashMap<String, Mapped> = map
+        .into_iter()
+        .map(|(k, (source, tool))| (k, Mapped { source, tool }))
+        .collect();
     req.tools = specs;
     let mut out = AgentOutcome::default();
-    let cancelled = || opts.cancel.as_ref().is_some_and(|c| c.load(Ordering::SeqCst));
+    let cancelled = || {
+        opts.cancel
+            .as_ref()
+            .is_some_and(|c| c.load(Ordering::SeqCst))
+    };
 
     for turn in 1..=opts.max_turns.max(1) {
         if cancelled() {
@@ -217,7 +293,9 @@ pub async fn run(
         let resp = match stream_chat(cfg, &req, &mut forward).await {
             Ok(r) => r,
             Err(e) => {
-                on_event(AgentEvent::Error { message: e.to_string() });
+                on_event(AgentEvent::Error {
+                    message: e.to_string(),
+                });
                 out.error = Some(e.to_string());
                 break;
             }
@@ -225,7 +303,10 @@ pub async fn run(
         out.usage += resp.usage;
         out.stop_reason = resp.stop_reason;
         out.request_bodies.push(resp.request_body.clone());
-        let assistant = Message { role: Role::Assistant, content: resp.content.clone() };
+        let assistant = Message {
+            role: Role::Assistant,
+            content: resp.content.clone(),
+        };
         on_event(AgentEvent::AssistantMessage {
             turn,
             message: assistant.clone(),
@@ -239,7 +320,13 @@ pub async fn run(
         let calls: Vec<(String, String, Value)> = resp
             .content
             .iter()
-            .filter_map(|b| if let Block::ToolUse { id, name, input } = b { Some((id.clone(), name.clone(), input.clone())) } else { None })
+            .filter_map(|b| {
+                if let Block::ToolUse { id, name, input } = b {
+                    Some((id.clone(), name.clone(), input.clone()))
+                } else {
+                    None
+                }
+            })
             .collect();
         if calls.is_empty() {
             break;
@@ -248,10 +335,20 @@ pub async fn run(
             // Out of turns: answer the calls so the transcript stays valid, then stop.
             let results = calls
                 .iter()
-                .map(|(id, _, _)| Block::ToolResult { tool_use_id: id.clone(), content: "Stopped: maximum number of turns reached.".into(), is_error: true })
+                .map(|(id, _, _)| Block::ToolResult {
+                    tool_use_id: id.clone(),
+                    content: "Stopped: maximum number of turns reached.".into(),
+                    is_error: true,
+                })
                 .collect();
-            req.messages.push(Message { role: Role::User, content: results });
-            out.error = Some(format!("stopped after {} turns with tool calls still pending", opts.max_turns));
+            req.messages.push(Message {
+                role: Role::User,
+                content: results,
+            });
+            out.error = Some(format!(
+                "stopped after {} turns with tool calls still pending",
+                opts.max_turns
+            ));
             break;
         }
 
@@ -261,35 +358,58 @@ pub async fn run(
             let info = ToolCallInfo {
                 id: id.clone(),
                 name: name.clone(),
-                server: mapped.map(|m| sources[m.source].server_name.clone()).unwrap_or_default(),
-                tool: mapped.map(|m| m.tool.name.clone()).unwrap_or_else(|| name.clone()),
+                server: mapped
+                    .map(|m| sources[m.source].server_name.clone())
+                    .unwrap_or_default(),
+                tool: mapped
+                    .map(|m| m.tool.name.clone())
+                    .unwrap_or_else(|| name.clone()),
                 input: input.clone(),
                 hints: mapped.map(|m| m.tool.hints()),
             };
             let ask = mapped.is_some() && needs_approval(opts.auto_approve, info.hints);
-            on_event(AgentEvent::ToolCall { turn, call: info.clone(), needs_approval: ask });
+            on_event(AgentEvent::ToolCall {
+                turn,
+                call: info.clone(),
+                needs_approval: ask,
+            });
             let t = Instant::now();
             let result = match mapped {
                 None => ToolResultInfo {
                     id: id.clone(),
                     is_error: true,
                     denied: false,
-                    text: format!("Unknown tool '{name}'. Available: {}", map.keys().cloned().collect::<Vec<_>>().join(", ")),
+                    text: format!(
+                        "Unknown tool '{name}'. Available: {}",
+                        map.keys().cloned().collect::<Vec<_>>().join(", ")
+                    ),
                     structured: None,
                     latency_ms: 0.0,
                 },
                 Some(m) => {
-                    let approval = if ask { approver.approve(info.clone()).await } else { Approval::Allow };
+                    let approval = if ask {
+                        approver.approve(info.clone()).await
+                    } else {
+                        Approval::Allow
+                    };
                     match approval {
                         Approval::Deny(reason) => ToolResultInfo {
                             id: id.clone(),
                             is_error: true,
                             denied: true,
-                            text: if reason.is_empty() { "The user declined this tool call.".into() } else { format!("The user declined this tool call: {reason}") },
+                            text: if reason.is_empty() {
+                                "The user declined this tool call.".into()
+                            } else {
+                                format!("The user declined this tool call: {reason}")
+                            },
                             structured: None,
                             latency_ms: 0.0,
                         },
-                        Approval::Allow => match sources[m.source].client.call_tool(&m.tool.name, input).await {
+                        Approval::Allow => match sources[m.source]
+                            .client
+                            .call_tool(&m.tool.name, input)
+                            .await
+                        {
                             Ok(r) => ToolResultInfo {
                                 id: id.clone(),
                                 is_error: r.is_error,
@@ -310,13 +430,27 @@ pub async fn run(
                     }
                 }
             };
-            on_event(AgentEvent::ToolResult { turn, result: result.clone() });
-            results.push(Block::ToolResult { tool_use_id: id, content: result.text, is_error: result.is_error });
+            on_event(AgentEvent::ToolResult {
+                turn,
+                result: result.clone(),
+            });
+            results.push(Block::ToolResult {
+                tool_use_id: id,
+                content: result.text,
+                is_error: result.is_error,
+            });
         }
-        req.messages.push(Message { role: Role::User, content: results });
+        req.messages.push(Message {
+            role: Role::User,
+            content: results,
+        });
     }
     out.total_ms = ms_since(started);
-    on_event(AgentEvent::Done { usage: out.usage, turns: out.turns, stop_reason: out.stop_reason });
+    on_event(AgentEvent::Done {
+        usage: out.usage,
+        turns: out.turns,
+        stop_reason: out.stop_reason,
+    });
     out.messages = req.messages;
     out
 }
@@ -341,7 +475,11 @@ impl irs_mcp::SamplingHandler for LlmSampler {
                 .into_iter()
                 .flatten()
                 .map(|m| {
-                    let role = if m["role"] == "assistant" { Role::Assistant } else { Role::User };
+                    let role = if m["role"] == "assistant" {
+                        Role::Assistant
+                    } else {
+                        Role::User
+                    };
                     let blocks: Vec<&Value> = match &m["content"] {
                         Value::Array(a) => a.iter().collect(),
                         v => vec![v],
@@ -349,8 +487,15 @@ impl irs_mcp::SamplingHandler for LlmSampler {
                     let content = blocks
                         .into_iter()
                         .map(|c| match c["type"].as_str() {
-                            Some("text") => Block::Text { text: c["text"].as_str().unwrap_or("").into() },
-                            _ => Block::Text { text: format!("[{} content omitted]", c["type"].as_str().unwrap_or("non-text")) },
+                            Some("text") => Block::Text {
+                                text: c["text"].as_str().unwrap_or("").into(),
+                            },
+                            _ => Block::Text {
+                                text: format!(
+                                    "[{} content omitted]",
+                                    c["type"].as_str().unwrap_or("non-text")
+                                ),
+                            },
                         })
                         .collect();
                     Message { role, content }
@@ -364,11 +509,21 @@ impl irs_mcp::SamplingHandler for LlmSampler {
                 system: params["systemPrompt"].as_str().map(str::to_string),
                 messages,
                 tools: vec![],
-                max_tokens: params["maxTokens"].as_u64().map(|m| m as u32).unwrap_or(cap).min(cap.max(1)),
+                max_tokens: params["maxTokens"]
+                    .as_u64()
+                    .map(|m| m as u32)
+                    .unwrap_or(cap)
+                    .min(cap.max(1)),
                 temperature: params["temperature"].as_f64().map(|t| t as f32),
             };
-            let resp = stream_chat(&cfg, &req, &mut |_| {}).await.map_err(|e| e.to_string())?;
-            let text = Message { role: Role::Assistant, content: resp.content }.text();
+            let resp = stream_chat(&cfg, &req, &mut |_| {})
+                .await
+                .map_err(|e| e.to_string())?;
+            let text = Message {
+                role: Role::Assistant,
+                content: resp.content,
+            }
+            .text();
             Ok(json!({
                 "role": "assistant",
                 "content": { "type": "text", "text": text },

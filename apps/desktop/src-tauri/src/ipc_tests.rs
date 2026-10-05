@@ -367,3 +367,125 @@ fn runner_commands_stream_and_export() {
     assert_eq!(report["results"][1]["console"][0]["text"], "row 2");
     h.ok("runner_cancel", json!({"runId": run_id}));
 }
+
+#[test]
+fn ai_providers_requests_and_runs_with_approval() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let llm_base = rt
+        .block_on(irs_llm::mock::spawn(Default::default(), 0))
+        .unwrap();
+    let mcp_url = rt
+        .block_on(irs_mcp::mock::spawn_http(Default::default(), 0))
+        .unwrap();
+    let h = Harness::new();
+    let events: Arc<std::sync::Mutex<Vec<Value>>> = Arc::default();
+    let ev2 = events.clone();
+    tauri::Listener::listen_any(&h.w, "llm-event", move |ev| {
+        ev2.lock()
+            .unwrap()
+            .push(serde_json::from_str(ev.payload()).unwrap());
+    });
+
+    let p = h.ok(
+        "llm_provider_create",
+        json!({"name": "Mock", "kind": "anthropic"}),
+    );
+    assert_eq!(p["hasKey"], false);
+    assert_eq!(p["defaultModel"], "claude-opus-5-5");
+    let mut doc = p.clone();
+    doc["baseUrl"] = json!(llm_base);
+    doc["defaultModel"] = json!("mock-large");
+    h.ok("llm_provider_update", json!({"doc": doc}));
+    h.ok(
+        "llm_provider_set_key",
+        json!({"id": p["id"], "key": irs_llm::mock::MOCK_KEY}),
+    );
+    let list = h.ok("llm_provider_list", json!({}));
+    assert_eq!(list[0]["hasKey"], true);
+    assert!(
+        !list.to_string().contains(irs_llm::mock::MOCK_KEY),
+        "key never sent to the UI"
+    );
+    assert_eq!(
+        h.ok("llm_models", json!({"providerId": p["id"]})),
+        json!(["mock-large", "mock-small"])
+    );
+
+    let ws = h.ok("workspace_create", json!({"name": "AI"}));
+    let s = h.ok(
+        "mcp_server_create",
+        json!({"parentId": ws["id"], "name": "Repo"}),
+    );
+    let mut sdoc = h.ok("doc_get", json!({"id": s["id"]}));
+    sdoc["transport"] = json!({"kind": "streamable-http", "url": mcp_url});
+    h.ok("mcp_server_update", json!({"doc": sdoc}));
+    let r = h.ok(
+        "llm_request_create",
+        json!({"parentId": ws["id"], "name": "Cleanup"}),
+    );
+    assert_eq!(r["providerId"], p["id"], "defaults to the first provider");
+    let mut rdoc = r.clone();
+    rdoc["messages"] = json!([{"role": "user", "text": "please delete the old repo"}]);
+    rdoc["mcpServerIds"] = json!([s["id"]]);
+    h.ok("llm_request_update", json!({"doc": rdoc}));
+    assert_eq!(
+        h.ok("tree_get", json!({"workspaceId": ws["id"]}))[1]["kind"],
+        "llm"
+    );
+
+    h.ok(
+        "llm_run_start",
+        json!({"runId": "run_ui_1", "requestId": r["id"]}),
+    );
+    // wait for the approval request, then approve it from "the UI"
+    let call_id = (0..200)
+        .find_map(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            events.lock().unwrap().iter().find_map(|e| {
+                (e["event"]["type"] == "toolCall" && e["event"]["needsApproval"] == true)
+                    .then(|| e["event"]["call"]["id"].clone())
+            })
+        })
+        .unwrap_or_else(|| panic!("approval requested; got {:?}", events.lock().unwrap()));
+    assert!(
+        h.call(
+            "llm_approve",
+            json!({"runId": "run_ui_1", "callId": "nope", "allow": true})
+        )
+        .is_err()
+    );
+    h.ok(
+        "llm_approve",
+        json!({"runId": "run_ui_1", "callId": call_id, "allow": true}),
+    );
+    let saved = (0..200)
+        .find_map(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|e| e["event"]["type"] == "saved")
+                .cloned()
+        })
+        .expect("run saved");
+    assert_eq!(
+        saved["event"]["run"]["toolCalls"][0]["result"]["text"],
+        "ok: {\"repo\":\"acme/old\",\"confirm\":true}"
+    );
+    assert!(
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|e| e["runId"] == "run_ui_1")
+    );
+    assert_eq!(
+        h.ok("llm_runs", json!({"requestId": r["id"]}))
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    h.ok("item_duplicate", json!({"id": r["id"]}));
+}

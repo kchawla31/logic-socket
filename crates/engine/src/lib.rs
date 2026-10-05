@@ -83,10 +83,19 @@ impl Engine {
     /// Engines backed by a data directory keep API keys in the OS keychain
     /// (set `IRS_SECRET_STORE=memory` to disable, e.g. in CI); in-memory engines keep them in memory.
     pub fn new(store: Store, data_dir: Option<PathBuf>) -> Self {
-        let use_keychain = data_dir.is_some() && std::env::var("IRS_SECRET_STORE").as_deref() != Ok("memory");
-        let secrets: Arc<dyn llm::SecretStore> =
-            if use_keychain { Arc::new(llm::KeychainStore) } else { Arc::new(llm::MemoryStore::default()) };
-        Self { store, renderer: Arc::new(Renderer::new()), data_dir, secrets }
+        let use_keychain =
+            data_dir.is_some() && std::env::var("IRS_SECRET_STORE").as_deref() != Ok("memory");
+        let secrets: Arc<dyn llm::SecretStore> = if use_keychain {
+            Arc::new(llm::KeychainStore)
+        } else {
+            Arc::new(llm::MemoryStore::default())
+        };
+        Self {
+            store,
+            renderer: Arc::new(Renderer::new()),
+            data_dir,
+            secrets,
+        }
     }
 
     pub fn with_secrets(mut self, secrets: Arc<dyn llm::SecretStore>) -> Self {

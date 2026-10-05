@@ -353,23 +353,18 @@ model!(McpServer, "McpServer", "mcp");
 // ---------------------------------------------------------------- LLM
 
 /// Where a provider's API key comes from. Keys are never stored in the database.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum KeySource {
     /// Not needed (e.g. local Ollama).
     None,
     /// OS keychain entry `insomnia-rs` / `<provider id>`.
+    #[default]
     Keychain,
     /// Process environment variable, e.g. `ANTHROPIC_API_KEY`.
     Env { var: String },
     /// Template rendered against the workspace environment, e.g. `{{ _.openai_key }}`.
     Template { template: String },
-}
-
-impl Default for KeySource {
-    fn default() -> Self {
-        KeySource::Keychain
-    }
 }
 
 /// A configured AI provider (global, not tied to a workspace).
@@ -423,7 +418,10 @@ impl Default for LlmRequest {
             provider_id: None,
             model: String::new(),
             system: String::new(),
-            messages: vec![LlmPromptMessage { role: "user".into(), text: String::new() }],
+            messages: vec![LlmPromptMessage {
+                role: "user".into(),
+                text: String::new(),
+            }],
             max_tokens: 4096,
             temperature: None,
             mcp_server_ids: vec![],

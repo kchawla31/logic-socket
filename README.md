@@ -5,6 +5,7 @@ A Rust rewrite of the Insomnia API client: a desktop app (Tauri 2 + React) and t
 - **HTTP**: environments with Insomnia's variable precedence, `{{ _.var }}` + template tags, folder-inherited headers/auth, cookies, redirects with a curl-style timeline, response history
 - **MCP Inspector**: stdio and Streamable HTTP servers; tools shown as readable cards (behavior badges, parameter tables with nested fields/constraints/enums), generated call forms with live schema validation, resources, prompts, notifications, and a full JSON-RPC protocol log with latencies
 - **Scripts & tests**: pre-request / after-response scripts with Insomnia's `insomnia.*` API in a QuickJS sandbox (chai, lodash, crypto-js, moment, uuid, ajv, tv4), test results and console per response
+- **AI requests (LLM ↔ MCP)**: Anthropic, OpenAI, Ollama or any OpenAI-compatible endpoint; streaming answers, thinking, and MCP tools the model can call — read-only tools run automatically, risky ones wait for your approval; token usage, time-to-first-token and the exact provider payloads; MCP sampling backed by your provider. Keys stay in the OS keychain
 - **Collection runner**: iterations, CSV/JSON data, delays, bail, `setNextRequest` flow control; spec/dot/json/JUnit reports; `irs run collection` for CI
 
 Status and scope: see `docs/PARITY.md` (what maps to which phase), `docs/PHASE1_REPORT.md`, `docs/PHASE2_REPORT.md`, and `docs/DECISIONS.md`.
@@ -35,6 +36,13 @@ irs request curl "My API" "curl https://httpbin.org/post -d a=1"
 irs mcp tools --stdio "npx -y @modelcontextprotocol/server-everything"
 irs mcp tools --url http://localhost:3333/mcp --log
 irs mcp call --url http://localhost:3333/mcp -t get_weather -a '{"city":"Berlin"}'
+
+# AI (keys: OS keychain by default, or --key-env / --key-template)
+irs llm provider add Claude --kind anthropic --model claude-sonnet-5-5
+irs llm chat "What's the weather in Berlin?" --mcp-url http://localhost:3333/mcp
+irs llm request add "My API" "Summarise issues" --prompt "Summarise open issues in {{ repo }}" --mcp GitHub
+irs llm request run "Summarise issues"
+irs llm mock-server            # offline mock (key: test-key) for trying it without an account
 
 # Runner (exit code 0 = all passed, 1 = failures, 2 = usage/runtime error)
 irs run collection "My API" -d data.csv -r junit -o report.xml

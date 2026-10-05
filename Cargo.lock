@@ -1916,6 +1916,7 @@ dependencies = [
  "futures",
  "irs-core",
  "irs-engine",
+ "irs-llm",
  "irs-mcp",
  "irs-runner",
  "irs-templating",

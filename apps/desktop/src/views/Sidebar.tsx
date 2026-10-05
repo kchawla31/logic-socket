@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Copy, Folder, FolderPlus, ListChecks, Pencil, Plug, Plus, Search, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Folder, FolderPlus, ListChecks, Pencil, Plug, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { IconButton, useDialog, useToast } from '../components/ui';
@@ -75,7 +75,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
     return () => window.removeEventListener('click', close);
   }, []);
 
-  const create = async (kind: 'request' | 'folder' | 'mcp', parentId: string) => {
+  const create = async (kind: 'request' | 'folder' | 'mcp' | 'llm', parentId: string) => {
     try {
       if (parentId !== workspaceId) toggle(parentId, true);
       if (kind === 'request') {
@@ -84,6 +84,9 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
       } else if (kind === 'folder') {
         const f = await api.folderCreate(parentId, 'New Folder');
         setRenaming(f.id);
+      } else if (kind === 'llm') {
+        const r = await api.llmRequestCreate(parentId, 'New AI Request');
+        onCreated(r.id, 'llm', r.name);
       } else {
         const s = await api.mcpServerCreate(parentId, 'New MCP Server');
         onCreated(s.id, 'mcp', s.name);
@@ -165,6 +168,8 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
               </>
             ) : n.kind === 'mcp' ? (
               <span className="w-9 shrink-0 text-right font-mono text-[10px] font-bold text-violet-600 dark:text-violet-400">MCP</span>
+            ) : n.kind === 'llm' ? (
+              <span className="w-9 shrink-0 text-right font-mono text-[10px] font-bold text-fuchsia-600 dark:text-fuchsia-400">AI</span>
             ) : (
               <span className={cn('w-9 shrink-0 text-right font-mono text-[10px] font-bold', methodColor(n.method))}>
                 {methodShort(n.method)}
@@ -221,6 +226,9 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
         <IconButton label="New MCP server" onClick={() => create('mcp', workspaceId)}>
           <Plug className="size-4" />
         </IconButton>
+        <IconButton label="New AI request" onClick={() => create('llm', workspaceId)}>
+          <Sparkles className="size-4" />
+        </IconButton>
         <IconButton label="Run collection" onClick={() => onRun(workspaceId)}>
           <ListChecks className="size-4" />
         </IconButton>
@@ -261,6 +269,9 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
               </MenuItem>
               <MenuItem icon={<Plug className="size-3.5" />} onClick={() => create('mcp', menu.node?.id ?? workspaceId)}>
                 New MCP server
+              </MenuItem>
+              <MenuItem icon={<Sparkles className="size-3.5" />} onClick={() => create('llm', menu.node?.id ?? workspaceId)}>
+                New AI request
               </MenuItem>
               <MenuItem icon={<ListChecks className="size-3.5" />} onClick={() => onRun(menu.node?.id ?? workspaceId)}>
                 {menu.node ? 'Run folder' : 'Run collection'}

@@ -44,7 +44,10 @@ pub enum McpError {
 /// Answers server-initiated `sampling/createMessage` requests (e.g. with an LLM).
 pub trait SamplingHandler: Send + Sync {
     /// `params` is the request's params; return the result object.
-    fn create_message(&self, params: Value) -> futures::future::BoxFuture<'static, Result<Value, String>>;
+    fn create_message(
+        &self,
+        params: Value,
+    ) -> futures::future::BoxFuture<'static, Result<Value, String>>;
 }
 
 #[derive(Clone)]
@@ -450,16 +453,25 @@ async fn dispatch(
                         && let Some(handler) = sampling.clone()
                     {
                         // May take seconds (LLM call): answer from a task so the dispatcher keeps running.
-                        let (transport, log, id) = (transport.clone(), log.clone(), msg["id"].clone());
-                        let fut = handler.create_message(msg.get("params").cloned().unwrap_or(Value::Null));
+                        let (transport, log, id) =
+                            (transport.clone(), log.clone(), msg["id"].clone());
+                        let fut = handler
+                            .create_message(msg.get("params").cloned().unwrap_or(Value::Null));
                         tokio::spawn(async move {
                             let started = Instant::now();
                             let reply = match fut.await {
                                 Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
-                                Err(e) => json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32603, "message": e}}),
+                                Err(e) => {
+                                    json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32603, "message": e}})
+                                }
                             };
                             let ms = (started.elapsed().as_secs_f64() * 100_000.0).round() / 100.0;
-                            log.push_frame(Direction::Out, &reply, Some("sampling/createMessage".into()), Some(ms));
+                            log.push_frame(
+                                Direction::Out,
+                                &reply,
+                                Some("sampling/createMessage".into()),
+                                Some(ms),
+                            );
                             if let Err(e) = transport.send(&reply).await {
                                 log.push_text(Direction::Error, e.to_string());
                             }

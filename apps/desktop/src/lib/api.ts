@@ -111,6 +111,13 @@ export type McpTransport =
   | { kind: 'streamable-http'; url: string }
   | { kind: 'stdio'; command: string; args: string[]; cwd?: string | null };
 
+export interface McpSampling {
+  enabled: boolean;
+  providerId?: string | null;
+  model?: string | null;
+  maxTokens: number;
+}
+
 export interface McpServer extends Meta {
   name: string;
   description: string;
@@ -120,7 +127,97 @@ export interface McpServer extends Meta {
   roots: { uri: string; name?: string | null }[];
   authentication: Auth;
   sslValidation?: boolean | null;
+  sampling: McpSampling;
 }
+
+// ---- AI
+
+export type KeySource = { type: 'none' } | { type: 'keychain' } | { type: 'env'; var: string } | { type: 'template'; template: string };
+
+export interface LlmProvider extends Meta {
+  name: string;
+  kind: 'anthropic' | 'openai' | 'ollama' | 'openai-compatible';
+  baseUrl: string;
+  keySource: KeySource;
+  defaultModel: string;
+  headers: KeyValue[];
+  hasKey: boolean;
+  suggestedModels: string[];
+}
+
+export interface LlmPromptMessage {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+export interface LlmRequest extends Meta {
+  name: string;
+  description: string;
+  providerId?: string | null;
+  model: string;
+  system: string;
+  messages: LlmPromptMessage[];
+  maxTokens: number;
+  temperature?: number | null;
+  mcpServerIds: string[];
+  maxTurns: number;
+  autoApprove: 'none' | 'read-only' | 'all';
+}
+
+export type LlmBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool_use'; id: string; name: string; input: unknown }
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error: boolean }
+  | { type: 'thinking'; thinking: string; signature?: string | null }
+  | { type: 'raw'; raw: unknown };
+
+export interface LlmMessage {
+  role: 'user' | 'assistant';
+  content: LlmBlock[];
+}
+
+export interface ToolCallInfo {
+  id: string;
+  name: string;
+  server: string;
+  tool: string;
+  input: unknown;
+  hints?: Hints | null;
+}
+
+export interface ToolResultInfo {
+  id: string;
+  isError: boolean;
+  denied: boolean;
+  text: string;
+  structured?: unknown;
+  latencyMs: number;
+}
+
+export interface LlmRun extends Meta {
+  providerName: string;
+  model: string;
+  transcript: LlmMessage[];
+  toolCalls: { call: ToolCallInfo; result?: ToolResultInfo }[];
+  inputTokens: number;
+  outputTokens: number;
+  turns: number;
+  stopReason: string;
+  ttftMs?: number | null;
+  totalMs: number;
+  error?: string | null;
+  requestBodies: unknown[];
+}
+
+export type AgentEvent =
+  | { type: 'turnStart'; turn: number }
+  | { type: 'stream'; turn: number; event: { type: 'textDelta' | 'thinkingDelta'; text: string } | { type: 'toolUseStart'; id: string; name: string } | { type: 'toolInputDelta'; id: string; partialJson: string } }
+  | { type: 'assistantMessage'; turn: number; message: LlmMessage; stopReason: string; usage: { inputTokens: number; outputTokens: number }; ttftMs?: number | null; totalMs: number }
+  | { type: 'toolCall'; turn: number; call: ToolCallInfo; needsApproval: boolean }
+  | { type: 'toolResult'; turn: number; result: ToolResultInfo }
+  | { type: 'done'; usage: { inputTokens: number; outputTokens: number }; turns: number; stopReason: string }
+  | { type: 'error'; message: string }
+  | { type: 'saved'; run: LlmRun };
 
 export interface TimelineEntry {
   kind: string;
@@ -172,7 +269,7 @@ export interface ResponseSummary {
 
 export interface TreeNode {
   id: string;
-  kind: 'folder' | 'request' | 'mcp';
+  kind: 'folder' | 'request' | 'mcp' | 'llm';
   name: string;
   method?: string | null;
   transport?: string | null;
@@ -415,7 +512,23 @@ export const api = {
     invoke<string>('runner_start', { run }),
   runnerCancel: (runId: string) => invoke<void>('runner_cancel', { runId }),
   runnerExport: (runId: string, reporter: 'junit' | 'json' | 'spec') => invoke<string>('runner_export', { runId, reporter }),
+  llmProviderList: () => invoke<LlmProvider[]>('llm_provider_list'),
+  llmProviderCreate: (name: string, kind: string) => invoke<LlmProvider>('llm_provider_create', { name, kind }),
+  llmProviderUpdate: (doc: LlmProvider) => invoke<LlmProvider>('llm_provider_update', { doc }),
+  llmProviderDelete: (id: string) => invoke<void>('llm_provider_delete', { id }),
+  llmProviderSetKey: (id: string, key: string) => invoke<void>('llm_provider_set_key', { id, key }),
+  llmModels: (providerId: string) => invoke<string[]>('llm_models', { providerId }),
+  llmRequestCreate: (parentId: string, name: string) => invoke<LlmRequest>('llm_request_create', { parentId, name }),
+  llmRequestUpdate: (doc: LlmRequest) => invoke<LlmRequest>('llm_request_update', { doc }),
+  llmRuns: (requestId: string) => invoke<LlmRun[]>('llm_runs', { requestId }),
+  llmRunStart: (runId: string, requestId: string) => invoke<void>('llm_run_start', { runId, requestId }),
+  llmApprove: (runId: string, callId: string, allow: boolean, reason?: string) => invoke<void>('llm_approve', { runId, callId, allow, reason: reason ?? null }),
+  llmCancel: (runId: string) => invoke<void>('llm_cancel', { runId }),
 };
+
+export function onLlmEvent(cb: (runId: string, ev: AgentEvent) => void): Promise<UnlistenFn> {
+  return listen<{ runId: string; event: AgentEvent }>('llm-event', e => cb(e.payload.runId, e.payload.event));
+}
 
 export function onRunnerEvent(cb: (runId: string, ev: RunEvent) => void): Promise<UnlistenFn> {
   return listen<{ runId: string; event: RunEvent }>('runner-event', e => cb(e.payload.runId, e.payload.event));

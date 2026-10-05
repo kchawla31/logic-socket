@@ -22,7 +22,11 @@ pub enum LlmError {
     #[error("network error: {0}")]
     Network(String),
     #[error("{provider} API error {status}: {message}")]
-    Api { provider: String, status: u16, message: String },
+    Api {
+        provider: String,
+        status: u16,
+        message: String,
+    },
     #[error("stream error: {0}")]
     Stream(String),
     #[error("cancelled")]
@@ -53,7 +57,12 @@ impl ProviderKind {
     /// Suggestions shown before the live model list loads.
     pub fn suggested_models(self) -> &'static [&'static str] {
         match self {
-            ProviderKind::Anthropic => &["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001", "claude-fable-5-1"],
+            ProviderKind::Anthropic => &[
+                "claude-opus-5-5",
+                "claude-sonnet-5-5",
+                "claude-haiku-4-5-20251001",
+                "claude-fable-5-1",
+            ],
             ProviderKind::Openai => &["gpt-5.6", "gpt-5.6-terra", "gpt-5.6-luna"],
             ProviderKind::Ollama => &["llama3.3", "qwen2.5-coder"],
             ProviderKind::OpenaiCompatible => &[],
@@ -87,7 +96,11 @@ impl ProviderConfig {
     }
 
     pub(crate) fn url(&self, path: &str) -> String {
-        format!("{}/{}", self.base_url.trim_end_matches('/'), path.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            self.base_url.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        )
     }
 
     pub(crate) fn client(&self) -> Result<reqwest::Client, LlmError> {
@@ -102,8 +115,14 @@ impl ProviderConfig {
         if self.base_url.trim().is_empty() {
             return Err(LlmError::Config("provider base URL is empty".into()));
         }
-        if self.kind.needs_key() && self.api_key.as_deref().unwrap_or("").is_empty() && self.kind != ProviderKind::OpenaiCompatible {
-            return Err(LlmError::Config(format!("no API key configured for {:?}", self.kind)));
+        if self.kind.needs_key()
+            && self.api_key.as_deref().unwrap_or("").is_empty()
+            && self.kind != ProviderKind::OpenaiCompatible
+        {
+            return Err(LlmError::Config(format!(
+                "no API key configured for {:?}",
+                self.kind
+            )));
         }
         Ok(())
     }
@@ -153,15 +172,27 @@ pub struct Message {
 
 impl Message {
     pub fn user(text: impl Into<String>) -> Self {
-        Self { role: Role::User, content: vec![Block::Text { text: text.into() }] }
+        Self {
+            role: Role::User,
+            content: vec![Block::Text { text: text.into() }],
+        }
     }
     pub fn assistant(text: impl Into<String>) -> Self {
-        Self { role: Role::Assistant, content: vec![Block::Text { text: text.into() }] }
+        Self {
+            role: Role::Assistant,
+            content: vec![Block::Text { text: text.into() }],
+        }
     }
     pub fn text(&self) -> String {
         self.content
             .iter()
-            .filter_map(|b| if let Block::Text { text } = b { Some(text.as_str()) } else { None })
+            .filter_map(|b| {
+                if let Block::Text { text } = b {
+                    Some(text.as_str())
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>()
             .join("")
     }
@@ -215,7 +246,11 @@ impl std::ops::AddAssign for Usage {
 
 /// Incremental output while a response streams.
 #[derive(Debug, Clone, Serialize, PartialEq)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum StreamEvent {
     TextDelta { text: String },
     ThinkingDelta { text: String },
@@ -255,25 +290,44 @@ pub async fn stream_chat(
 pub async fn list_models(cfg: &ProviderConfig) -> Result<Vec<String>, LlmError> {
     cfg.check()?;
     let client = cfg.client()?;
-    let mut rb = client.get(cfg.url(if cfg.kind == ProviderKind::Anthropic { "v1/models?limit=100" } else { "models" }));
+    let mut rb = client.get(cfg.url(if cfg.kind == ProviderKind::Anthropic {
+        "v1/models?limit=100"
+    } else {
+        "models"
+    }));
     rb = auth(cfg, rb);
-    let resp = rb.send().await.map_err(|e| LlmError::Network(e.to_string()))?;
+    let resp = rb
+        .send()
+        .await
+        .map_err(|e| LlmError::Network(e.to_string()))?;
     let status = resp.status();
-    let body: Value = resp.json().await.map_err(|e| LlmError::Network(e.to_string()))?;
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| LlmError::Network(e.to_string()))?;
     if !status.is_success() {
         return Err(api_error(cfg, status.as_u16(), &body));
     }
-    let mut ids: Vec<String> =
-        body["data"].as_array().into_iter().flatten().filter_map(|m| m["id"].as_str().map(str::to_string)).collect();
+    let mut ids: Vec<String> = body["data"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m["id"].as_str().map(str::to_string))
+        .collect();
     ids.sort();
     Ok(ids)
 }
 
-pub(crate) fn auth(cfg: &ProviderConfig, mut rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+pub(crate) fn auth(
+    cfg: &ProviderConfig,
+    mut rb: reqwest::RequestBuilder,
+) -> reqwest::RequestBuilder {
     let key = cfg.api_key.clone().unwrap_or_default();
     match cfg.kind {
         ProviderKind::Anthropic => {
-            rb = rb.header("x-api-key", key).header("anthropic-version", "2023-06-01");
+            rb = rb
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01");
         }
         _ if !key.is_empty() => {
             rb = rb.bearer_auth(key);
@@ -299,7 +353,11 @@ pub(crate) fn api_error(cfg: &ProviderConfig, status: u16, body: &Value) -> LlmE
         429 => " — rate limited; retry later",
         _ => "",
     };
-    LlmError::Api { provider: format!("{:?}", cfg.kind), status, message: format!("{message}{hint}") }
+    LlmError::Api {
+        provider: format!("{:?}", cfg.kind),
+        status,
+        message: format!("{message}{hint}"),
+    }
 }
 
 pub(crate) fn ms_since(t: Instant) -> f64 {
@@ -308,7 +366,16 @@ pub(crate) fn ms_since(t: Instant) -> f64 {
 
 /// Make an MCP tool name valid for providers (`^[a-zA-Z0-9_-]{1,64}$`).
 pub fn sanitize_tool_name(name: &str) -> String {
-    let s: String = name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' }).collect();
+    let s: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
     let s = if s.is_empty() { "tool".to_string() } else { s };
     s.chars().take(64).collect()
 }

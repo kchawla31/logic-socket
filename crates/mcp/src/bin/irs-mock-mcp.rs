@@ -57,7 +57,10 @@ async fn main() -> std::io::Result<()> {
             continue;
         }
         if msg["method"] == "tools/call" && msg["params"]["name"] == "ask_llm" {
-            let prompt = msg["params"]["arguments"]["prompt"].as_str().unwrap_or("hello").to_string();
+            let prompt = msg["params"]["arguments"]["prompt"]
+                .as_str()
+                .unwrap_or("hello")
+                .to_string();
             write(
                 &json!({"jsonrpc": "2.0", "id": "srv-2", "method": "sampling/createMessage", "params": {
                     "messages": [{"role": "user", "content": {"type": "text", "text": prompt}}],
@@ -66,18 +69,27 @@ async fn main() -> std::io::Result<()> {
                 &mut out,
             )
             .await?;
-            let mut answer = json!({"content": [{"type": "text", "text": "no answer"}], "isError": true});
+            let mut answer =
+                json!({"content": [{"type": "text", "text": "no answer"}], "isError": true});
             while let Some(l) = lines.next_line().await? {
                 let v: Value = serde_json::from_str(&l).unwrap_or(Value::Null);
                 if v["id"] == "srv-2" {
                     answer = match v.get("result") {
-                        Some(r) => json!({"content": [{"type": "text", "text": format!("LLM said: {}", r["content"]["text"].as_str().unwrap_or(""))}]}),
-                        None => json!({"content": [{"type": "text", "text": format!("sampling failed: {}", v["error"]["message"])}], "isError": true}),
+                        Some(r) => {
+                            json!({"content": [{"type": "text", "text": format!("LLM said: {}", r["content"]["text"].as_str().unwrap_or(""))}]})
+                        }
+                        None => {
+                            json!({"content": [{"type": "text", "text": format!("sampling failed: {}", v["error"]["message"])}], "isError": true})
+                        }
                     };
                     break;
                 }
             }
-            write(&json!({"jsonrpc": "2.0", "id": msg["id"], "result": answer}), &mut out).await?;
+            write(
+                &json!({"jsonrpc": "2.0", "id": msg["id"], "result": answer}),
+                &mut out,
+            )
+            .await?;
             continue;
         }
         let reply = handle(&msg).await;

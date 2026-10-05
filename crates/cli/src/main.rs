@@ -372,6 +372,7 @@ fn print_tree(engine: &Engine, parent: &str, depth: usize) -> Result<()> {
                 println!("{pad}{:<7} {name} {}", method_color(m), dim(&d.meta.id));
             }
             "McpServer" => println!("{pad}{:<7} {name} {}", magenta("MCP"), dim(&d.meta.id)),
+            "LlmRequest" => println!("{pad}{:<7} {name} {}", cyan("AI"), dim(&d.meta.id)),
             _ => {}
         }
     }

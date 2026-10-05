@@ -19,6 +19,7 @@ import {
   type ToolView,
 } from '../lib/api';
 import { clockTime, cn, formatMs } from '../lib/utils';
+import { useProviders } from './AiProviders';
 import { useAutosave } from './RequestView';
 import { ToolsPanel } from './McpTools';
 
@@ -306,6 +307,7 @@ function ConnectionSettings({ server, update, contextId }: { server: McpServer; 
           { id: 'auth', label: 'Auth', dot: auth.type === 'bearer' || auth.type === 'apikey' },
           { id: 'env', label: 'Env (stdio)', count: server.env.length },
           { id: 'roots', label: 'Roots', count: server.roots.length },
+          { id: 'sampling', label: 'Sampling', dot: !!server.sampling?.enabled },
           { id: 'general', label: 'General' },
         ]}
       />
@@ -337,6 +339,7 @@ function ConnectionSettings({ server, update, contextId }: { server: McpServer; 
           valuePlaceholder="name (optional)"
         />
       )}
+      {tab === 'sampling' && <SamplingSettings server={server} update={update} />}
       {tab === 'general' && (
         <div className="flex max-w-xl flex-col gap-2 p-3">
           <label className="text-muted">Name</label>
@@ -583,5 +586,37 @@ function ProtocolLog({ entries, onClear }: { entries: LogEntry[]; onClear: () =>
         )}
       </div>
     </Split>
+  );
+}
+
+function SamplingSettings({ server, update }: { server: McpServer; update: (p: Partial<McpServer>) => void }) {
+  const [providers] = useProviders();
+  const s = server.sampling ?? { enabled: false, providerId: null, model: null, maxTokens: 1024 };
+  const set = (p: Partial<typeof s>) => update({ sampling: { ...s, ...p } });
+  return (
+    <div className="flex max-w-xl flex-col gap-2.5 p-3">
+      <p className="text-[12.5px] text-muted">
+        Some MCP servers ask the client's LLM to generate text (<code className="font-mono">sampling/createMessage</code>). Allow it with a provider of your choice — every request is
+        recorded in the Protocol log. Reconnect after changing this.
+      </p>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" className="accent-[var(--color-accent)]" checked={s.enabled} onChange={e => set({ enabled: e.target.checked, providerId: s.providerId ?? providers[0]?.id ?? null })} />
+        Allow this server to use my AI provider
+      </label>
+      {s.enabled && (
+        <div className="grid grid-cols-3 gap-2">
+          <Select value={s.providerId ?? ''} onChange={e => set({ providerId: e.target.value })}>
+            {!providers.length && <option value="">Add a provider first</option>}
+            {providers.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
+          <Input value={s.model ?? ''} placeholder={providers.find(p => p.id === s.providerId)?.defaultModel ?? 'model'} onChange={e => set({ model: e.target.value || null })} />
+          <Input type="number" value={s.maxTokens || 1024} onChange={e => set({ maxTokens: Number(e.target.value) || 1024 })} title="Max tokens per request" />
+        </div>
+      )}
+    </div>
   );
 }
