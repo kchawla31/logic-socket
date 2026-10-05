@@ -44,6 +44,14 @@ irs llm request add "My API" "Summarise issues" --prompt "Summarise open issues 
 irs llm request run "Summarise issues"
 irs llm mock-server            # offline mock (key: test-key) for trying it without an account
 
+# Realtime and gRPC (try them against the local demo servers)
+irs mock realtime &            # ws://localhost:8790/ws, http://localhost:8790/events, Socket.IO on :8790
+irs rt ws://localhost:8790/ws -s hello
+irs rt http://localhost:8790/socket.io/ -k socketio --emit chat --args '["hi"]'
+irs mock grpc &                # demo.Greeter with reflection on :50051
+irs grpc grpc://localhost:50051 -l
+irs grpc grpc://localhost:50051 -m demo.Greeter/Chat --send '{"user":"a","text":"hi"}' --send '{"user":"a","text":"bye"}'
+
 # Runner (exit code 0 = all passed, 1 = failures, 2 = usage/runtime error)
 irs run collection "My API" -d data.csv -r junit -o report.xml
 ```

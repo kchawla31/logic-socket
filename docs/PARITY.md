@@ -19,12 +19,12 @@ Source paths are relative to `packages/`. Phase: 1 core/HTTP/env/MCP inspector �
 | MCP response / event log | models/mcp-response.ts | mcp::log (in-memory + persisted JSONL) | 1 |
 | Runner test results | models/runner-test-result.ts | core::model::RunResult | 2 |
 | Unit test suites | models/unit-test*.ts | covered by runner + scripts | 2 |
-| gRPC request / proto files | models/grpc-request.ts, proto-*.ts | core::model::GrpcRequest | 4 |
-| WebSocket / Socket.IO requests & payloads | models/websocket-*.ts, socket-io-*.ts | core::model::Ws*, SocketIo* | 4 |
+| gRPC request / proto files | models/grpc-request.ts, proto-*.ts | core::model::GrpcRequest, ProtoFile | 4 ✅ |
+| WebSocket / Socket.IO requests & payloads | models/websocket-*.ts, socket-io-*.ts | core::model::RealtimeRequest (websocket / sse / socketio) | 4 ✅ |
 | API spec (design docs) | models/api-spec.ts | core::model::ApiSpec | 5 |
 | Mock servers / routes | models/mock-*.ts | deferred (post-5) | — |
 | Git repository / credentials | models/git-*.ts, insomnia-vcs | sync crate | 5 |
-| Client / CA certificates | models/client-certificate.ts, ca-certificate.ts | http::tls | 4 |
+| Client / CA certificates | models/client-certificate.ts, ca-certificate.ts | http::tls | deferred (D29) |
 | Settings | models/settings.ts | core::model::Settings | 1 |
 | Organization / Project / cloud sync / user session | models/organization.ts, project.ts | local-only projects in 1; cloud out of scope | 1 / — |
 
@@ -38,15 +38,15 @@ Source paths are relative to `packages/`. Phase: 1 core/HTTP/env/MCP inspector �
 | Template tags (`{% uuid %}`, `{% now %}`, `{% base64 %}`, `{% hash %}`, `{% response %}`) | templating/ + plugins | templating::tags | 1 (response tag 2) |
 | Path params `/:id` | models/request.ts `applyPathParametersToUrl` | http::url | 1 |
 | Query params, URL encoding settings | network/network.ts | http::build | 1 |
-| Body: JSON, raw, form-urlencoded, multipart, file, GraphQL | network/network.ts, main/network/multipart.ts | http::body | 1 (GraphQL UI 4) |
+| Body: JSON, raw, form-urlencoded, multipart, file, GraphQL | network/network.ts, main/network/multipart.ts | http::body | 1 (GraphQL UI 4 ✅) |
 | Auth: none, basic, bearer, API key | main/network/get-auth-header.ts | http::auth | 1 |
-| Auth: digest, OAuth 1, OAuth 2 (all grants), AWS IAM, Hawk, NTLM, ASAP, netrc | get-auth-header.ts, o-auth-1/, o-auth-2/ | http::auth | 4 (OAuth2 + AWS earlier if time) |
+| Auth: digest, OAuth 1, OAuth 2 (all grants), AWS IAM, Hawk, NTLM, ASAP, netrc | get-auth-header.ts, o-auth-1/, o-auth-2/ | http::sign + engine::oauth2 | 4 ✅ digest, OAuth 1, OAuth 2 (client credentials, password, code + PKCE, refresh), AWS SigV4, netrc · ❌ implicit grant, Hawk, NTLM, ASAP |
 | Folder-inherited headers & auth | network/network.ts | engine::prepare | 1 |
 | Cookies (store/send settings) | network/network.ts, cookie-jar | http::cookies | 1 |
-| Redirects (global/on/off), timeout, TLS validation, proxy | main/network/libcurl-promise.ts | http::Options | 1 (proxy 4) |
+| Redirects (global/on/off), timeout, TLS validation, proxy | main/network/libcurl-promise.ts | http::Options | 1 (proxy 4 ✅) |
 | Timing breakdown (DNS, connect, TLS, TTFB, download) | main/network/request-timing.ts | http::timing | 1 |
 | Timeline (verbose request/response log) | libcurl-promise.ts debug | http::timeline | 1 |
-| SSE / event-stream requests | models/request.ts `isEventStreamRequest` | http::sse | 4 |
+| SSE / event-stream requests | models/request.ts `isEventStreamRequest` | realtime::sse | 4 ✅ |
 | Concurrent requests | — (single send in UI) | engine::send_many (bounded) | 1 |
 
 ## MCP
@@ -60,7 +60,7 @@ Source paths are relative to `packages/`. Phase: 1 core/HTTP/env/MCP inspector �
 | prompts/list, prompts/get | mcp.ts | mcp::Client | 1 |
 | Roots, resource subscriptions, notifications tab | ui/components/mcp/mcp-roots-panel.tsx, mcp-notification-tab.tsx | mcp::Client + UI | 1 (subscriptions 3) |
 | Elicitation form, sampling form (server → client requests) | ui/components/mcp/elicitation-form.tsx, sampling-form.tsx | mcp::server_requests + UI | 3 (needs LLM) |
-| MCP auth (OAuth `mcp_auth_flow`) | request.ts AuthTypeOAuth2 | http::auth::oauth2 | 4 |
+| MCP auth (OAuth `mcp_auth_flow`) | request.ts AuthTypeOAuth2 | engine::oauth2 | 4 (OAuth 2 for HTTP MCP servers not wired yet) |
 | Event log / timeline | ui/components/mcp/event-view.tsx | mcp::log + Protocol Log panel | 1 |
 | Readable tool inspector (schema table, annotation badges, generated forms) | not present (Insomnia shows raw JSON) | desktop MCP Inspector | 1 (new) |
 
@@ -107,7 +107,7 @@ Source: `packages/insomnia-scripting-environment/src/objects/` + `packages/insom
 | `request.headers` (`add, upsert, remove, get, has, each, toObject, all`), `request.addHeader/removeHeader/upsertHeader` | implement | |
 | `request.body` (`mode` raw/urlencoded/formdata/file/graphql, `raw`, `urlencoded`, `formdata`, `update()`) | implement | maps to body mime types |
 | `request.auth` (`type, update, parameters().get`) | implement | none/inherit/basic/bearer/apikey |
-| `request.certificate`, `request.proxy` | NotSupported | Phase 4 (proxy/certs) |
+| `request.certificate`, `request.proxy` | NotSupported | proxy via Settings (4); certificates deferred |
 | `response` (`code, status, headers, body, text(), json(), responseTime, size(), reason(), cookies`) | implement | after-response only |
 | `response.to.have.status/header/body/jsonBody`, `response.to.be.ok/success/error/json` | implement | chai plugin |
 | `cookies` (request URL cookies: `get, has, toObject`), `cookies.jar()` (`set, get, getAll, unset, clear`, callback style) | implement | jar changes persisted |
