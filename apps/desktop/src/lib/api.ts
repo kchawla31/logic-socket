@@ -512,6 +512,8 @@ export const api = {
   mcpServerUpdate: (doc: McpServer) => invoke<McpServer>('mcp_server_update', { doc }),
   curlParse: (text: string) => invoke<Request>('curl_parse', { text }),
   requestSend: (requestId: string) => invoke<ResponseView>('request_send', { requestId }),
+  graphqlQuery: (requestId: string, query: string, variables?: unknown) =>
+    invoke<{ data?: unknown; errors?: unknown }>('graphql_query', { requestId, query, variables: variables ?? null }),
   responseList: (requestId: string) => invoke<ResponseSummary[]>('response_list', { requestId }),
   responseGet: (id: string) => invoke<ResponseView>('response_get', { id }),
   responseClear: (requestId: string) => invoke<void>('response_clear', { requestId }),

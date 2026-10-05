@@ -2,6 +2,7 @@ import { Braces, Send } from 'lucide-react';
 import { type ClipboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { CodeEditor, KeyValueEditor } from '../components/editors';
+import { GraphQLEditor } from '../components/GraphQLEditor';
 import { ScriptEditor } from '../components/ScriptEditor';
 import { Button, Empty, Input, Kbd, Select, Split, Tabs, Toggle, useToast } from '../components/ui';
 import { VarInput } from '../components/VarInput';
@@ -13,6 +14,7 @@ import { ResponsePane } from './ResponsePane';
 const BODY_TYPES: { id: string; label: string }[] = [
   { id: '', label: 'No body' },
   { id: 'application/json', label: 'JSON' },
+  { id: 'application/graphql', label: 'GraphQL' },
   { id: 'application/x-www-form-urlencoded', label: 'Form URL-encoded' },
   { id: 'multipart/form-data', label: 'Multipart form' },
   { id: 'text/plain', label: 'Plain text' },
@@ -236,7 +238,11 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
                 <Select
                   aria-label="Body type"
                   value={BODY_TYPES.some(b => b.id === mime) ? mime : 'text/plain'}
-                  onChange={e => setBody({ mimeType: e.target.value || null })}
+                  onChange={e => {
+                    const mimeType = e.target.value || null;
+                    if (mimeType === 'application/graphql' && req.method === 'GET') update({ method: 'POST', body: { ...req.body, mimeType } });
+                    else setBody({ mimeType });
+                  }}
                   className="h-7 text-[12.5px]"
                 >
                   {BODY_TYPES.map(b => (
@@ -261,6 +267,9 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
                 )}
               </div>
               {!mime && <Empty title="This request has no body">Choose a body type above.</Empty>}
+              {mime === 'application/graphql' && (
+                <GraphQLEditor key={id} requestId={id} text={req.body.text ?? ''} onChange={text => setBody({ text })} />
+              )}
               {['application/json', 'text/plain', 'application/xml'].includes(mime) && (
                 <CodeEditor
                   value={req.body.text ?? ''}

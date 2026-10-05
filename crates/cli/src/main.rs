@@ -2,6 +2,7 @@
 
 mod llm_cmd;
 mod mcp_cmd;
+mod mock_gql;
 mod out;
 mod rt_cmd;
 mod run_cmd;
@@ -84,6 +85,11 @@ enum MockCmd {
     /// Mock LLM speaking Anthropic + OpenAI formats (key: test-key)
     Llm {
         #[arg(long, default_value_t = 8787)]
+        port: u16,
+    },
+    /// Canned GraphQL server (library schema) at /graphql
+    Graphql {
+        #[arg(long, default_value_t = 8791)]
         port: u16,
     },
     /// Mock MCP server over Streamable HTTP (/mcp)
@@ -246,6 +252,7 @@ async fn run(cli: Cli) -> Result<()> {
                 }
                 MockCmd::Llm { port } => irs_llm::mock::spawn(Default::default(), port).await?,
                 MockCmd::Mcp { port } => irs_mcp::mock::spawn_http(Default::default(), port).await?,
+                MockCmd::Graphql { port } => mock_gql::spawn(port).await?,
             };
             eprintln!("{} mock server on {url} — Ctrl-C to stop", green("●"));
             tokio::signal::ctrl_c().await?;

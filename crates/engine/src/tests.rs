@@ -734,3 +734,48 @@ fn realtime_options_render_and_inherit() {
     assert_eq!(o.auth, Some(json!({"token": "folder-token"})));
     assert_eq!(f.e.realtime_payload(rt.id(), "hi {{ user }}").unwrap(), "hi staging-user");
 }
+
+#[tokio::test]
+async fn graphql_query_uses_request_endpoint_headers_and_auth() {
+    use axum::{Json, routing::post};
+    let app = axum::Router::new().route(
+        "/graphql",
+        post(|headers: HeaderMap, Json(body): Json<Value>| async move {
+            if headers.get("authorization").and_then(|v| v.to_str().ok()) != Some("Bearer gql-token") {
+                return Json(json!({"errors": [{"message": "unauthenticated"}]}));
+            }
+            Json(json!({"data": {"__schema": {"queryType": {"name": "Query"}}, "echo": body}}))
+        }),
+    );
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = l.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    let e = Engine::in_memory();
+    let ws = e.store.insert(None, Workspace::default()).unwrap();
+    let mut base = e.base_environment(ws.id()).unwrap();
+    base.data = vars(json!({"host": format!("http://{addr}"), "tok": "gql-token"}));
+    e.store.update(&base).unwrap();
+    let r = e
+        .store
+        .insert(
+            Some(ws.id()),
+            Request {
+                method: "GET".into(),
+                url: "{{ host }}/graphql".into(),
+                authentication: Auth::Bearer { token: "{{ tok }}".into(), prefix: None, disabled: false },
+                body: Body { mime_type: Some(mime::GRAPHQL.into()), text: Some(r#"{"query":"{ me }"}"#.into()), ..Default::default() },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let v = e.graphql_query(r.id(), "query IntrospectionQuery { __schema { queryType { name } } }", Some(json!({"a": 1}))).await.unwrap();
+    assert_eq!(v["data"]["__schema"]["queryType"]["name"], "Query");
+    assert_eq!(v["data"]["echo"]["variables"], json!({"a": 1}));
+    assert!(e.responses(r.id()).unwrap().is_empty(), "introspection is not stored in history");
+
+    let mut no_auth = e.store.get::<Request>(r.id()).unwrap();
+    no_auth.authentication = Auth::None;
+    e.store.update(&no_auth).unwrap();
+    let err = e.graphql_query(r.id(), "{ __typename }", None).await.unwrap_err();
+    assert_eq!(err.to_string(), "GraphQL errors: unauthenticated");
+}

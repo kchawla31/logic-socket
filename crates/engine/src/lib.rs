@@ -30,6 +30,8 @@ pub enum EngineError {
     NoWorkspace(String),
     #[error("{0}")]
     Llm(String),
+    #[error("{0}")]
+    Message(String),
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;
@@ -439,6 +441,39 @@ impl Engine {
             Ok(doc)
         })?;
         Ok(doc)
+    }
+
+    /// Run a GraphQL query (e.g. introspection) against a request's endpoint,
+    /// reusing its rendered URL, headers, auth and cookies. Nothing is persisted.
+    pub async fn graphql_query(&self, request_id: &str, query: &str, variables: Option<serde_json::Value>) -> Result<serde_json::Value> {
+        let mut p = self.prepare(request_id, &[])?;
+        p.request.method = "POST".into();
+        let mut body = serde_json::json!({ "query": query });
+        if let Some(v) = variables {
+            body["variables"] = v;
+        }
+        p.request.body = irs_core::Body { mime_type: Some(irs_core::mime::JSON.into()), text: Some(body.to_string()), ..Default::default() };
+        p.request.headers.retain(|h| !h.name.eq_ignore_ascii_case("content-type"));
+        let (resp, _) = self.execute(&p).await?;
+        if let Some(e) = resp.error {
+            return Err(EngineError::Message(e));
+        }
+        let bytes = self.response_body(&resp);
+        let v: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
+            EngineError::Message(format!(
+                "HTTP {} {} — response is not JSON: {}",
+                resp.status_code,
+                resp.status_message,
+                String::from_utf8_lossy(&bytes).chars().take(200).collect::<String>()
+            ))
+        })?;
+        if v.get("data").is_none_or(|d| d.is_null())
+            && let Some(errs) = v.get("errors").and_then(|e| e.as_array())
+        {
+            let msgs: Vec<String> = errs.iter().filter_map(|e| e["message"].as_str().map(str::to_string)).collect();
+            return Err(EngineError::Message(format!("GraphQL errors: {}", msgs.join("; "))));
+        }
+        Ok(v)
     }
 
     /// Response body bytes (inline or from file).

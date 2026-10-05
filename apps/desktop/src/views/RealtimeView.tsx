@@ -314,9 +314,11 @@ export function RealtimeView({ id }: { id: string }) {
                 </button>
               ))}
               {shown.length === 0 && (
+                <div className="h-full font-sans">
                 <Empty icon={<Radio className="size-8" />} title={connected ? 'Waiting for messages…' : 'No messages yet'}>
                   Connect, then {req.kind === 'sse' ? 'events stream in here' : 'send a message — both directions are logged here'}.
                 </Empty>
+                </div>
               )}
             </div>
             <div className="flex h-full min-h-0 flex-col">

@@ -424,6 +424,11 @@ async fn request_send(state: State<'_, AppState>, request_id: String) -> CmdResu
 }
 
 #[tauri::command]
+async fn graphql_query(state: State<'_, AppState>, request_id: String, query: String, variables: Option<Value>) -> CmdResult<Value> {
+    state.engine.graphql_query(&request_id, &query, variables).await.map_err(e)
+}
+
+#[tauri::command]
 fn response_list(state: State<'_, AppState>, request_id: String) -> CmdResult<Vec<Value>> {
     Ok(state
         .engine
@@ -957,6 +962,9 @@ fn seed_if_empty(engine: &Engine) -> irs_core::store::Result<()> {
     Ok(())
 }
 
+/// Every event the backend emits to the UI (the dev web bridge forwards these).
+pub const APP_EVENTS: &[&str] = &["db-changed", "mcp-log", "runner-event", "llm-event", "rt-event"];
+
 /// Register state, events and commands. Shared by `run` and the IPC tests.
 pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> tauri::Builder<R> {
     builder
@@ -993,6 +1001,7 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             mcp_server_update,
             curl_parse,
             request_send,
+            graphql_query,
             response_list,
             response_get,
             response_clear,

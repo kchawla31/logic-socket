@@ -1994,6 +1994,7 @@ name = "irs-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "chrono",
  "clap",
  "futures",
