@@ -15,7 +15,7 @@ use crate::out::*;
 
 #[derive(Args, Debug)]
 pub struct ImportArgs {
-    /// File to import (`-` for stdin): Insomnia v4/v5, Postman collection/environment,
+    /// File to import (`-` for stdin): Logic Socket, Postman collection/environment, Insomnia,
     /// OpenAPI 3 / Swagger 2 (JSON or YAML), HAR, or curl commands
     pub file: String,
     /// Merge into an existing workspace instead of creating a new one
@@ -28,7 +28,9 @@ pub struct ImportArgs {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum ExportAs {
-    /// Insomnia v5 YAML (also imported by Insomnia)
+    /// Logic Socket YAML (everything; the Git sync format)
+    LogicSocket,
+    /// Insomnia v5 YAML
     Insomnia,
     /// Postman collection v2.1
     Postman,
@@ -39,7 +41,7 @@ pub enum ExportAs {
 #[derive(Args, Debug)]
 pub struct ExportArgs {
     pub workspace: String,
-    #[arg(long, short, value_enum, default_value = "insomnia")]
+    #[arg(long, short, value_enum, default_value = "logic-socket")]
     pub format: ExportAs,
     /// Output file (default: a file named after the workspace; `-` for stdout)
     #[arg(long, short)]
@@ -203,6 +205,7 @@ pub fn import(engine: &Engine, a: ImportArgs) -> Result<()> {
 pub fn export(engine: &Engine, a: ExportArgs) -> Result<()> {
     let ws = find::<Workspace>(engine, &a.workspace)?;
     let format = match a.format {
+        ExportAs::LogicSocket => ExportFormat::LogicSocket,
         ExportAs::Insomnia => ExportFormat::InsomniaV5,
         ExportAs::Postman => ExportFormat::Postman,
         ExportAs::Har => ExportFormat::Har,

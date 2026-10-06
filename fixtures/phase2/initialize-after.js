@@ -1,8 +1,8 @@
-insomnia.test('initialize succeeds', () => {
-  insomnia.response.to.have.status(200);
-  insomnia.expect(insomnia.response.json().result.serverInfo.name).to.equal('lsock-mock-mcp');
+ls.test('initialize succeeds', () => {
+  ls.response.to.have.status(200);
+  ls.expect(ls.response.json().result.serverInfo.name).to.equal('lsock-mock-mcp');
 });
-const sid = insomnia.response.headers.get('mcp-session-id');
-insomnia.test('server issued a session id', () => insomnia.expect(sid).to.match(/^sess-/));
-insomnia.environment.set('mcp_session', sid);
+const sid = ls.response.headers.get('mcp-session-id');
+ls.test('server issued a session id', () => ls.expect(sid).to.match(/^sess-/));
+ls.environment.set('mcp_session', sid);
 console.log('session', sid);

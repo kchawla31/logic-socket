@@ -1,5 +1,4 @@
-//! Script runtime tests. Cases marked "ported" mirror tests in
-//! packages/insomnia-scripting-environment/src/objects/__tests__.
+//! Script runtime tests.
 
 use super::*;
 use serde_json::json;
@@ -95,17 +94,16 @@ fn ok(o: &ScriptOutput) {
 
 #[tokio::test]
 async fn environment_get_set_unset_and_persist() {
-    // ported: environments.test.ts "test basic operations"
     let o = exec(input(
         r#"
-        insomnia.environment.set('newKey', 'v');
-        insomnia.environment.set('n', 42);
-        insomnia.environment.unset('token');
-        insomnia.baseEnvironment.set('fromScript', true);
-        insomnia.collectionVariables.set('alias', 'base');
-        insomnia.globals.set('g', 'x');
-        if (!insomnia.environment.has('newKey')) throw new Error('has failed');
-        if (insomnia.environment.name !== 'Staging') throw new Error('name');
+        ls.environment.set('newKey', 'v');
+        ls.environment.set('n', 42);
+        ls.environment.unset('token');
+        ls.baseEnvironment.set('fromScript', true);
+        ls.collectionVariables.set('alias', 'base');
+        ls.globals.set('g', 'x');
+        if (!ls.environment.has('newKey')) throw new Error('has failed');
+        if (ls.environment.name !== 'Staging') throw new Error('name');
         "#,
     ))
     .await;
@@ -119,16 +117,15 @@ async fn environment_get_set_unset_and_persist() {
 }
 
 #[tokio::test]
-async fn variables_precedence_matches_insomnia() {
-    // ported: environments.test.ts "test environment overriding"
+async fn variables_follow_scope_precedence() {
     let mut i = input(
         r#"
-        const v = insomnia.variables;
-        insomnia.environment.set('r1', v.get('value'));
+        const v = ls.variables;
+        ls.environment.set('r1', v.get('value'));
         v.set('value', 'local-value');
-        insomnia.environment.set('r2', v.get('value'));
-        insomnia.environment.set('r3', v.get('host'));
-        insomnia.environment.set('r4', v.replaceIn('{{ host }}/{{value}}'));
+        ls.environment.set('r2', v.get('value'));
+        ls.environment.set('r3', v.get('host'));
+        ls.environment.set('r4', v.replaceIn('{{ host }}/{{value}}'));
         "#,
     );
     i.iteration_data = vars(json!({ "value": "iterationData-value" }));
@@ -153,10 +150,9 @@ async fn variables_precedence_matches_insomnia() {
 
 #[tokio::test]
 async fn request_url_query_headers_method_mutations() {
-    // ported: request.test.ts / urls.test.ts basics
     let o = exec(input(
         r#"
-        const r = insomnia.request;
+        const r = ls.request;
         if (r.url.toString() !== 'https://api.example.com/users/{{ _.id }}?page=1') throw new Error(r.url.toString());
         if (r.url.getHost() !== 'api.example.com') throw new Error('host ' + r.url.getHost());
         r.url.query.upsert({ key: 'page', value: '2' });
@@ -192,9 +188,9 @@ async fn request_url_query_headers_method_mutations() {
 async fn request_url_assignment_and_body_and_auth() {
     let o = exec(input(
         r#"
-        insomnia.request.url = 'https://other.io/v2/items?limit=5';
-        insomnia.request.body.update({ mode: 'raw', raw: JSON.stringify({ a: 1 }), options: { raw: { language: 'json' } } });
-        insomnia.request.auth.update({ type: 'bearer', bearer: [{ key: 'token', value: '{{ _.token }}' }] });
+        ls.request.url = 'https://other.io/v2/items?limit=5';
+        ls.request.body.update({ mode: 'raw', raw: JSON.stringify({ a: 1 }), options: { raw: { language: 'json' } } });
+        ls.request.auth.update({ type: 'bearer', bearer: [{ key: 'token', value: '{{ _.token }}' }] });
         "#,
     ))
     .await;
@@ -211,17 +207,16 @@ async fn request_url_assignment_and_body_and_auth() {
 
 #[tokio::test]
 async fn tests_and_chai_expect() {
-    // ported: test.test.ts
     let o = exec(after(
         r#"
-        insomnia.test('status is 200', () => { insomnia.expect(insomnia.response.code).to.eql(200); });
-        insomnia.test('fails', () => { insomnia.expect(1).to.equal(2); });
-        insomnia.test.skip('skipped', () => {});
-        insomnia.test('async passes', async () => { await new Promise(r => setTimeout(r, 10)); insomnia.expect(true).to.be.true; });
-        insomnia.test('json body', () => {
-          const data = insomnia.response.json();
-          insomnia.expect(data).to.have.property('id', 7);
-          insomnia.expect(data.tags).to.include('a');
+        ls.test('status is 200', () => { ls.expect(ls.response.code).to.eql(200); });
+        ls.test('fails', () => { ls.expect(1).to.equal(2); });
+        ls.test.skip('skipped', () => {});
+        ls.test('async passes', async () => { await new Promise(r => setTimeout(r, 10)); ls.expect(true).to.be.true; });
+        ls.test('json body', () => {
+          const data = ls.response.json();
+          ls.expect(data).to.have.property('id', 7);
+          ls.expect(data.tags).to.include('a');
         });
         "#,
         200,
@@ -250,21 +245,20 @@ async fn tests_and_chai_expect() {
 
 #[tokio::test]
 async fn response_assertions() {
-    // ported: response.test.ts assertion helpers
     let o = exec(after(
         r#"
-        insomnia.test('to', () => {
-          insomnia.response.to.have.status(200);
-          insomnia.response.to.have.status('OK');
-          insomnia.response.to.have.header('content-type');
-          insomnia.response.to.have.header('Content-Type', 'application/json');
-          insomnia.response.to.have.jsonBody('user.name', 'ada');
-          insomnia.response.to.be.ok;
-          insomnia.response.to.be.success;
-          insomnia.response.to.be.json;
-          insomnia.response.to.not.be.error;
+        ls.test('to', () => {
+          ls.response.to.have.status(200);
+          ls.response.to.have.status('OK');
+          ls.response.to.have.header('content-type');
+          ls.response.to.have.header('Content-Type', 'application/json');
+          ls.response.to.have.jsonBody('user.name', 'ada');
+          ls.response.to.be.ok;
+          ls.response.to.be.success;
+          ls.response.to.be.json;
+          ls.response.to.not.be.error;
         });
-        insomnia.test('negative', () => { insomnia.response.to.have.status(404); });
+        ls.test('negative', () => { ls.response.to.have.status(404); });
         "#,
         200,
         r#"{"user":{"name":"ada"}}"#,
@@ -280,9 +274,8 @@ async fn response_assertions() {
 
 #[tokio::test]
 async fn execution_skip_and_next_request() {
-    // ported: execution.test.ts
     let o = exec(input(
-        "insomnia.execution.skipRequest(); insomnia.execution.setNextRequest('Login');",
+        "ls.execution.skipRequest(); ls.execution.setNextRequest('Login');",
     ))
     .await;
     ok(&o);
@@ -293,9 +286,9 @@ async fn execution_skip_and_next_request() {
             next_request: Some("Login".into())
         }
     );
-    let o = exec(input("insomnia.execution.setNextRequest(null);")).await;
+    let o = exec(input("ls.execution.setNextRequest(null);")).await;
     assert_eq!(o.execution.next_request.as_deref(), Some("__stop__"));
-    let o = exec(after("insomnia.execution.skipRequest();", 200, "")).await;
+    let o = exec(after("ls.execution.skipRequest();", 200, "")).await;
     assert!(
         o.error
             .unwrap()
@@ -303,7 +296,7 @@ async fn execution_skip_and_next_request() {
             .contains("only be used in pre-request")
     );
     let o = exec(input(
-        "insomnia.environment.set('loc', insomnia.execution.location.join('/'));",
+        "ls.environment.set('loc', ls.execution.location.join('/'));",
     ))
     .await;
     assert_eq!(o.environment["loc"], json!("My Collection/Get user"));
@@ -311,13 +304,12 @@ async fn execution_skip_and_next_request() {
 
 #[tokio::test]
 async fn info_and_iteration_data() {
-    // ported: request-info.test.ts
     let mut i = input(
         r#"
-        insomnia.environment.set('ev', insomnia.info.eventName);
-        insomnia.environment.set('it', insomnia.info.iteration);
-        insomnia.environment.set('row', insomnia.iterationData.get('email'));
-        insomnia.environment.set('rn', insomnia.info.requestName);
+        ls.environment.set('ev', ls.info.eventName);
+        ls.environment.set('it', ls.info.iteration);
+        ls.environment.set('row', ls.iterationData.get('email'));
+        ls.environment.set('rn', ls.info.requestName);
         "#,
     );
     i.iteration_data = vars(json!({ "email": "a@b.c" }));
@@ -331,7 +323,6 @@ async fn info_and_iteration_data() {
 
 #[tokio::test]
 async fn console_is_captured_with_levels() {
-    // ported: console.test.ts
     let o = exec(input(
         "console.log('hi', {a: 1}); console.warn('careful'); console.error(new Error('boom'));",
     ))
@@ -354,14 +345,13 @@ async fn console_is_captured_with_levels() {
 
 #[tokio::test]
 async fn cookies_jar_operations() {
-    // ported: cookies.test.ts (jar set/get/unset)
     let mut i = input(
         r#"
-        const jar = insomnia.cookies.jar();
+        const jar = ls.cookies.jar();
         jar.set('https://api.example.com', 'session', 'abc', (err, c) => { if (err) throw err; });
-        jar.get('https://api.example.com/x', 'session', (err, v) => insomnia.environment.set('got', v));
+        jar.get('https://api.example.com/x', 'session', (err, v) => ls.environment.set('got', v));
         jar.unset('https://api.example.com', 'old');
-        insomnia.environment.set('reqCookie', insomnia.cookies.get('old'));
+        ls.environment.set('reqCookie', ls.cookies.get('old'));
         "#,
     );
     i.cookies = vec![Cookie {
@@ -394,17 +384,17 @@ async fn require_vendored_modules() {
         const Ajv = require('ajv');
         const tv4 = require('tv4');
         const chai = require('chai');
-        insomnia.environment.set('chunk', _.chunk([1,2,3], 2));
-        insomnia.environment.set('globalLodash', globalThis._.sum([1, 2]));
-        insomnia.environment.set('sha', CryptoJS.SHA256('abc').toString());
-        insomnia.environment.set('hmac', CryptoJS.HmacSHA256('msg', 'key').toString(CryptoJS.enc.Base64));
-        insomnia.environment.set('year', moment('2020-05-17').format('YYYY'));
-        insomnia.environment.set('uuidOk', uuid.validate(uuid.v4()));
+        ls.environment.set('chunk', _.chunk([1,2,3], 2));
+        ls.environment.set('globalLodash', globalThis._.sum([1, 2]));
+        ls.environment.set('sha', CryptoJS.SHA256('abc').toString());
+        ls.environment.set('hmac', CryptoJS.HmacSHA256('msg', 'key').toString(CryptoJS.enc.Base64));
+        ls.environment.set('year', moment('2020-05-17').format('YYYY'));
+        ls.environment.set('uuidOk', uuid.validate(uuid.v4()));
         const ajv = new Ajv();
-        insomnia.environment.set('ajv', ajv.validate({ type: 'object', required: ['a'] }, { a: 1 }));
-        insomnia.environment.set('tv4', tv4.validate(5, { type: 'number' }));
-        insomnia.environment.set('chai', typeof chai.expect);
-        insomnia.environment.set('b64', btoa('hi') + '|' + atob('aGk='));
+        ls.environment.set('ajv', ajv.validate({ type: 'object', required: ['a'] }, { a: 1 }));
+        ls.environment.set('tv4', tv4.validate(5, { type: 'number' }));
+        ls.environment.set('chai', typeof chai.expect);
+        ls.environment.set('b64', btoa('hi') + '|' + atob('aGk='));
         "#,
     ))
     .await;
@@ -442,13 +432,8 @@ async fn unsupported_modules_and_apis_fail_clearly() {
             o.error
         );
     }
-    let o = exec(input("insomnia.vault.get('x')")).await;
-    assert!(
-        o.error
-            .unwrap()
-            .message
-            .contains("NotSupported: insomnia.vault")
-    );
+    let o = exec(input("ls.vault.get('x')")).await;
+    assert!(o.error.unwrap().message.contains("NotSupported: ls.vault"));
     let o = exec(input("fetch('http://x')")).await;
     assert!(
         o.error.unwrap().message.contains("fetch"),
@@ -459,7 +444,7 @@ async fn unsupported_modules_and_apis_fail_clearly() {
 #[tokio::test]
 async fn errors_report_script_line_and_keep_partial_results() {
     let o = exec(input(
-        "insomnia.environment.set('before', 1);\nconsole.log('x');\nundefinedFunction();\n",
+        "ls.environment.set('before', 1);\nconsole.log('x');\nundefinedFunction();\n",
     ))
     .await;
     let e = o.error.unwrap();
@@ -552,22 +537,22 @@ impl Host for Echo {
 #[tokio::test]
 async fn send_request_callback_and_promise() {
     let script = r#"
-        const r1 = await insomnia.sendRequest('https://x.io/a');
-        insomnia.environment.set('code', r1.code);
-        await new Promise(resolve => insomnia.sendRequest({
+        const r1 = await ls.sendRequest('https://x.io/a');
+        ls.environment.set('code', r1.code);
+        await new Promise(resolve => ls.sendRequest({
             url: 'https://x.io/b', method: 'post',
             header: [{ key: 'X-A', value: '1' }],
             body: { mode: 'raw', raw: 'hello' },
         }, (err, res) => {
-            insomnia.environment.set('echo', res.json().body);
-            insomnia.environment.set('hdr', res.headers.get('x-echo'));
+            ls.environment.set('echo', res.json().body);
+            ls.environment.set('hdr', res.headers.get('x-echo'));
             resolve();
         }));
-        await new Promise(resolve => insomnia.sendRequest('https://fail.io', (err, res) => {
-            insomnia.environment.set('err', err);
+        await new Promise(resolve => ls.sendRequest('https://fail.io', (err, res) => {
+            ls.environment.set('err', err);
             resolve();
         }));
-        try { await insomnia.sendRequest('https://fail.io'); } catch (e) { insomnia.environment.set('rejected', e.message); }
+        try { await ls.sendRequest('https://fail.io'); } catch (e) { ls.environment.set('rejected', e.message); }
     "#;
     let o = run(
         input(script),
@@ -588,8 +573,8 @@ async fn send_request_callback_and_promise() {
 async fn timers_run_before_finish_and_clear_timeout_works() {
     let o = exec(input(
         r#"
-        setTimeout(() => insomnia.environment.set('late', 'yes'), 20);
-        const id = setTimeout(() => insomnia.environment.set('cancelled', 'no'), 10);
+        setTimeout(() => ls.environment.set('late', 'yes'), 20);
+        const id = setTimeout(() => ls.environment.set('cancelled', 'no'), 10);
         clearTimeout(id);
         "#,
     ))
@@ -602,7 +587,7 @@ async fn timers_run_before_finish_and_clear_timeout_works() {
 #[tokio::test]
 async fn dollar_and_pm_aliases_and_parent_folders() {
     let mut i = input(
-        "$.environment.set('a', 1); pm.environment.set('b', 2); insomnia.environment.set('f', insomnia.parentFolders.get('Auth').environment.get('scope'));",
+        "$.environment.set('a', 1); pm.environment.set('b', 2); ls.environment.set('f', ls.parentFolders.get('Auth').environment.get('scope'));",
     );
     i.folders = vec![FolderVars {
         name: "Auth".into(),
@@ -641,7 +626,7 @@ async fn each_vendored_module_loads_alone() {
 
 #[tokio::test]
 async fn oauth2_auth_is_preserved_through_scripts() {
-    let mut i = input("insomnia.environment.set('t', insomnia.request.auth.type);");
+    let mut i = input("ls.environment.set('t', ls.request.auth.type);");
     i.request.auth =
         json!({"type": "oauth2", "grantType": "client_credentials", "clientId": "app"});
     let o = exec(i).await;

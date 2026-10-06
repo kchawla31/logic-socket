@@ -260,7 +260,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
         {renderNodes(visible, 0, workspaceId)}
         {visible.length === 0 && (
           <div className="p-4 text-center text-[12.5px] text-muted">
-            {q ? 'No matches' : 'Nothing here yet — create a request, folder or MCP server above, or import a Postman/Insomnia/OpenAPI file.'}
+            {q ? 'No matches' : 'Nothing here yet — create a request, folder or MCP server above, or import a Postman or OpenAPI file.'}
           </div>
         )}
       </div>

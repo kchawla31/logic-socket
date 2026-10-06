@@ -5,7 +5,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { BookOpen, ChevronDown } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import snippets from '../lib/script-snippets.json';
+import { SCRIPT_API } from '../lib/script-api';
 import { cn } from '../lib/utils';
 import { useDark } from './editors';
 import { Button } from './ui';
@@ -17,60 +17,63 @@ const EXAMPLES: { label: string; phase: Phase | 'both'; code: string }[] = [
   {
     label: 'Test: status is 200',
     phase: 'after',
-    code: "insomnia.test('status is 200', () => {\n  insomnia.response.to.have.status(200);\n});\n",
+    code: "ls.test('status is 200', () => {\n  ls.response.to.have.status(200);\n});\n",
   },
   {
     label: 'Test: JSON body field',
     phase: 'after',
-    code: "insomnia.test('has an id', () => {\n  const body = insomnia.response.json();\n  insomnia.expect(body).to.have.property('id');\n});\n",
+    code: "ls.test('has an id', () => {\n  const body = ls.response.json();\n  ls.expect(body).to.have.property('id');\n});\n",
   },
   {
     label: 'Save a token from the response',
     phase: 'after',
-    code: "const { token } = insomnia.response.json();\ninsomnia.environment.set('token', token);\n",
+    code: "const { token } = ls.response.json();\nls.environment.set('token', token);\n",
   },
   {
     label: 'Add a header',
     phase: 'pre',
-    code: "insomnia.request.headers.upsert({ key: 'X-Request-Id', value: require('uuid').v4() });\n",
+    code: "ls.request.headers.upsert({ key: 'X-Request-Id', value: require('uuid').v4() });\n",
   },
   {
     label: 'Sign the request (HMAC-SHA256)',
     phase: 'pre',
     code:
-      "const CryptoJS = require('crypto-js');\nconst ts = Date.now().toString();\nconst sig = CryptoJS.HmacSHA256(ts + insomnia.request.body.raw, insomnia.environment.get('secret')).toString();\ninsomnia.request.headers.upsert({ key: 'X-Timestamp', value: ts });\ninsomnia.request.headers.upsert({ key: 'X-Signature', value: sig });\n",
+      "const CryptoJS = require('crypto-js');\nconst ts = Date.now().toString();\nconst sig = CryptoJS.HmacSHA256(ts + ls.request.body.raw, ls.environment.get('secret')).toString();\nls.request.headers.upsert({ key: 'X-Timestamp', value: ts });\nls.request.headers.upsert({ key: 'X-Signature', value: sig });\n",
   },
   {
     label: 'Fetch a token first (sendRequest)',
     phase: 'pre',
     code:
-      "const res = await insomnia.sendRequest({\n  url: insomnia.environment.get('base_url') + '/oauth/token',\n  method: 'POST',\n  header: [{ key: 'Content-Type', value: 'application/json' }],\n  body: { mode: 'raw', raw: JSON.stringify({ client_id: insomnia.environment.get('client_id') }) },\n});\ninsomnia.variables.set('access_token', res.json().access_token);\n",
+      "const res = await ls.sendRequest({\n  url: ls.environment.get('base_url') + '/oauth/token',\n  method: 'POST',\n  header: [{ key: 'Content-Type', value: 'application/json' }],\n  body: { mode: 'raw', raw: JSON.stringify({ client_id: ls.environment.get('client_id') }) },\n});\nls.variables.set('access_token', res.json().access_token);\n",
   },
-  { label: 'Skip this request', phase: 'pre', code: 'insomnia.execution.skipRequest();\n' },
+  { label: 'Skip this request', phase: 'pre', code: 'ls.execution.skipRequest();\n' },
   {
     label: 'Poll until ready (runner)',
     phase: 'after',
-    code: "if (insomnia.response.json().status !== 'ready') {\n  insomnia.execution.setNextRequest(insomnia.info.requestName);\n}\n",
+    code: "if (ls.response.json().status !== 'ready') {\n  ls.execution.setNextRequest(ls.info.requestName);\n}\n",
   },
-  { label: 'Log to the Console tab', phase: 'both', code: "console.log('value:', insomnia.variables.get('base_url'));\n" },
+  { label: 'Log to the Console tab', phase: 'both', code: "console.log('value:', ls.variables.get('base_url'));\n" },
 ];
 
-const completions = (snippets as { name: string; value: string; displayValue: string }[]).map(s => ({
-  label: s.value.replace(/\(\)$/, ''),
-  apply: s.value,
-  type: s.value.endsWith(')') ? 'method' : 'property',
-  detail: s.displayValue.endsWith(')') ? 'method' : '',
+const completions = SCRIPT_API.map(e => ({
+  label: e.path,
+  apply: e.args ? `${e.path}()` : e.path,
+  type: e.args ? 'method' : 'property',
+  detail: e.args ?? '',
+  info: e.doc,
 }));
 
-function insomniaCompletions(ctx: CompletionContext) {
-  const word = ctx.matchBefore(/(insomnia|\$|pm)(\.[\w]*)*\.?/);
+/** Completions for `ls.`, and the `pm.` / `$.` aliases. */
+function scriptCompletions(ctx: CompletionContext) {
+  const word = ctx.matchBefore(/(ls|\$|pm)(\.[\w]*)*\.?/);
   if (!word || (word.from === word.to && !ctx.explicit)) return null;
-  const prefix = word.text.replace(/^(\$|pm)\./, 'insomnia.');
+  const alias = word.text.split('.')[0];
+  const prefix = word.text.replace(/^(\$|pm)\./, 'ls.');
   return {
     from: word.from,
     options: completions
       .filter(c => c.label.startsWith(prefix.replace(/\.$/, '')) || c.label.startsWith(prefix))
-      .map(c => ({ ...c, apply: word.text.startsWith('insomnia') ? c.apply : c.apply.replace(/^insomnia/, word.text.split('.')[0]) })),
+      .map(c => (alias === 'ls' ? c : { ...c, label: c.label.replace(/^ls/, alias), apply: c.apply.replace(/^ls/, alias) })),
     validFor: /^[\w.$]*$/,
   };
 }
@@ -80,7 +83,7 @@ export function ScriptEditor({ value, onChange, phase }: { value: string; onChan
   const viewRef = useRef<EditorView | null>(null);
   const [menu, setMenu] = useState(false);
   const extensions = useMemo(
-    () => [javascript(), EditorView.lineWrapping, autocompletion({ override: [insomniaCompletions], activateOnTyping: true })],
+    () => [javascript(), EditorView.lineWrapping, autocompletion({ override: [scriptCompletions], activateOnTyping: true })],
     [],
   );
   useEffect(() => {
@@ -137,12 +140,12 @@ export function ScriptEditor({ value, onChange, phase }: { value: string; onChan
           extensions={extensions}
           height="100%"
           style={{ height: '100%' }}
-          placeholder={phase === 'pre' ? "// e.g. insomnia.environment.set('ts', Date.now());" : "// e.g. insomnia.test('ok', () => insomnia.response.to.have.status(200));"}
+          placeholder={phase === 'pre' ? "// e.g. ls.environment.set('ts', Date.now());" : "// e.g. ls.test('ok', () => ls.response.to.have.status(200));"}
           basicSetup={{ autocompletion: false, foldGutter: true, lineNumbers: true }}
         />
       </div>
       <div className="shrink-0 border-t border-app px-3 py-1 text-[11px] text-muted">
-        Type <code className="font-mono">insomnia.</code> for completions · <code className="font-mono">require()</code>: chai, lodash, uuid, crypto-js, moment, tv4, ajv
+        Type <code className="font-mono">ls.</code> for completions · <code className="font-mono">require()</code>: chai, lodash, uuid, crypto-js, moment, tv4, ajv
       </div>
     </div>
   );

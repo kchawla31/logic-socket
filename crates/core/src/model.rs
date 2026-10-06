@@ -1,5 +1,5 @@
 //! Typed document models. Field names serialize as camelCase so the UI and a
-//! future Insomnia import/export layer see the same shapes as Insomnia.
+//! import/export layer see stable shapes.
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -118,7 +118,7 @@ model!(Workspace, "Workspace", "wrk");
     rename_all_fields = "camelCase"
 )]
 pub enum Auth {
-    /// Inherit from the nearest folder (Insomnia stores this as `{}`).
+    /// Inherit from the nearest folder.
     #[default]
     Inherit,
     None,
@@ -406,7 +406,7 @@ impl Default for Request {
     }
 }
 
-/// Matches `/:param` segments (Insomnia's PATH_PARAMETER_REGEX `/\/:[^/?#:]+/g`).
+/// Matches `/:param` segments (`/\/:[^/?#:]+/g`).
 pub fn path_params_in_url(url: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let bytes = url.as_bytes();
@@ -706,7 +706,7 @@ pub struct McpRoot {
 #[serde(rename_all = "camelCase", default)]
 pub struct GitFile {
     pub workspace_id: String,
-    /// Path relative to the repository root, e.g. `insomnia.orders-api.yaml`.
+    /// Path relative to the repository root, e.g. `logic-socket.orders-api.yaml`.
     pub path: String,
 }
 
@@ -873,7 +873,7 @@ mod tests {
     }
 
     #[test]
-    fn auth_round_trips_with_insomnia_names() {
+    fn auth_round_trips_with_wire_names() {
         let a: Auth =
             serde_json::from_str(r#"{"type":"apikey","key":"X-Key","value":"v","addTo":"header"}"#)
                 .unwrap();

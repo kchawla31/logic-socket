@@ -81,9 +81,10 @@ pub fn vars_out(s: &str) -> String {
 
 // ------------------------------------------------------------------ scripts
 
-/// Rules from Insomnia's `translate-postman-script.ts`, in the same order. Rust's regex
-/// has no look-behind, so the "not preceded by `.`/`$`/`-`/quote/word" guard is a
-/// captured prefix group (`${p}`) that is written back.
+/// Rewrites for legacy Postman script APIs (`tests[…]`, `environment.x`, `postman.*`,
+/// `responseBody`, …) into `pm.*`, applied in order. Rust's regex has no look-behind,
+/// so the "not preceded by `.`/`$`/`-`/quote/word" guard is a captured prefix group
+/// (`${p}`) that is written back.
 static SCRIPT_RULES: LazyLock<Vec<(Regex, String)>> = LazyLock::new(|| {
     const P: &str = r#"(?P<p>^|[^.$\-"'\w])"#;
     // `p` is capture group 1, so the rule's own groups start at 2
@@ -173,24 +174,20 @@ static SCRIPT_RULES: LazyLock<Vec<(Regex, String)>> = LazyLock::new(|| {
             r"postman\.getResponseHeader\((.*?)\)",
             "${p}pm.response.headers.get(${1})",
         ),
-        r(r"pm\.", "${p}insomnia."),
     ]
 });
 
-/// Translate a Postman script (legacy globals and `pm.*`) to the `insomnia.*` API.
+/// Translate a Postman script (legacy globals and `pm.*`) to the `ls.*` API.
 pub fn translate_script(src: &str) -> String {
     let mut s = src.to_string();
     for (re, rep) in SCRIPT_RULES.iter() {
         s = re.replace_all(&s, rep.as_str()).into_owned();
     }
-    s
+    crate::rename_script_api(&s, "pm", "ls")
 }
 
-static TO_PM: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"(?m)(?P<p>^|[^.$\-"'\w])insomnia\."#).unwrap());
-
 pub fn script_to_postman(src: &str) -> String {
-    TO_PM.replace_all(src, "${p}pm.").into_owned()
+    crate::rename_script_api(src, "ls", "pm")
 }
 
 fn script_of(events: &[Value], listen: &str) -> Option<String> {
@@ -619,7 +616,7 @@ pub fn import_collection(v: &Value) -> Result<Imported> {
     let events = arr(v, "event");
     let pre = script_of(events, "prerequest");
     let post = script_of(events, "test");
-    // collection-level auth/scripts need a folder to live on (like Insomnia does)
+    // collection-level auth/scripts need a folder to live on
     if !auth.is_inherit() || pre.is_some() || post.is_some() {
         let f = Folder {
             name: name.clone(),

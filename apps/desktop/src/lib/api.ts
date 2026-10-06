@@ -612,7 +612,7 @@ export interface ImportSummary {
   warnings: string[];
 }
 
-export type ExportFormat = 'insomnia-v5' | 'postman' | 'har';
+export type ExportFormat = 'logic-socket' | 'postman' | 'har' | 'insomnia-v5';
 
 export interface Exported {
   fileName: string;

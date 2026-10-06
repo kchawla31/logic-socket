@@ -1,0 +1,28 @@
+{
+  "info": {
+    "name": "Acme Orders (v2.0)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Admin",
+      "auth": { "type": "basic", "basic": { "username": "admin", "password": "{{admin_password}}" } },
+      "item": [
+        {
+          "name": "Refund",
+          "request": {
+            "method": "post",
+            "url": "https://orders.acme.test/refunds",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "order", "value": "ord_1", "enabled": true },
+                { "key": "reason", "value": "duplicate", "enabled": false }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -34,117 +34,273 @@ fn find<'a>(b: &'a WorkspaceBundle, name: &str) -> &'a Request {
 #[test]
 fn every_fixture_is_detected() {
     let cases = [
-        ("insomnia4-basic.yaml", Format::InsomniaV4),
-        ("variable_inheritance.yaml", Format::InsomniaV5),
-        ("v5-spec-with-tests.yaml", Format::InsomniaV5),
-        ("postman-complex-v2_0.json", Format::PostmanCollection),
-        ("postman-complex-v2_1.json", Format::PostmanCollection),
-        ("postman-env.json", Format::PostmanEnvironment),
-        ("openapi3-petstore.json", Format::OpenApi3),
-        ("openapi3-security.yaml", Format::OpenApi3),
-        ("swagger2-petstore.json", Format::Swagger2),
-        ("har-deep.json", Format::Har),
-        ("har-form.json", Format::Har),
+        ("postman/orders-v2.1.json", Format::PostmanCollection),
+        ("postman/orders-v2.0.json", Format::PostmanCollection),
+        ("postman/auth-v2.1.json", Format::PostmanCollection),
+        (
+            "postman/staging.postman_environment.json",
+            Format::PostmanEnvironment,
+        ),
+        ("openapi/bookstore-v3.yaml", Format::OpenApi3),
+        ("openapi/bookstore-v2.json", Format::Swagger2),
+        ("har/browser-session.har", Format::Har),
+        ("har/single-request.json", Format::Har),
+        ("insomnia/orders.yaml", Format::InsomniaV5),
     ];
     for (f, want) in cases {
         assert_eq!(detect(&fixture(f)), Some(want), "{f}");
     }
-    assert_eq!(detect("curl https://x.io"), Some(Format::Curl));
+    assert_eq!(detect("# setup\ncurl https://x.io"), Some(Format::Curl));
+    assert_eq!(
+        detect("logicSocket: 1\nkind: collection\nname: X\n"),
+        Some(Format::LogicSocket)
+    );
     assert_eq!(detect("hello: world"), None);
     assert!(matches!(import("{}"), Err(ConvertError::Unknown)));
+}
+
+// ------------------------------------------------------------------ Logic Socket format
+
+#[test]
+fn native_format_round_trips_every_item_kind() {
+    let b = full_bundle();
+    let text = native::export(&b).unwrap();
+    assert!(
+        text.starts_with("logicSocket: 1\nkind: collection\n"),
+        "{text}"
+    );
+    let again = import(&text).unwrap();
+    assert_eq!(again.format, Format::LogicSocket);
+    assert!(again.warnings.is_empty(), "{:?}", again.warnings);
+    assert_eq!(again.workspaces[0], b);
+}
+
+#[test]
+fn native_format_is_readable_and_keeps_local_state_out() {
+    let mut b = full_bundle();
+    b.workspace.active_environment_id = Some("env_2".into());
+    let text = native::export(&b).unwrap();
+    let v: serde_json::Value = serde_yaml_ng::from_str(&text).unwrap();
+    assert_eq!(v["name"], "Everything");
+    assert!(v.get("activeEnvironmentId").is_none() && v.get("scope").is_none());
+    assert_eq!(v["environments"]["base"]["secretKeys"], json!(["token"]));
+    let kinds: Vec<&str> = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        ["folder", "realtime", "realtime", "realtime", "grpc", "mcp"]
+    );
+    assert_eq!(v["items"][0]["children"][1]["type"], "llm");
+    assert_eq!(
+        v["items"][0]["children"][0]["url"],
+        "{{ _.base }}/items/:id"
+    );
+    assert_eq!(
+        native::file_name_for("Shop API v2!"),
+        "logic-socket.shop-api-v2.yaml"
+    );
+    // newer files are refused with a clear message
+    let future = text.replacen("logicSocket: 1", "logicSocket: 9", 1);
+    assert!(
+        import(&future)
+            .unwrap_err()
+            .to_string()
+            .contains("update Logic Socket")
+    );
 }
 
 // ------------------------------------------------------------------ Postman
 
 #[test]
-fn postman_collections_v20_and_v21() {
-    for f in ["postman-complex-v2_0.json", "postman-complex-v2_1.json"] {
-        let (b, _) = one(f);
-        assert_eq!(b.workspace.name, "Complex Test Collection");
-        let Node::Folder(folder, kids) = &b.items[0].node else {
-            panic!("{f}: folder first")
-        };
-        assert_eq!(folder.name, "First Folder");
-        assert_eq!(kids.len(), 2);
-        let Node::Request(multipart) = &kids[0].node else {
-            panic!()
-        };
-        assert_eq!(multipart.url, "{{ base_url }}/api/users");
-        assert_eq!(multipart.body.mime_type.as_deref(), Some(mime::MULTIPART));
-        assert!(!multipart.body.params.is_empty());
-        let gql = find(&b, "Test Request GraphQL Body");
-        assert_eq!(gql.body.mime_type.as_deref(), Some(mime::GRAPHQL));
-        let v: serde_json::Value = serde_json::from_str(gql.body.text.as_deref().unwrap()).unwrap();
-        assert!(
-            v["query"]
-                .as_str()
-                .unwrap()
-                .starts_with("mutation loginUser")
-        );
-        assert!(
-            v["variables"].is_object(),
-            "variables parsed from Postman's string form"
-        );
-        assert!(
-            gql.headers
-                .iter()
-                .any(|h| h.name == "Content-Type" && h.value == mime::JSON)
-        );
-    }
+fn postman_v21_collection() {
+    let (b, w) = one("postman/orders-v2.1.json");
+    assert!(w.is_empty(), "{w:?}");
+    assert_eq!(b.workspace.name, "Acme Orders");
+    assert_eq!(
+        b.workspace.description,
+        "Orders service used by the storefront."
+    );
+    let env = &b.base_env.as_ref().unwrap().body.data;
+    assert_eq!(env["base_url"], json!("https://orders.acme.test"));
+    // collection auth + scripts live on a root folder named after the collection
+    let Node::Folder(root, kids) = &b.items[0].node else {
+        panic!("root folder")
+    };
+    assert_eq!(root.name, "Acme Orders");
+    assert!(
+        matches!(&root.authentication, Auth::Bearer { token, .. } if token == "{{ _['access-token'] }}")
+    );
+    assert_eq!(
+        root.pre_request_script.as_deref(),
+        Some("ls.variables.set('started', Date.now());")
+    );
+    assert_eq!(
+        kids.iter().map(|k| k.node.name()).collect::<Vec<_>>(),
+        ["Orders", "Sign in", "Search (GraphQL)", "Health"]
+    );
+
+    let list = find(&b, "List orders");
+    assert_eq!(list.url, "{{ base_url }}/orders");
+    assert_eq!(
+        list.parameters
+            .iter()
+            .map(|p| (p.name.as_str(), p.value.as_str(), p.disabled))
+            .collect::<Vec<_>>(),
+        [("status", "open", false), ("limit", "20", true)]
+    );
+    assert_eq!(
+        list.after_response_script.as_deref(),
+        Some(
+            "ls.test('status is 200', function() { ls.expect(ls.response.code === 200).to.be.true; });\nls.test('has orders', () => ls.expect(ls.response.json().orders).to.be.an('array'));"
+        )
+    );
+    assert_eq!(
+        find(&b, "Get order").path_parameters,
+        vec![KeyValue::new("orderId", "ord_123")]
+    );
+
+    let create = find(&b, "Create order");
+    assert_eq!(create.body.mime_type.as_deref(), Some(mime::JSON));
+    assert!(
+        create
+            .body
+            .text
+            .as_deref()
+            .unwrap()
+            .contains("\"quantity\": {% faker 'randomInt' %}")
+    );
+    assert!(
+        create
+            .body
+            .text
+            .as_deref()
+            .unwrap()
+            .contains("\"ref\": \"{% uuid 'v4' %}\"")
+    );
+    assert!(
+        create
+            .headers
+            .contains(&KeyValue::new("Content-Type", mime::JSON))
+    );
+
+    let upload = find(&b, "Upload invoice");
+    assert_eq!(upload.body.mime_type.as_deref(), Some(mime::MULTIPART));
+    let file = &upload.body.params[1];
+    assert_eq!(
+        (file.kind.as_deref(), file.file_name.as_deref()),
+        (Some("file"), Some("/tmp/invoice.pdf"))
+    );
+    assert!(upload.body.params[2].disabled);
+    assert!(
+        !upload
+            .headers
+            .iter()
+            .any(|h| h.name.eq_ignore_ascii_case("content-type")),
+        "multipart sets its own boundary"
+    );
+
+    let sign_in = find(&b, "Sign in");
+    assert_eq!(sign_in.body.mime_type.as_deref(), Some(mime::FORM));
+    assert_eq!(sign_in.body.params[0].value, "{% faker 'randomEmail' %}");
+
+    let gql = find(&b, "Search (GraphQL)");
+    assert_eq!(gql.body.mime_type.as_deref(), Some(mime::GRAPHQL));
+    let body: serde_json::Value = serde_json::from_str(gql.body.text.as_deref().unwrap()).unwrap();
+    assert_eq!(
+        body["variables"],
+        json!({"q": "open"}),
+        "variables parsed from Postman's string form"
+    );
+    assert!(
+        gql.headers
+            .contains(&KeyValue::new("Content-Type", mime::JSON))
+    );
+
+    let health = find(&b, "Health");
+    assert_eq!(
+        (health.method.as_str(), health.url.as_str()),
+        ("GET", "https://orders.acme.test/health")
+    );
+}
+
+#[test]
+fn postman_v20_collection() {
+    let (b, _) = one("postman/orders-v2.0.json");
+    let Node::Folder(admin, _) = &b.items[0].node else {
+        panic!()
+    };
+    assert!(
+        matches!(&admin.authentication, Auth::Basic { username, password, .. } if username == "admin" && password == "{{ admin_password }}")
+    );
+    let refund = find(&b, "Refund");
+    assert_eq!(refund.method, "POST");
+    assert_eq!(
+        refund
+            .body
+            .params
+            .iter()
+            .map(|p| p.disabled)
+            .collect::<Vec<_>>(),
+        [false, true],
+        "v2.0 uses `enabled`"
+    );
 }
 
 #[test]
 fn postman_auth_kinds() {
-    let (b, _) = one("postman-basic-auth-v2_0.json");
+    let (b, w) = one("postman/auth-v2.1.json");
+    assert!(matches!(find(&b, "no auth").authentication, Auth::None));
     assert!(
-        matches!(&requests(&b)[0].authentication, Auth::Basic { username, .. } if username == "basic-username")
+        matches!(&find(&b, "basic").authentication, Auth::Basic { username, .. } if username == "ana")
     );
-    let (b, _) = one("postman-api-key-header-v2_1.json");
     assert!(
-        matches!(&requests(&b)[0].authentication, Auth::ApiKey { key, add_to: Some(t), .. } if key == "test" && t == "header")
+        matches!(&find(&b, "digest").authentication, Auth::Digest { username, .. } if username == "ben")
     );
-    let (b, _) = one("postman-aws-signature-auth-v2_1.json");
     assert!(
-        matches!(&requests(&b)[0].authentication, Auth::Iam(c) if c.region == "aws-region" && c.service == "aws-service-name")
+        matches!(&find(&b, "api key in query").authentication, Auth::ApiKey { key, value, add_to: Some(t), .. } if key == "api_key" && value == "{{ key }}" && t == "queryParams")
     );
-    let (b, w) = one("postman-oauth2_0-auth-v2_1.json");
-    let Auth::OAuth2(pkce) = &find(&b, "pkce").authentication else {
+    assert!(
+        matches!(&find(&b, "aws").authentication, Auth::Iam(c) if c.region == "eu-west-1" && c.service == "execute-api")
+    );
+    assert!(
+        matches!(&find(&b, "oauth1").authentication, Auth::OAuth1(c) if c.consumer_key == "ck" && c.signature_method == "HMAC-SHA256")
+    );
+    let Auth::OAuth2(pkce) = &find(&b, "oauth2 pkce").authentication else {
         panic!()
     };
     assert!(pkce.use_pkce);
     assert_eq!(
-        pkce.audience, "test",
+        (pkce.authorization_url.as_str(), pkce.scope.as_str()),
+        ("https://id.test/authorize", "orders:read")
+    );
+    assert_eq!(
+        pkce.audience, "https://api.acme.test",
         "object-valued params use their value"
     );
-    let Auth::OAuth2(code) = &find(&b, "auth code").authentication else {
+    let Auth::OAuth2(code) = &find(&b, "oauth2 code").authentication else {
         panic!()
     };
-    assert!(!code.use_pkce);
+    assert!(!code.use_pkce && code.credentials_in_body);
     assert!(
-        matches!(&find(&b, "password").authentication, Auth::OAuth2(c) if c.grant_type == "password" && c.username == "test")
+        matches!(&find(&b, "oauth2 password").authentication, Auth::OAuth2(c) if c.grant_type == "password" && c.username == "cy")
     );
     assert!(
-        matches!(&find(&b, "client").authentication, Auth::OAuth2(c) if c.grant_type == "client_credentials")
+        matches!(&find(&b, "oauth2 client").authentication, Auth::OAuth2(c) if c.grant_type == "client_credentials")
     );
-    assert_eq!(w.len(), 1, "implicit grant warned: {w:?}");
+    assert!(
+        matches!(&find(&b, "oauth2 implicit").authentication, Auth::OAuth2(c) if c.grant_type == "authorization_code")
+    );
+    assert!(matches!(find(&b, "hawk").authentication, Auth::None));
+    assert!(find(&b, "from header").authentication.is_inherit());
+    assert_eq!(w.len(), 2, "implicit grant and hawk are reported: {w:?}");
 }
 
 #[test]
-fn postman_variables_scripts_and_faker() {
-    let (b, _) = one("postman-scripts-import-v2_1.json");
-    assert_eq!(
-        b.base_env.as_ref().unwrap().body.data["dssx"],
-        json!("{{ _['env-var-in-global'] }}")
-    );
-    let Node::Folder(root, _) = &b.items[0].node else {
-        panic!("collection scripts live on a root folder")
-    };
-    assert_eq!(
-        root.pre_request_script.as_deref(),
-        Some("console.log('pre')")
-    );
-    let (b, _) = one("postman-faker-vars-v2_1.json");
-    assert!(requests(&b)[0].url.contains("{% uuid 'v4' %}"));
+fn postman_variables_and_faker() {
     assert_eq!(
         postman::vars_in("{{$randomEmail}} {{a-b}} {{ok}}"),
         "{% faker 'randomEmail' %} {{ _['a-b'] }} {{ ok }}"
@@ -156,238 +312,239 @@ fn postman_variables_scripts_and_faker() {
 }
 
 #[test]
-fn postman_script_translation_matches_insomnia_rules() {
+fn postman_script_translation() {
     let t = postman::translate_script;
     assert_eq!(
         t("tests['ok'] = responseCode.code === 200;"),
-        "insomnia.test('ok', function() { insomnia.expect(insomnia.response.code === 200).to.be.true; });"
+        "ls.test('ok', function() { ls.expect(ls.response.code === 200).to.be.true; });"
     );
     assert_eq!(
         t("environment.token = 'abc';"),
-        "insomnia.environment.set('token', 'abc');"
+        "ls.environment.set('token', 'abc');"
     );
-    assert_eq!(
-        t("var x = globals.foo;"),
-        "var x = insomnia.globals.get('foo');"
-    );
+    assert_eq!(t("var x = globals.foo;"), "var x = ls.globals.get('foo');");
     assert_eq!(
         t("postman.setEnvironmentVariable('a', 1)"),
-        "insomnia.environment.set('a', 1)"
+        "ls.environment.set('a', 1)"
     );
     assert_eq!(
         t("postman.clearEnvironmentVariable()"),
-        "insomnia.environment.clear()"
+        "ls.environment.clear()"
     );
     assert_eq!(
         t("const b = JSON.parse(responseBody);"),
-        "const b = JSON.parse(insomnia.response.text());"
+        "const b = JSON.parse(ls.response.text());"
     );
     assert_eq!(
         t("pm.expect(pm.response.code).to.eql(200)"),
-        "insomnia.expect(insomnia.response.code).to.eql(200)"
+        "ls.expect(ls.response.code).to.eql(200)"
     );
-    // not touched: other identifiers ending in pm/environment, strings and properties
+    // left alone: identifiers that only end in pm/environment, properties and strings
     assert_eq!(
         t("upm.x; obj.environment.y; 'pm.z'"),
         "upm.x; obj.environment.y; 'pm.z'"
     );
     assert_eq!(
-        postman::script_to_postman("insomnia.test('a', () => insomnia.expect(1).to.eql(1))"),
+        postman::script_to_postman("ls.test('a', () => ls.expect(1).to.eql(1))"),
         "pm.test('a', () => pm.expect(1).to.eql(1))"
     );
 }
 
 #[test]
 fn postman_environment_and_secrets() {
-    let (b, _) = one("postman-env.json");
+    let (b, _) = one("postman/staging.postman_environment.json");
     assert_eq!(b.workspace.scope, WorkspaceScope::Environment);
-    assert_eq!(b.sub_envs[0].body.data["foo"], json!("production"));
-    let env = json!({"name": "Prod", "values": [
-        {"key": "host", "value": "x.io", "enabled": true},
-        {"key": "token", "value": "s3cr3t", "type": "secret", "enabled": true},
-        {"key": "off", "value": "1", "enabled": false},
-    ]});
-    let i = import(&env.to_string()).unwrap();
-    let sub = &i.workspaces[0].sub_envs[0].body;
-    assert_eq!(sub.secret_keys, vec!["token"]);
-    assert!(!sub.data.contains_key("off"));
+    let sub = &b.sub_envs[0].body;
+    assert_eq!(sub.name, "Staging");
+    assert_eq!(sub.data["base_url"], json!("https://staging.acme.test"));
+    assert_eq!(sub.secret_keys, vec!["access-token"]);
+    assert!(
+        !sub.data.contains_key("retired"),
+        "disabled values are skipped"
+    );
     let back: serde_json::Value = serde_json::from_str(&postman::export_environment(sub)).unwrap();
     assert_eq!(back["values"][1]["type"], "secret");
 }
 
 #[test]
 fn postman_export_round_trips() {
-    let (b, _) = one("postman-complex-v2_1.json");
+    let (b, _) = one("postman/orders-v2.1.json");
     let (text, skipped) = postman::export_collection(&b);
     assert_eq!(skipped, 0);
     let again = import(&text).unwrap();
     assert_eq!(again.format, Format::PostmanCollection);
-    let a: Vec<_> = requests(&b)
-        .iter()
-        .map(|r| {
-            (
-                r.name.clone(),
-                r.method.clone(),
-                r.url.clone(),
-                r.body.clone(),
-            )
-        })
-        .collect();
-    let b2 = &again.workspaces[0];
-    let c: Vec<_> = requests(b2)
-        .iter()
-        .map(|r| {
-            (
-                r.name.clone(),
-                r.method.clone(),
-                r.url.clone(),
-                r.body.clone(),
-            )
-        })
-        .collect();
-    assert_eq!(a, c);
-    // auth + scripts survive too
-    let mut w = WorkspaceBundle::default();
-    w.items.push(Item::new(Node::Request(Request {
-        name: "Signed".into(),
-        url: "{{ _.base }}/x".into(),
-        authentication: Auth::Bearer {
-            token: "{{ _.tok }}".into(),
-            prefix: None,
-            disabled: false,
-        },
-        parameters: vec![KeyValue::new("q", "1")],
-        after_response_script: Some("insomnia.test('ok', () => {});".into()),
-        ..Default::default()
-    })));
-    let (text, _) = postman::export_collection(&w);
+    let shape = |b: &WorkspaceBundle| {
+        requests(b)
+            .iter()
+            .map(|r| {
+                (
+                    r.name.clone(),
+                    r.method.clone(),
+                    r.url.clone(),
+                    r.body.clone(),
+                    r.after_response_script.clone(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(shape(&b), shape(&again.workspaces[0]));
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(v["item"][0]["request"]["url"]["raw"], "{{base}}/x?q=1");
+    let list = &v["item"][0]["item"][0]["item"][0];
     assert_eq!(
-        v["item"][0]["event"][0]["script"]["exec"][0],
-        "pm.test('ok', () => {});"
+        list["request"]["url"]["raw"],
+        "{{base_url}}/orders?status=open"
     );
-    let r = import(&text).unwrap().workspaces.remove(0);
-    let back = requests(&r)[0];
-    assert_eq!(back.url, "{{ base }}/x");
-    assert_eq!(back.parameters, vec![KeyValue::new("q", "1")]);
-    assert!(matches!(&back.authentication, Auth::Bearer { token, .. } if token == "{{ tok }}"));
-    assert_eq!(
-        back.after_response_script.as_deref(),
-        Some("insomnia.test('ok', () => {});")
+    assert!(
+        list["event"][0]["script"]["exec"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("pm.test('status is 200'")
     );
 }
 
 // ------------------------------------------------------------------ OpenAPI / Swagger
 
 #[test]
-fn openapi3_petstore() {
-    let (b, w) = one("openapi3-petstore.json");
-    assert_eq!(b.workspace.name, "Swagger Petstore 1.0.0");
+fn openapi3_bookstore() {
+    let (b, w) = one("openapi/bookstore-v3.yaml");
+    assert_eq!(b.workspace.name, "Bookstore 2.1");
+    let env = &b.base_env.as_ref().unwrap().body.data;
     assert_eq!(
-        b.base_env.as_ref().unwrap().body.data["base_url"],
-        json!("http://petstore.swagger.io/v2")
+        env["base_url"],
+        json!("{{ _.scheme }}://{{ _.host }}/api/{{ _.version }}")
+    );
+    assert_eq!(
+        (env["scheme"].clone(), env["host"].clone()),
+        (json!("https"), json!("books.acme.test"))
     );
     let folders: Vec<_> = b.items.iter().map(|i| i.node.name().to_string()).collect();
-    assert_eq!(folders, ["pet", "store", "user"]);
-    let get = find(&b, "Find pet by ID");
-    assert_eq!(get.url, "{{ _.base_url }}/pet/:petId");
-    assert_eq!(get.path_parameters, vec![KeyValue::new("petId", "0")]);
-    assert!(matches!(&get.authentication, Auth::ApiKey { key, .. } if key == "api_key"));
-    let order = find(&b, "Place an order for a pet");
+    assert_eq!(
+        folders,
+        ["books", "orders", "Health check", "Who am I", "Search"],
+        "tagged ops in folders, untagged at the root"
+    );
+
+    let list = find(&b, "List books");
+    assert_eq!(list.url, "{{ _.base_url }}/books");
+    assert_eq!(
+        list.parameters
+            .iter()
+            .map(|p| (p.name.as_str(), p.value.as_str(), p.disabled))
+            .collect::<Vec<_>>(),
+        [("genre", "fiction", false), ("page", "1", true)]
+    );
+    assert_eq!(list.headers[0].name, "X-Trace");
+    assert!(
+        matches!(&list.authentication, Auth::ApiKey { key, add_to: Some(t), .. } if key == "X-Api-Key" && t == "header"),
+        "global security"
+    );
+
+    let add = find(&b, "Add a book");
+    assert!(
+        matches!(&add.authentication, Auth::Bearer { token, .. } if token == "{{ _.bearer_token }}")
+    );
+    let book: serde_json::Value = serde_json::from_str(add.body.text.as_deref().unwrap()).unwrap();
+    assert_eq!(book["title"], "The Rust Book");
+    assert_eq!(book["author"]["email"], "user@example.com");
+    assert!(book.get("id").is_none(), "readOnly properties are left out");
+
+    let get = find(&b, "Get a book");
+    assert_eq!(get.url, "{{ _.base_url }}/books/:bookId");
+    assert_eq!(
+        get.path_parameters,
+        vec![KeyValue::new("bookId", "bk_42")],
+        "path-level parameters apply"
+    );
+    assert!(
+        matches!(get.authentication, Auth::None),
+        "`security: []` means no auth"
+    );
+
+    assert!(
+        matches!(&find(&b, "deleteBook").authentication, Auth::OAuth2(c) if c.grant_type == "authorization_code" && c.scope == "books:write" && c.access_token_url == "https://id.acme.test/token")
+    );
+    let cover = find(&b, "Upload a cover");
+    assert_eq!(cover.body.mime_type.as_deref(), Some(mime::MULTIPART));
+    assert_eq!(
+        cover
+            .body
+            .params
+            .iter()
+            .map(|p| (p.name.as_str(), p.kind.as_deref()))
+            .collect::<Vec<_>>(),
+        [("image", Some("file")), ("caption", Some("text"))]
+    );
+
+    let order = find(&b, "Place an order");
     assert_eq!(
         order.body.mime_type.as_deref(),
         Some(mime::JSON),
         "*/* becomes JSON"
     );
-    let body: serde_json::Value =
-        serde_json::from_str(order.body.text.as_deref().unwrap()).unwrap();
-    assert_eq!(body["shipDate"], "2024-01-01T00:00:00Z");
-    let login = find(&b, "Logs user into the system");
+    let o: serde_json::Value = serde_json::from_str(order.body.text.as_deref().unwrap()).unwrap();
     assert_eq!(
-        login
-            .parameters
-            .iter()
-            .map(|p| p.name.as_str())
-            .collect::<Vec<_>>(),
-        ["username", "password"]
+        o,
+        json!({"bookId": "00000000-0000-0000-0000-000000000000", "quantity": 0, "gift": true}),
+        "allOf merged"
     );
+    assert!(
+        matches!(&order.authentication, Auth::Basic { username, .. } if username == "{{ _.http_username }}")
+    );
+
+    let cancel = find(&b, "Cancel an order");
+    assert_eq!(cancel.body.mime_type.as_deref(), Some(mime::FORM));
+    assert_eq!(cancel.body.params[0].value, "changed my mind");
+    assert!(
+        matches!(&cancel.authentication, Auth::ApiKey { add_to: Some(t), .. } if t == "cookie")
+    );
+    assert!(
+        matches!(&find(&b, "Search").authentication, Auth::ApiKey { add_to: Some(t), .. } if t == "queryParams")
+    );
+    assert!(matches!(
+        &find(&b, "Who am I").authentication,
+        Auth::OAuth2(_)
+    ));
     assert_eq!(
         w.len(),
-        1,
-        "one warning per scheme, not per operation: {w:?}"
+        2,
+        "implicit flow + OpenID Connect, once each: {w:?}"
     );
-    assert!(b.spec.as_deref().unwrap().contains("\"openapi\""));
+    assert!(b.spec.as_deref().unwrap().contains("openapi: 3.0.3"));
 }
 
 #[test]
-fn openapi3_security_schemes_and_server_variables() {
-    let (b, _) = one("openapi3-security.yaml");
-    assert!(matches!(find(&b, "GET /none").authentication, Auth::None));
-    assert!(
-        matches!(&find(&b, "GET /bearer").authentication, Auth::Bearer { token, .. } if token == "{{ _.bearer_token }}")
-    );
-    assert!(
-        matches!(&find(&b, "GET /key/query").authentication, Auth::ApiKey { add_to: Some(t), .. } if t == "queryParams")
-    );
-    assert!(
-        matches!(&find(&b, "GET /key/cookie").authentication, Auth::ApiKey { add_to: Some(t), .. } if t == "cookie")
-    );
-    assert!(
-        matches!(&find(&b, "GET /oauth2/client-credentials").authentication,
-        Auth::OAuth2(c) if c.grant_type == "client_credentials" && c.access_token_url == "https://api.server.test/v1/token" && c.scope == "read:something write:something")
-    );
-    let env = &b.base_env.as_ref().unwrap().body.data;
-    for k in [
-        "http_username",
-        "bearer_token",
-        "oauth2_client_id",
-        "oauth2_password",
-    ] {
-        assert!(env.contains_key(k), "{k} placeholder");
-    }
-    let (b, _) = one("openapi3-server-vars.yaml");
-    let env = &b.base_env.as_ref().unwrap().body.data;
-    assert_eq!(
-        env["base_url"],
-        json!("{{ _.protocol }}://{{ _.host }}:{{ _.port }}/{{ _.basePath }}")
-    );
-    assert_eq!(env["port"], json!("8080"));
-}
-
-#[test]
-fn swagger2_petstore() {
-    let (b, _) = one("swagger2-petstore.json");
+fn swagger2_bookstore() {
+    let (b, _) = one("openapi/bookstore-v2.json");
     assert_eq!(
         b.base_env.as_ref().unwrap().body.data["base_url"],
-        json!("http://petstore.swagger.io/v2")
+        json!("http://legacy.acme.test/v1")
     );
-    let form = find(&b, "Updates a pet in the store with form data");
-    assert_eq!(form.body.mime_type.as_deref(), Some(mime::FORM));
-    assert_eq!(
-        form.body
-            .params
-            .iter()
-            .map(|p| p.name.as_str())
-            .collect::<Vec<_>>(),
-        ["name", "status"]
-    );
-    let upload = find(&b, "uploads an image");
-    assert_eq!(upload.body.mime_type.as_deref(), Some(mime::MULTIPART));
+    let create = find(&b, "Create book");
+    assert_eq!(create.body.mime_type.as_deref(), Some(mime::JSON));
     assert!(
-        upload
-            .body
-            .params
-            .iter()
-            .any(|p| p.kind.as_deref() == Some("file"))
-    );
-    assert!(
-        find(&b, "Create user")
+        create
             .body
             .text
             .as_deref()
             .unwrap()
-            .contains("\"username\"")
+            .contains("\"pages\": 0")
+    );
+    assert!(matches!(&create.authentication, Auth::ApiKey { key, .. } if key == "X-Token"));
+    let rate = find(&b, "Rate a book");
+    assert_eq!(rate.body.mime_type.as_deref(), Some(mime::FORM));
+    assert_eq!(
+        rate.body
+            .params
+            .iter()
+            .map(|p| (p.name.as_str(), p.value.as_str()))
+            .collect::<Vec<_>>(),
+        [("stars", "5"), ("comment", "")]
+    );
+    let scan = find(&b, "Upload a scan");
+    assert_eq!(scan.body.mime_type.as_deref(), Some(mime::MULTIPART));
+    assert_eq!(scan.body.params[0].kind.as_deref(), Some("file"));
+    assert!(
+        matches!(&scan.authentication, Auth::OAuth2(c) if c.grant_type == "client_credentials")
     );
 }
 
@@ -395,19 +552,42 @@ fn swagger2_petstore() {
 
 #[test]
 fn har_and_curl() {
-    let (b, _) = one("har-deep.json");
-    let r = find(&b, "POST /foo/bar");
-    assert_eq!(r.parameters, vec![KeyValue::new("foo", "bar")]);
-    assert_eq!(r.body.text.as_deref(), Some("hello world!"));
-    let (b, _) = one("har-form.json");
+    let (b, _) = one("har/browser-session.har");
+    assert_eq!(b.workspace.name, "HAR import (Browser DevTools)");
+    let cart = find(&b, "GET /api/cart");
+    assert_eq!(cart.url, "https://shop.acme.test/api/cart");
+    assert_eq!(cart.parameters, vec![KeyValue::new("currency", "EUR")]);
+    assert_eq!(
+        cart.headers,
+        vec![KeyValue::new("accept", "application/json")],
+        "pseudo, sec-* and length headers dropped"
+    );
+    let add = find(&b, "Add to cart");
+    assert_eq!(add.method, "POST");
+    assert_eq!(add.body.mime_type.as_deref(), Some(mime::JSON));
+    assert_eq!(
+        add.body.text.as_deref(),
+        Some("{\"sku\":\"BOOK-42\",\"qty\":1}")
+    );
+
+    let (b, _) = one("har/single-request.json");
     let r = requests(&b)[0];
     assert_eq!(r.body.mime_type.as_deref(), Some(mime::MULTIPART));
     assert_eq!(
         r.body.params[0].file_name.as_deref(),
-        Some("/home/user/test.txt")
+        Some("/home/ana/me.png")
     );
-    let again = import(&har::export(&b)).unwrap();
-    assert_eq!(requests(&again.workspaces[0])[0].body.params.len(), 2);
+    assert!(
+        r.headers.is_empty(),
+        "multipart content type is regenerated"
+    );
+    assert_eq!(
+        requests(&import(&har::export(&b)).unwrap().workspaces[0])[0]
+            .body
+            .params
+            .len(),
+        2
+    );
 
     let text = "# two calls\ncurl https://api.x.io/users -H 'Accept: application/json'\ncurl -X POST https://api.x.io/users \\\n  -d '{\"a\":1}' \\\n  -H 'Content-Type: application/json'\n";
     let i = import(text).unwrap();
@@ -423,42 +603,68 @@ fn har_and_curl() {
 // ------------------------------------------------------------------ Insomnia
 
 #[test]
-fn insomnia_v5_fixtures_round_trip() {
-    for f in [
-        "variable_inheritance.yaml",
-        "collection_runner.yaml",
-        "operations.yaml",
-        "v5-spec-with-tests.yaml",
-    ] {
-        let (b, _) = one(f);
-        assert!(b.request_count() > 0, "{f}");
-        let text = insomnia::export_v5(&b).unwrap();
-        let (again, _) = {
-            let i = import(&text).unwrap();
-            (i.workspaces.into_iter().next().unwrap(), i.warnings)
-        };
-        let mut a = b.clone();
-        a.spec = None; // the spec isn't stored, so it isn't re-exported
-        let mut c = again.clone();
-        c.spec = None;
-        assert_eq!(a, c, "{f} round trip");
-    }
-    let (b, _) = one("variable_inheritance.yaml");
-    let Node::Folder(_, kids) = &b.items[0].node else {
+fn insomnia_file_import_and_round_trip() {
+    let (b, w) = one("insomnia/orders.yaml");
+    assert!(w.is_empty(), "{w:?}");
+    assert_eq!(
+        (b.workspace.name.as_str(), b.workspace.description.as_str()),
+        ("Acme Orders", "Orders service")
+    );
+    assert_eq!(b.meta.id.as_deref(), Some("wrk_orders01"));
+    let Node::Folder(orders, kids) = &b.items[0].node else {
         panic!()
     };
-    let Node::Folder(parent, _) = &kids[0].node else {
-        panic!()
-    };
-    assert_eq!(parent.name, "parent");
-    let (b, _) = one("collection_runner.yaml");
+    assert_eq!(orders.environment["page_size"], json!(20));
     assert!(
-        find(&b, "01 Request")
-            .after_response_script
+        matches!(&orders.authentication, Auth::Bearer { token, .. } if token == "{{ _.token }}")
+    );
+    assert_eq!(
+        orders.pre_request_script.as_deref(),
+        Some("ls.environment.set('ts', Date.now());"),
+        "scripts move to ls.*"
+    );
+    let Node::Request(get) = &kids[0].node else {
+        panic!()
+    };
+    assert_eq!(get.description, "Fetch one order");
+    assert_eq!(get.path_parameters, vec![KeyValue::new("id", "ord_1")]);
+    assert!(get.parameters[0].disabled);
+    assert_eq!(get.settings.follow_redirects, Toggle::Off);
+    assert!(!get.settings.store_cookies);
+    assert!(
+        get.after_response_script
             .as_deref()
             .unwrap()
-            .contains("insomnia.test")
+            .starts_with("ls.test('ok'")
     );
+    let Node::Realtime(ws) = &b.items[1].node else {
+        panic!()
+    };
+    assert_eq!(
+        (ws.kind.as_str(), ws.url.as_str()),
+        ("websocket", "wss://orders.acme.test/live")
+    );
+    let Node::Grpc(g) = &b.items[2].node else {
+        panic!()
+    };
+    assert_eq!(
+        (g.url.as_str(), g.method.as_str(), g.schema_source.as_str()),
+        (
+            "grpc://grpc.acme.test:443",
+            "/stock.Stock/Reserve",
+            "reflection"
+        )
+    );
+    assert_eq!(
+        b.cookie_jar.as_ref().unwrap().body.cookies[0].expires,
+        Some(1_893_456_000_000)
+    );
+    assert_eq!(b.sub_envs[0].body.color.as_deref(), Some("#22c55e"));
+
+    // exporting back writes insomnia.* scripts again and re-imports identically
+    let text = insomnia::export_v5(&b).unwrap();
+    assert!(text.contains("insomnia.test('ok'") && !text.contains("ls.test"));
+    assert_eq!(import(&text).unwrap().workspaces[0], b);
 }
 
 fn full_bundle() -> WorkspaceBundle {
@@ -536,7 +742,7 @@ fn full_bundle() -> WorkspaceBundle {
                             password: "p".into(),
                             disabled: false,
                         },
-                        pre_request_script: Some("insomnia.environment.set('a', 1);".into()),
+                        pre_request_script: Some("ls.environment.set('a', 1);".into()),
                         ..Default::default()
                     },
                     vec![
@@ -642,7 +848,7 @@ fn full_bundle() -> WorkspaceBundle {
 }
 
 #[test]
-fn our_own_v5_export_round_trips_every_item_kind() {
+fn insomnia_export_keeps_every_item_kind() {
     let b = full_bundle();
     let text = insomnia::export_v5(&b).unwrap();
     let again = import(&text).unwrap();
@@ -652,11 +858,10 @@ fn our_own_v5_export_round_trips_every_item_kind() {
 }
 
 #[test]
-fn v5_export_stays_loadable_by_insomnia() {
+fn insomnia_export_uses_the_shapes_insomnia_expects() {
     let text = insomnia::export_v5(&full_bundle()).unwrap();
     let v: serde_json::Value = serde_yaml_ng::from_str(&text).unwrap();
     assert_eq!(v["type"], "collection.insomnia.rest/5.0");
-    // Insomnia tells item kinds apart by shape and id prefix
     let coll = v["collection"].as_array().unwrap();
     assert!(coll.iter().any(|i| i["meta"]["id"] == "ws-req_rt_1"));
     assert!(coll.iter().any(|i| i["meta"]["id"] == "socketio-req_rt_2"));
@@ -672,7 +877,7 @@ fn v5_export_stays_loadable_by_insomnia() {
             .iter()
             .any(|h| h["value"] == "text/event-stream")
     );
-    // AI requests and MCP servers live in our extension, not in `collection`
+    // AI requests and MCP servers have no Insomnia equivalent: kept in an extension block
     let names: Vec<_> = v["x-logic-socket"]["items"]
         .as_array()
         .unwrap()
@@ -681,13 +886,13 @@ fn v5_export_stays_loadable_by_insomnia() {
         .collect();
     assert_eq!(names, ["LlmRequest", "McpServer"]);
     assert_eq!(v["x-logic-socket"]["items"][0]["parentId"], "fld_1");
-    // inherit auth is Insomnia's `{}`, which the exporter prunes
     assert!(
         coll.iter()
             .find(|i| i["name"] == "Hello")
             .unwrap()
             .get("authentication")
-            .is_none()
+            .is_none(),
+        "inherit is written as nothing"
     );
 }
 
@@ -864,13 +1069,4 @@ fn code_snippets() {
     assert_eq!(Target::parse("python"), Some(Target::PythonRequests));
     assert_eq!(Target::parse("fetch"), Some(Target::JsFetch));
     assert_eq!(Target::parse("cobol"), None);
-}
-
-#[test]
-fn files_written_before_the_rename_still_import() {
-    let text = insomnia::export_v5(&full_bundle())
-        .unwrap()
-        .replace("x-logic-socket", "x-insomnia-rs")
-        .replace("x-lsock", "x-irs");
-    assert_eq!(import(&text).unwrap().workspaces[0], full_bundle());
 }

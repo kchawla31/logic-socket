@@ -243,8 +243,8 @@ function Shell() {
         keywords: 'grpc protobuf proto rpc',
         run: async () => wsId && open((await api.grpcCreate(wsId)).id, 'grpc'),
       },
-      { id: 'import', group: 'Actions', label: 'Import…', icon: <Download className="size-4" />, keywords: 'postman insomnia openapi swagger har curl yaml json', run: () => setImportOpen(true) },
-      { id: 'export', group: 'Actions', label: 'Export collection…', icon: <Upload className="size-4" />, keywords: 'postman insomnia har yaml json backup', run: () => setExportOpen(true) },
+      { id: 'import', group: 'Actions', label: 'Import…', icon: <Download className="size-4" />, keywords: 'postman openapi swagger har curl yaml json', run: () => setImportOpen(true) },
+      { id: 'export', group: 'Actions', label: 'Export collection…', icon: <Upload className="size-4" />, keywords: 'postman har yaml json backup', run: () => setExportOpen(true) },
       { id: 'git', group: 'Actions', label: 'Git sync', icon: <GitBranch className="size-4" />, keywords: 'commit pull push branch repository github gitlab', run: () => setGitOpen(true) },
       ...(active && byId.get(active)?.kind === 'request'
         ? [{ id: 'code', group: 'Actions', label: 'Generate code for this request', icon: <FileCode2 className="size-4" />, keywords: 'curl python javascript fetch go rust httpie snippet', run: () => setCodeFor(active) }]

@@ -1,0 +1,52 @@
+{
+  "swagger": "2.0",
+  "info": { "title": "Bookstore Legacy", "version": "1.0" },
+  "host": "legacy.acme.test",
+  "basePath": "/v1",
+  "schemes": ["http"],
+  "consumes": ["application/json"],
+  "securityDefinitions": {
+    "token": { "type": "apiKey", "in": "header", "name": "X-Token" },
+    "app": { "type": "oauth2", "flow": "application", "tokenUrl": "https://id.acme.test/token", "scopes": {} }
+  },
+  "security": [{ "token": [] }],
+  "paths": {
+    "/books": {
+      "post": {
+        "tags": ["books"],
+        "summary": "Create book",
+        "parameters": [{ "in": "body", "name": "book", "schema": { "$ref": "#/definitions/Book" } }],
+        "responses": { "201": { "description": "created" } }
+      }
+    },
+    "/books/{id}/rate": {
+      "post": {
+        "tags": ["books"],
+        "summary": "Rate a book",
+        "consumes": ["application/x-www-form-urlencoded"],
+        "parameters": [
+          { "in": "path", "name": "id", "type": "string", "required": true },
+          { "in": "formData", "name": "stars", "type": "integer", "default": 5 },
+          { "in": "formData", "name": "comment", "type": "string" }
+        ],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/books/{id}/scan": {
+      "post": {
+        "tags": ["books"],
+        "summary": "Upload a scan",
+        "security": [{ "app": [] }],
+        "consumes": ["multipart/form-data"],
+        "parameters": [
+          { "in": "path", "name": "id", "type": "string", "required": true },
+          { "in": "formData", "name": "file", "type": "file" }
+        ],
+        "responses": { "200": { "description": "ok" } }
+      }
+    }
+  },
+  "definitions": {
+    "Book": { "type": "object", "properties": { "title": { "type": "string" }, "pages": { "type": "integer" } } }
+  }
+}

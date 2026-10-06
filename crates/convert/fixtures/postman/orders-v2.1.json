@@ -1,0 +1,123 @@
+{
+  "info": {
+    "_postman_id": "4f0d2a52-0c3e-4a8e-9a43-3b1c2c9a1001",
+    "name": "Acme Orders",
+    "description": "Orders service used by the storefront.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{access-token}}", "type": "string" }]
+  },
+  "event": [
+    { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.variables.set('started', Date.now());"] } }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "https://orders.acme.test" },
+    { "key": "access-token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Orders",
+      "description": "Create and list orders",
+      "item": [
+        {
+          "name": "List orders",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "tests['status is 200'] = responseCode.code === 200;",
+                  "pm.test('has orders', () => pm.expect(pm.response.json().orders).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/orders?status=open&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "status", "value": "open" },
+                { "key": "limit", "value": "20", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get order",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/orders/:orderId",
+              "host": ["{{base_url}}"],
+              "path": ["orders", ":orderId"],
+              "variable": [{ "key": "orderId", "value": "ord_123" }]
+            }
+          }
+        },
+        {
+          "name": "Create order",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"BOOK-42\",\n  \"quantity\": {{$randomInt}},\n  \"ref\": \"{{$guid}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Upload invoice",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/orders/:orderId/invoice",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "note", "value": "paid by card", "type": "text" },
+                { "key": "file", "type": "file", "src": "/tmp/invoice.pdf" },
+                { "key": "draft", "value": "yes", "type": "text", "disabled": true }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sign in",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/session",
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "email", "value": "{{$randomEmail}}" },
+            { "key": "password", "value": "{{password}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Search (GraphQL)",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/graphql",
+        "body": {
+          "mode": "graphql",
+          "graphql": { "query": "query Search($q: String!) { orders(q: $q) { id } }", "variables": "{\"q\": \"open\"}" }
+        }
+      }
+    },
+    {
+      "name": "Health",
+      "request": "https://orders.acme.test/health"
+    }
+  ]
+}

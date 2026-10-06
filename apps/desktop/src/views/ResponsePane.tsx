@@ -276,7 +276,7 @@ function TestsView({ response }: { response: ResponseView }) {
   if (!tests.length)
     return (
       <Empty title="No tests">
-        Add tests in the request's Scripts tab, e.g. <code className="font-mono">{"insomnia.test('ok', () => insomnia.response.to.have.status(200))"}</code>
+        Add tests in the request's Scripts tab, e.g. <code className="font-mono">{"ls.test('ok', () => ls.response.to.have.status(200))"}</code>
       </Empty>
     );
   const passed = tests.filter(t => t.passed).length;

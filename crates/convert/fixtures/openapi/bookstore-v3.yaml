@@ -1,0 +1,146 @@
+openapi: 3.0.3
+info:
+  title: Bookstore
+  version: "2.1"
+  description: A small bookstore API used to test the OpenAPI importer.
+servers:
+  - url: "{scheme}://{host}/api/{version}"
+    variables:
+      scheme: { default: https, enum: [https, http] }
+      host: { default: books.acme.test }
+      version: { default: v2 }
+tags:
+  - name: books
+    description: The catalogue
+  - name: orders
+    description: Buying books
+security:
+  - apiKeyHeader: []
+paths:
+  /books:
+    get:
+      tags: [books]
+      summary: List books
+      operationId: listBooks
+      parameters:
+        - { name: genre, in: query, required: true, schema: { type: string, enum: [fiction, science] } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: X-Trace, in: header, schema: { type: string } }
+      responses: { "200": { description: ok } }
+    post:
+      tags: [books]
+      summary: Add a book
+      security: [ { bearer: [] } ]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Book" }
+      responses: { "201": { description: created } }
+  /books/{bookId}:
+    parameters:
+      - { name: bookId, in: path, required: true, schema: { type: string, example: bk_42 } }
+    get:
+      tags: [books]
+      summary: Get a book
+      security: []
+      responses: { "200": { description: ok } }
+    delete:
+      tags: [books]
+      operationId: deleteBook
+      security: [ { oauth: [books:write] } ]
+      responses: { "204": { description: gone } }
+  /books/{bookId}/cover:
+    put:
+      tags: [books]
+      summary: Upload a cover
+      parameters:
+        - { name: bookId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image: { type: string, format: binary }
+                caption: { type: string, example: Front cover }
+      responses: { "200": { description: ok } }
+  /orders:
+    post:
+      tags: [orders]
+      summary: Place an order
+      security: [ { basicAuth: [] } ]
+      requestBody:
+        content:
+          "*/*":
+            schema: { $ref: "#/components/schemas/Order" }
+      responses: { "201": { description: created } }
+  /orders/{orderId}/cancel:
+    post:
+      tags: [orders]
+      summary: Cancel an order
+      security: [ { session: [] } ]
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, example: changed my mind }
+      responses: { "200": { description: ok } }
+  /health:
+    get:
+      summary: Health check
+      security: [ { implicitOnly: [] } ]
+      responses: { "200": { description: ok } }
+  /me:
+    get:
+      summary: Who am I
+      security: [ { oidc: [] } ]
+      responses: { "200": { description: ok } }
+  /search:
+    get:
+      summary: Search
+      security: [ { apiKeyQuery: [] } ]
+      responses: { "200": { description: ok } }
+components:
+  schemas:
+    Book:
+      type: object
+      required: [title]
+      properties:
+        id: { type: string, readOnly: true }
+        title: { type: string, example: The Rust Book }
+        published: { type: string, format: date }
+        tags: { type: array, items: { type: string } }
+        author: { $ref: "#/components/schemas/Author" }
+    Author:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: string, format: email }
+    Order:
+      allOf:
+        - { type: object, properties: { bookId: { type: string, format: uuid } } }
+        - { type: object, properties: { quantity: { type: integer }, gift: { type: boolean } } }
+  securitySchemes:
+    apiKeyHeader: { type: apiKey, in: header, name: X-Api-Key }
+    apiKeyQuery: { type: apiKey, in: query, name: key }
+    session: { type: apiKey, in: cookie, name: SESSION }
+    bearer: { type: http, scheme: bearer }
+    basicAuth: { type: http, scheme: basic }
+    oauth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://id.acme.test/authorize
+          tokenUrl: https://id.acme.test/token
+          scopes: { "books:write": write books }
+    implicitOnly:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: https://id.acme.test/authorize
+          scopes: {}
+    oidc: { type: openIdConnect, openIdConnectUrl: https://id.acme.test/.well-known/openid-configuration }

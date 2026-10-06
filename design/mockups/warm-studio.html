@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logic Socket — Warm Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root { --sans:'DM Sans', ui-sans-serif, system-ui, sans-serif; --mono:'DM Mono', ui-monospace, monospace; --radius:10px; --radius-lg:18px; --radius-btn:999px; --gap:12px; --fs:13.5px; }
+:root, :root[data-theme="light"] { --bg:#F4EEE4; --panel:#FFFCF7; --panel2:#FBF6EE; --muted:#F2EADD; --line:#E8DDCC;
+--fg:#2A211B; --fg2:#80705F; --accent:#F2643A; --accent-fg:#FFFFFF; --accent-soft:rgba(242,100,58,.12); --signal:#F2643A;
+--ok:#3E9B5B; --warn:#D6911E; --err:#D9443A; --info:#3B7FC4;
+--get:#3E9B5B; --post:#D6911E; --put:#3B7FC4; --delete:#D9443A;
+--syn-key:#B9481F; --syn-str:#3E7F4F; --syn-num:#A86A0C; --syn-bool:#7A4FC2; --shadow:0 1px 2px rgba(80,50,20,.06), 0 10px 30px -18px rgba(80,50,20,.35); color-scheme: light; }
+:root[data-theme="dark"] { --bg:#161310; --panel:#1E1B18; --panel2:#242019; --muted:#2D2822; --line:#383128;
+--fg:#F2E9DE; --fg2:#A79886; --accent:#FF7A50; --accent-fg:#2A1206; --accent-soft:rgba(255,122,80,.14); --signal:#FF7A50;
+--ok:#7BC98F; --warn:#F2B54C; --err:#FF7A6E; --info:#7FB3EA;
+--get:#7BC98F; --post:#F2B54C; --put:#7FB3EA; --delete:#FF7A6E;
+--syn-key:#FFA27F; --syn-str:#A8DDB5; --syn-num:#F2C66D; --syn-bool:#C9A8FF; --shadow:0 12px 32px -18px rgba(0,0,0,.7); color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root[data-theme="system"] { --bg:#161310; --panel:#1E1B18; --panel2:#242019; --muted:#2D2822; --line:#383128;
+--fg:#F2E9DE; --fg2:#A79886; --accent:#FF7A50; --accent-fg:#2A1206; --accent-soft:rgba(255,122,80,.14); --signal:#FF7A50;
+--ok:#7BC98F; --warn:#F2B54C; --err:#FF7A6E; --info:#7FB3EA;
+--get:#7BC98F; --post:#F2B54C; --put:#7FB3EA; --delete:#FF7A6E;
+--syn-key:#FFA27F; --syn-str:#A8DDB5; --syn-num:#F2C66D; --syn-bool:#C9A8FF; --shadow:0 12px 32px -18px rgba(0,0,0,.7); color-scheme: dark; } }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: var(--fs); -webkit-font-smoothing: antialiased; }
+.i { width: 15px; height: 15px; flex-shrink: 0; }
+code, .mono { font-family: var(--mono); }
+
+/* review chrome (not part of the design) */
+.review { display: flex; align-items: center; gap: 14px; padding: 12px 20px; font: 13px/1.4 system-ui, sans-serif; color: var(--fg2); flex-wrap: wrap; }
+.review b { color: var(--fg); font-size: 15px; }
+.review nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.review nav a { color: var(--fg2); text-decoration: none; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); }
+.review nav a.on { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
+.wrap { padding: 0 20px 40px; max-width: 1440px; margin: 0 auto; }
+
+/* ---------------- app frame */
+.app { height: 760px; display: flex; flex-direction: column; background: var(--panel); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); }
+.topbar { height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.01em; margin-right: 6px; }
+.logo { width: 24px; height: 24px; }
+.select { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--line); background: var(--panel2); border-radius: var(--radius); color: var(--fg); font-size: 12.5px; cursor: pointer; }
+.select .i { width: 13px; height: 13px; color: var(--fg2); }
+.spacer { flex: 1; }
+.search { display: flex; align-items: center; gap: 8px; width: 280px; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--fg2); font-size: 12.5px; background: var(--panel2); }
+.kbd { margin-left: auto; font-family: var(--mono); font-size: 10.5px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+.icon-btn { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; color: var(--fg2); border-radius: var(--radius); border: 0; background: transparent; cursor: pointer; }
+.icon-btn:hover { background: var(--muted); color: var(--fg); }
+.theme { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-btn); padding: 2px; gap: 2px; background: var(--panel2); }
+.theme button { height: 24px; padding: 0 8px; border: 0; border-radius: calc(var(--radius-btn) - 2px); background: transparent; color: var(--fg2); display: inline-flex; align-items: center; gap: 5px; font: 500 11.5px var(--sans); cursor: pointer; }
+.theme button .i { width: 13px; height: 13px; }
+.theme button.on { background: var(--accent); color: var(--accent-fg); }
+
+.body { flex: 1; display: flex; min-height: 0; }
+.sidebar { width: 270px; display: flex; flex-direction: column; background: var(--panel2); border-right: 1px solid var(--line); flex-shrink: 0; }
+.side-head { display: flex; gap: 6px; padding: 10px; align-items: center; }
+.filter { flex: 1; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--fg2); background: var(--panel); font-size: 12.5px; }
+.filter .i { width: 13px; height: 13px; }
+.tree { padding: 2px 8px; flex: 1; }
+.tree .label, .tree .item { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 8px; border-radius: var(--radius); color: var(--fg); cursor: pointer; white-space: nowrap; }
+.tree .label:hover, .tree .item:hover { background: var(--muted); }
+.tree .folder > .item { padding-left: 30px; }
+.tree .caret { width: 12px; height: 12px; color: var(--fg2); }
+.tree .label .i:not(.caret) { color: var(--fg2); }
+.tree .count { margin-left: auto; font-size: 11px; color: var(--fg2); }
+.tree .item > span:not(.m):not(.tag):not(.status-dot) { overflow: hidden; text-overflow: ellipsis; }
+.m { font-family: var(--mono); font-size: 10px; font-weight: 600; width: 34px; flex-shrink: 0; }
+.m-get { color: var(--get); } .m-post { color: var(--post); } .m-put, .m-patch { color: var(--put); } .m-delete { color: var(--delete); }
+.k-mcp { color: var(--accent) !important; } .k-ai { color: var(--signal) !important; } .k-rt { color: var(--info) !important; } .k-grpc { color: var(--ok) !important; }
+.tag { margin-left: auto; font-family: var(--mono); font-size: 9.5px; color: var(--fg2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; margin-left: auto; background: currentColor; }
+.status-dot.ok { color: var(--ok); }
+.side-foot { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); color: var(--fg2); font-size: 12px; }
+
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--panel); }
+.tabs-bar { display: flex; align-items: flex-end; gap: 2px; height: 38px; padding: 0 8px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.tab { display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; color: var(--fg2); font-size: 12.5px; cursor: pointer; border-radius: var(--radius) var(--radius) 0 0; }
+.tab.active { color: var(--fg); background: var(--panel); }
+.tab .x { width: 12px; height: 12px; opacity: .5; }
+.split { flex: 1; display: flex; min-height: 0; gap: var(--gap); }
+.request { flex: 1.05; display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--line); }
+.reqbar { display: flex; gap: 8px; padding: 12px; align-items: center; }
+.url { flex: 1; display: flex; align-items: center; height: 38px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel2); overflow: hidden; }
+.method-select { display: flex; align-items: center; gap: 4px; height: 100%; padding: 0 10px; font-family: var(--mono); font-weight: 700; font-size: 12px; color: var(--get); border-right: 1px solid var(--line); }
+.url-text { padding: 0 10px; font-family: var(--mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+.var { color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 1px 4px; }
+.btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: var(--radius-btn); border: 1px solid var(--line); background: var(--panel); color: var(--fg); font: 600 12.5px var(--sans); cursor: pointer; white-space: nowrap; }
+.btn .i { width: 14px; height: 14px; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--fg2); }
+.btn-danger { background: var(--err); border-color: var(--err); color: #fff; }
+.reqbar .btn-primary { height: 38px; padding: 0 18px; }
+.preview { margin: -4px 12px 6px; font-family: var(--mono); font-size: 11.5px; color: var(--fg2); }
+.subtabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--line); }
+.subtabs .tab { height: 34px; border-radius: 0; padding: 0 10px; }
+.subtabs .tab .n { font-size: 10.5px; background: var(--muted); color: var(--fg2); border-radius: 999px; padding: 0 6px; }
+.subtabs .tab .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.kv { padding: 8px 12px; }
+.sec-title { margin: 6px 0 6px; }
+.kv-row { display: grid; grid-template-columns: 22px 1fr 1.4fr 24px; align-items: center; gap: 8px; height: 34px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px; }
+.kv-row.ph { color: var(--fg2); }
+.chk { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--line); display: inline-flex; align-items: center; justify-content: center; }
+.chk.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.chk.on .i { width: 10px; height: 10px; stroke-width: 3.5; }
+.hint { color: var(--fg2); font-size: 12px; padding: 10px 12px; }
+
+.response { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--panel); }
+.resp-head { display: flex; align-items: center; gap: 10px; padding: 12px; }
+.status { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; color: var(--ok); }
+.status .status-dot { margin: 0; }
+.meta { color: var(--fg2); font-family: var(--mono); font-size: 12px; }
+.timing { margin: 0 12px 10px; height: 6px; border-radius: 999px; overflow: hidden; display: flex; background: var(--muted); }
+.timing span { display: block; height: 100%; }
+pre.json { flex: 1; margin: 0; padding: 12px 16px; font: 12.5px/1.65 var(--mono); overflow: auto; background: var(--panel); }
+.json .k { color: var(--syn-key); } .json .s { color: var(--syn-str); } .json .n { color: var(--syn-num); } .json .b { color: var(--syn-bool); } .json .p { color: var(--fg2); }
+.tests { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--fg2); align-items: center; }
+.badge { white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 5px; font-size: 11px; font-weight: 600; }
+.b-ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.b-warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.b-err { background: color-mix(in srgb, var(--err) 15%, transparent); color: var(--err); }
+.b-info { background: color-mix(in srgb, var(--info) 15%, transparent); color: var(--info); }
+.b-accent { background: var(--accent-soft); color: var(--accent); }
+.statusbar { display: flex; align-items: center; gap: 16px; height: 28px; padding: 0 12px; font-size: 11.5px; color: var(--fg2); border-top: 1px solid var(--line); background: var(--panel2); flex-shrink: 0; }
+.statusbar span { display: inline-flex; align-items: center; gap: 6px; }
+.statusbar .i { width: 12px; height: 12px; }
+
+/* ---------------- design sheet */
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--fg2); margin: 36px 0 12px; font-weight: 600; }
+.sheet { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px; box-shadow: var(--shadow); }
+.sw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.sw { display: grid; grid-template-columns: 34px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; }
+.sw span { grid-row: span 2; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); }
+.sw b { font-size: 12.5px; } .sw code { font-size: 11px; color: var(--fg2); }
+.type .display { font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+.type .h { font-size: 18px; font-weight: 600; margin-top: 10px; }
+.type p { color: var(--fg2); line-height: 1.55; margin: 8px 0; }
+.type .code { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.input { height: 34px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel2); padding: 0 10px; color: var(--fg); font: 13px var(--sans); width: 100%; }
+.input.focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.switch { width: 32px; height: 18px; border-radius: 999px; background: var(--accent); position: relative; display: inline-block; }
+.switch::after { content: ''; position: absolute; right: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+.switch.off { background: var(--muted); } .switch.off::after { left: 2px; right: auto; }
+.toast { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: var(--radius); padding: 10px 12px; background: var(--panel); box-shadow: var(--shadow); font-size: 12.5px; }
+.toast .i { color: var(--ok); margin-top: 1px; }
+.tool { border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 14px; background: var(--panel); }
+.tool h4 { margin: 0; font-family: var(--mono); font-size: 13.5px; display: flex; gap: 8px; align-items: center; }
+.tool p { color: var(--fg2); margin: 6px 0 10px; font-size: 12.5px; line-height: 1.5; }
+.tool table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tool td { padding: 6px 4px; border-top: 1px solid var(--line); vertical-align: top; }
+.tool td:first-child { font-family: var(--mono); white-space: nowrap; }
+.tool .req { color: var(--err); }
+.note { color: var(--fg2); font-size: 12.5px; margin-top: 18px; }
+
+        .app { padding: 0 var(--gap) var(--gap); }
+        .topbar { background: transparent; border-bottom: 0; }
+        .body { gap: var(--gap); }
+        .sidebar { background: transparent; border: 0; }
+        .main { border-radius: var(--radius-lg); background: var(--panel); box-shadow: var(--shadow); border: 1px solid var(--line); overflow: hidden; }
+        .split { gap: 0; }
+        .statusbar { background: transparent; border-top: 0; padding-top: 6px; }
+        .tree .item { border-radius: 10px; }
+        .tree .item.active { background: var(--panel); box-shadow: var(--shadow); color: var(--fg); }
+        .tree .folder > .label .i { color: var(--accent); }
+        .select, .search { border-radius: 999px; }
+        .url { border-radius: 999px; padding-left: 6px; }
+        .method-select { border-radius: 999px; }
+        .subtabs .tab.active { color: var(--accent); }
+        .tab.active { box-shadow: inset 0 -2px 0 var(--accent); }
+        .badge { border-radius: 999px; }
+        .sec-title { font-weight: 700; font-size: 13px; }
+        
+</style>
+</head>
+<body>
+<div class="review"><b>Logic Socket · Warm Studio</b><span>Friendly and distinctive — cream paper, coral accent, soft rounded shapes.</span><span class="spacer"></span><nav><a href="circuit.html" class="">1. Circuit</a> <a href="graphite.html" class="">2. Graphite</a> <a href="terminal.html" class="">3. Terminal</a> <a href="warm-studio.html" class="on">4. Warm Studio</a><a href="index.html">Compare all</a></nav></div>
+<div class="wrap">
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="var(--accent)"/><path d="M11.5 11v4.5M20.5 11v4.5M10 15.5h12v1.5a6 6 0 0 1-12 0z" fill="none" stroke="var(--accent-fg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="name">Logic Socket</span></div>
+    <span class="select"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg> Shop API <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
+    <span class="select"><span class="status-dot ok" style="margin:0"></span> Production <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
+    <span class="spacer"></span>
+    <span class="search"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Search or run a command <span class="kbd">⌘K</span></span>
+    <span class="select"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg> main <span class="badge b-accent" style="height:16px">↑1</span></span>
+    <div class="theme" role="group" aria-label="Theme">
+      <button data-t="light"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>Light</button><button data-t="dark"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>Dark</button><button data-t="system"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>System</button>
+    </div>
+    <button class="icon-btn" aria-label="AI providers"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg></button>
+    <button class="icon-btn" aria-label="Settings"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+  </header>
+  <div class="body">
+    <aside class="sidebar">
+      <div class="side-head"><span class="filter"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Filter</span><button class="icon-btn"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button><button class="icon-btn"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/></svg></button></div>
+      
+<div class="tree">
+  <div class="folder open"><div class="label"><svg class="i caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span>Orders</span><span class="count">4</span></div>
+    <div class="item active"><span class="m m-get">GET</span><span>List orders</span></div>
+    <div class="item"><span class="m m-post">POST</span><span>Create order</span></div>
+    <div class="item"><span class="m m-patch">PATCH</span><span>Update status</span></div>
+    <div class="item"><span class="m m-delete">DEL</span><span>Cancel order</span></div>
+  </div>
+  <div class="folder"><div class="label"><svg class="i caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span>Customers</span><span class="count">6</span></div></div>
+  <div class="folder"><div class="label"><svg class="i caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span>Payments</span><span class="count">3</span></div></div>
+  <div class="item"><svg class="i k-mcp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg><span>GitHub MCP</span><span class="status-dot ok"></span></div>
+  <div class="item"><svg class="i k-ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg><span>Triage open issues</span></div>
+  <div class="item"><svg class="i k-rt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></svg><span>Live prices</span><span class="tag">WS</span></div>
+  <div class="item"><svg class="i k-grpc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg><span>Inventory.Reserve</span><span class="tag">gRPC</span></div>
+</div>
+
+      <div class="side-foot"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg> Run collection<span class="spacer"></span><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg> 2 changes</div>
+    </aside>
+    <section class="main">
+      <div class="tabs-bar">
+        <div class="tab active"><span class="m m-get">GET</span> List orders <svg class="i x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></div>
+        <div class="tab"><span class="m m-post">POST</span> Create order</div>
+        <div class="tab"><svg class="i k-mcp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg> GitHub MCP</div>
+      </div>
+      <div class="split">
+        <div class="request">
+          <div class="reqbar">
+            <div class="url"><span class="method-select">GET <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span><span class="url-text"><span class="var">{{ _.base_url }}</span>/v2/orders?status=open&amp;limit=20</span></div>
+            <button class="btn btn-primary"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg>Send</button>
+            <button class="icon-btn" aria-label="Generate code"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg></button>
+          </div>
+          <div class="preview">→ https://api.shop.test/v2/orders?status=open&amp;limit=20</div>
+          <div class="subtabs">
+            <div class="tab active">Params <span class="n">2</span></div><div class="tab">Body</div><div class="tab">Auth <span class="dot"></span></div><div class="tab">Headers <span class="n">3</span></div><div class="tab">Scripts</div><div class="tab">Docs</div>
+          </div>
+          <div class="kv">
+            <div class="sec-title">Query parameters</div>
+            <div class="kv-row"><span class="chk on"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span><span>status</span><span>open</span><span></span></div>
+            <div class="kv-row"><span class="chk on"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span><span>limit</span><span>20</span><span></span></div>
+            <div class="kv-row ph"><span class="chk"></span><span>name</span><span>value</span><span></span></div>
+            <div class="sec-title" style="margin-top:18px">Auth · inherited from “Orders”</div>
+            <div class="kv-row"><span></span><span>Bearer</span><span><span class="var">{{ _.token }}</span> <span class="badge b-warn" style="margin-left:6px"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> secret</span></span><span></span></div>
+          </div>
+          <div class="hint">Tip: <span class="mono">:id</span> in the URL becomes a path parameter · paste a cURL command into the URL bar<span class="cursor"></span></div>
+        </div>
+        <div class="response">
+          <div class="resp-head">
+            <span class="status"><span class="status-dot ok"></span>200 OK</span>
+            <span class="meta">84 ms</span><span class="meta">1.2 KB</span>
+            <span class="spacer"></span>
+            <span class="badge b-ok"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 3/3 tests</span>
+          </div>
+          <div class="timing"><span style="width:18%;background:var(--info)"></span><span style="width:56%;background:var(--accent)"></span><span style="width:26%;background:var(--signal)"></span></div>
+          <div class="subtabs"><div class="tab active">Body</div><div class="tab">Headers <span class="n">9</span></div><div class="tab">Cookies</div><div class="tab">Timeline</div><div class="tab">Tests</div><div class="tab">Console</div></div>
+          <pre class="json"><span class="p">{</span>
+  <span class="k">"orders"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span> <span class="s">"ord_8K2fQ"</span><span class="p">,</span>
+      <span class="k">"status"</span><span class="p">:</span> <span class="s">"open"</span><span class="p">,</span>
+      <span class="k">"total"</span><span class="p">:</span> <span class="n">129.90</span><span class="p">,</span>
+      <span class="k">"currency"</span><span class="p">:</span> <span class="s">"EUR"</span><span class="p">,</span>
+      <span class="k">"express"</span><span class="p">:</span> <span class="b">true</span><span class="p">,</span>
+      <span class="k">"items"</span><span class="p">:</span> <span class="n">3</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span> <span class="s">"ord_8K2fR"</span><span class="p">,</span>
+      <span class="k">"status"</span><span class="p">:</span> <span class="s">"open"</span><span class="p">,</span>
+      <span class="k">"total"</span><span class="p">:</span> <span class="n">42.00</span><span class="p">,</span>
+      <span class="k">"express"</span><span class="p">:</span> <span class="b">false</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="k">"next_cursor"</span><span class="p">:</span> <span class="b">null</span>
+<span class="p">}</span></pre>
+          <div class="tests"><span class="badge b-ok">✓</span> status is 200 <span class="badge b-ok">✓</span> has orders <span class="badge b-ok">✓</span> fast enough</div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <footer class="statusbar">
+    <span><span class="status-dot ok" style="margin:0"></span>Production</span>
+    <span><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg> main ↑1</span>
+    <span><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> vault · 3 secrets</span>
+    <span class="spacer"></span>
+    <span class="muted">⌘↵ send · ⌘K commands · ⌘E environments</span>
+  </footer>
+</div>
+
+<h2>Design system</h2>
+<div class="sheet">
+  <div class="card"><div class="sec-title" style="margin-top:0">Colour</div><div class="sw-grid"><div class="sw"><span style="background:var(--bg)"></span><b>Canvas</b><code>--bg</code></div><div class="sw"><span style="background:var(--panel)"></span><b>Panel</b><code>--panel</code></div><div class="sw"><span style="background:var(--panel2)"></span><b>Subtle</b><code>--panel2</code></div><div class="sw"><span style="background:var(--muted)"></span><b>Hover</b><code>--muted</code></div><div class="sw"><span style="background:var(--line)"></span><b>Line</b><code>--line</code></div><div class="sw"><span style="background:var(--fg)"></span><b>Text</b><code>--fg</code></div><div class="sw"><span style="background:var(--fg2)"></span><b>Muted text</b><code>--fg2</code></div><div class="sw"><span style="background:var(--accent)"></span><b>Accent</b><code>--accent</code></div><div class="sw"><span style="background:var(--signal)"></span><b>Signal</b><code>--signal</code></div><div class="sw"><span style="background:var(--ok)"></span><b>Success</b><code>--ok</code></div><div class="sw"><span style="background:var(--warn)"></span><b>Warning</b><code>--warn</code></div><div class="sw"><span style="background:var(--err)"></span><b>Error</b><code>--err</code></div><div class="sw"><span style="background:var(--info)"></span><b>Info</b><code>--info</code></div></div></div>
+  <div class="card type">
+    <div class="sec-title" style="margin-top:0">Type</div>
+    <div class="display">Every socket, one client.</div>
+    <div class="h">HTTP · GraphQL · gRPC · WebSocket · MCP · AI</div>
+    <p>Body text sets requests, docs and descriptions. It should stay readable at 13px for long sessions, with clear contrast in both themes.</p>
+    <div class="code">ls.test('status is 200', () =&gt; ls.expect(ls.response.code).to.eql(200));</div>
+  </div>
+  <div class="card">
+    <div class="sec-title" style="margin-top:0">Controls</div>
+    <div class="row"><button class="btn btn-primary"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg>Send</button><button class="btn">Secondary</button><button class="btn btn-ghost">Ghost</button><button class="btn btn-danger">Delete</button></div>
+    <div class="row"><span class="m m-get">GET</span><span class="m m-post">POST</span><span class="m m-put">PUT</span><span class="m m-patch">PATCH</span><span class="m m-delete">DEL</span></div>
+    <div class="row"><span class="badge b-ok">200 OK</span><span class="badge b-warn">301 Moved</span><span class="badge b-err">500 Error</span><span class="badge b-info">WS open</span><span class="badge b-accent">read-only</span></div>
+    <div class="row"><input class="input" value="https://api.shop.test"></div>
+    <div class="row"><input class="input focus" value="Focused input"></div>
+    <div class="row"><span class="switch"></span> Follow redirects <span class="switch off" style="margin-left:14px"></span> Validate TLS</div>
+    <div class="toast"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><div><b>Imported 24 requests</b><br><span class="meta">Postman collection → “Shop API”</span></div></div>
+  </div>
+  <div class="card">
+    <div class="sec-title" style="margin-top:0">MCP tool card</div>
+    <div class="tool">
+      <h4><svg class="i k-mcp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg> search_issues <span class="badge b-accent">read-only</span><span class="badge b-info">idempotent</span></h4>
+      <p>Search issues and pull requests in a repository. Returns at most <span class="mono">limit</span> results, newest first.</p>
+      <table>
+        <tr><td>repo <span class="req">*</span></td><td class="meta">string</td><td>owner/name, e.g. <span class="mono">acme/shop</span></td></tr>
+        <tr><td>query</td><td class="meta">string</td><td>GitHub search syntax</td></tr>
+        <tr><td>limit</td><td class="meta">integer</td><td>1–100 · default 20</td></tr>
+      </table>
+      <div class="row" style="margin:12px 0 0"><button class="btn btn-primary"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>Call tool</button><span class="meta">last call 212 ms</span></div>
+    </div>
+  </div>
+</div>
+<p class="note">Mockup only — the real app keeps every feature; this shows colour, type, shape and spacing. Fonts load from Google Fonts here; the app would bundle them so it works offline.</p>
+</div>
+<script>
+  const root = document.documentElement;
+  const saved = (() => { try { return localStorage.getItem('ls-mock-theme'); } catch { return null; } })();
+  const set = t => { root.dataset.theme = t; document.querySelectorAll('.theme button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); try { localStorage.setItem('ls-mock-theme', t); } catch {} };
+  set(saved || 'system');
+  document.querySelectorAll('.theme button').forEach(b => b.addEventListener('click', () => set(b.dataset.t)));
+</script>
+</body>
+</html>

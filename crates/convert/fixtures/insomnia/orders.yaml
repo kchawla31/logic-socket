@@ -1,0 +1,112 @@
+type: collection.insomnia.rest/5.0
+schema_version: "5.1"
+name: Acme Orders
+meta:
+  id: wrk_orders01
+  created: 1767225600000
+  modified: 1767225600000
+  description: Orders service
+collection:
+  - name: Orders
+    meta:
+      id: fld_orders01
+      created: 1767225600000
+      modified: 1767225600000
+      sortKey: -2
+    environment:
+      page_size: 20
+    authentication:
+      type: bearer
+      token: "{{ _.token }}"
+    scripts:
+      preRequest: insomnia.environment.set('ts', Date.now());
+    children:
+      - url: "{{ _.base_url }}/orders/:id"
+        name: Get order
+        meta:
+          id: req_order01
+          created: 1767225600000
+          modified: 1767225600000
+          sortKey: -1
+          description: Fetch one order
+        method: GET
+        parameters:
+          - name: expand
+            value: items
+            disabled: true
+        pathParameters:
+          - name: id
+            value: ord_1
+        headers:
+          - name: Accept
+            value: application/json
+        scripts:
+          afterResponse: |-
+            insomnia.test('ok', () => {
+              insomnia.expect(insomnia.response.code).to.eql(200);
+            });
+        settings:
+          renderRequestBody: true
+          encodeUrl: true
+          followRedirects: off
+          cookies:
+            send: true
+            store: false
+          rebuildPath: true
+  - url: wss://orders.acme.test/live
+    name: Live orders
+    meta:
+      id: ws-req_live01
+      created: 1767225600000
+      modified: 1767225600000
+      sortKey: 1
+    settings:
+      encodeUrl: true
+      followRedirects: global
+      cookies:
+        send: true
+        store: true
+  - url: grpc.acme.test:443
+    name: Reserve stock
+    meta:
+      id: greq_reserve01
+      created: 1767225600000
+      modified: 1767225600000
+      sortKey: 2
+    body:
+      text: '{"sku": "BOOK-42"}'
+    protoFileId: ""
+    protoMethodName: /stock.Stock/Reserve
+    reflectionApi:
+      enabled: false
+      url: ""
+      apiKey: ""
+      module: ""
+cookieJar:
+  name: Default Jar
+  meta:
+    id: jar_orders01
+  cookies:
+    - key: session
+      value: abc
+      domain: orders.acme.test
+      path: /
+      expires: 2030-01-01T00:00:00.000Z
+      secure: true
+      httpOnly: true
+environments:
+  name: Base Environment
+  meta:
+    id: env_orders01
+  data:
+    base_url: https://orders.acme.test
+    token: ""
+  subEnvironments:
+    - name: Production
+      meta:
+        id: env_orders02
+        isPrivate: false
+        sortKey: 1
+      data:
+        base_url: https://api.acme.test
+      color: "#22c55e"

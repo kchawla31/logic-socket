@@ -1,6 +1,6 @@
 //! Sandboxed pre-request / after-response scripts (QuickJS via rquickjs).
 //!
-//! The `insomnia.*` object model lives in `prelude.js`; this crate provides
+//! The `ls.*` object model lives in `prelude.js`; this crate provides
 //! the host functions (HTTP, templating, timers, logging, vendored modules),
 //! resource limits, and conversion between `lsock_core::Request` and the
 //! script-facing request shape.
@@ -45,7 +45,7 @@ pub enum Event {
     AfterResponse,
 }
 
-/// Request as seen by scripts (Postman/Insomnia-style shape).
+/// Request as seen by scripts (Postman-style shape).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ScriptRequest {
@@ -199,7 +199,7 @@ pub struct ScriptOutput {
     pub duration_ms: f64,
 }
 
-/// Outgoing request from `insomnia.sendRequest`.
+/// Outgoing request from `ls.sendRequest`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct HostRequest {
     pub method: String,
@@ -210,7 +210,7 @@ pub struct HostRequest {
 
 /// Capabilities the sandbox borrows from the embedding engine.
 pub trait Host: Send + Sync + 'static {
-    /// Perform an HTTP request for `insomnia.sendRequest`.
+    /// Perform an HTTP request for `ls.sendRequest`.
     fn send(&self, req: HostRequest) -> BoxFuture<'static, Result<ScriptResponseData, String>>;
 }
 
@@ -436,7 +436,7 @@ async fn execute(
             opts.strict = false;
             opts.filename = Some(SCRIPT_FILE.into());
             let wrapped = format!(
-                "(async function (insomnia, $, pm, require, console, setTimeout, clearTimeout) {{{script}\n}})"
+                "(async function (ls, $, pm, require, console, setTimeout, clearTimeout) {{{script}\n}})"
             );
             let user_fn: Function = ctx.eval_with_options(wrapped, opts).catch(&ctx).map_err(caught_to_error)?;
             let lsock: Object = ctx.globals().get("__lsock").map_err(|e| fail(e.to_string()))?;

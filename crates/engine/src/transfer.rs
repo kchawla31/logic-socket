@@ -47,6 +47,8 @@ pub struct ImportSummary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ExportFormat {
+    /// Logic Socket's own YAML (lossless; also the Git sync format).
+    LogicSocket,
     InsomniaV5,
     Postman,
     Har,
@@ -532,9 +534,9 @@ impl Engine {
         opts: &ExportOptions,
     ) -> Result<Exported> {
         let b = self.export_bundle(workspace_id, opts)?;
-        let slug = lsock_convert::insomnia::file_name_for(&b.workspace.name);
-        let stem = slug
-            .trim_start_matches("insomnia.")
+        let file_name = lsock_convert::native::file_name_for(&b.workspace.name);
+        let stem = file_name
+            .trim_start_matches("logic-socket.")
             .trim_end_matches(".yaml")
             .to_string();
         let mut warnings = vec![];
@@ -550,8 +552,12 @@ impl Engine {
             ));
         }
         let (file_name, content) = match format {
+            ExportFormat::LogicSocket => (
+                file_name,
+                lsock_convert::native::export(&b).map_err(|e| err(e.to_string()))?,
+            ),
             ExportFormat::InsomniaV5 => (
-                slug,
+                format!("{stem}.insomnia.yaml"),
                 lsock_convert::insomnia::export_v5(&b).map_err(|e| err(e.to_string()))?,
             ),
             ExportFormat::Postman => {

@@ -11,7 +11,7 @@ logic-socket/
     http/        request building, auth, cookies, send, timings, timeline
     mcp/         JSON-RPC 2.0 client: stdio + Streamable HTTP transports, protocol log
     engine/      orchestration: load request + ancestors + envs → render → (scripts) → send → persist
-    scripting/   (Phase 2) rquickjs sandbox + insomnia.* API
+    scripting/   (Phase 2) rquickjs sandbox + ls.* API
     runner/      (Phase 2) collection runner, event stream, reporters
     llm/         (Phase 3) provider abstraction, streaming, MCP bridge
     cli/         `lsock` binary (clap) — thin layer over engine/mcp/runner
@@ -24,7 +24,7 @@ Dependency direction: `core ← templating ← http ← engine ← {cli, desktop
 
 ## Storage
 
-A single SQLite file (`<data_dir>/logic-socket/insomnia.db`, override with `LSOCK_DATA_DIR`).
+A single SQLite file (`<data_dir>/logic-socket/logic-socket.db`, override with `LSOCK_DATA_DIR`).
 
 ```sql
 CREATE TABLE docs (
@@ -41,12 +41,12 @@ CREATE INDEX docs_type   ON docs(type);
 CREATE TABLE schema_version (version INTEGER NOT NULL);
 ```
 
-A generic document table mirrors Insomnia's NeDB document model, keeps migrations additive, and makes import/export (Phase 5) a near-direct mapping. Typed access goes through `core::Store` (`get::<Request>(id)`, `children::<Folder>(parent)`, `ancestors(id)`, `upsert`, `delete_tree`). Bulk writes use `Store::batch(|tx| ...)` — one transaction, one change notification (Insomnia's `bufferChanges/flushChanges`). Response bodies above 1 MB are stored as files next to the DB; smaller bodies inline (base64 in `data`).
+A generic document table keeps migrations additive and makes import/export (Phase 5) a near-direct mapping. Typed access goes through `core::Store` (`get::<Request>(id)`, `children::<Folder>(parent)`, `ancestors(id)`, `upsert`, `delete_tree`). Bulk writes use `Store::batch(|tx| ...)` — one transaction, one change notification. Response bodies above 1 MB are stored as files next to the DB; smaller bodies inline (base64 in `data`).
 
 ## Request pipeline (engine)
 
 1. Load request, ancestors (folders → workspace), base + active sub env, global env, cookie jar.
-2. Build render context (`templating::Context`) using Insomnia's precedence.
+2. Build render context (`templating::Context`) (global → base → sub-environment → folders → extra layers).
 3. (Phase 2) folder pre-scripts outer→inner, request pre-script; mutations applied to the context/request.
 4. Render URL, params, path params, headers, body, auth fields.
 5. Merge inherited folder headers/auth (nearest folder wins; request overrides).

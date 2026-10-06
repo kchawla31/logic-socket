@@ -8,6 +8,7 @@ pub mod codegen;
 pub mod curl;
 pub mod har;
 pub mod insomnia;
+pub mod native;
 pub mod openapi;
 pub mod postman;
 
@@ -20,7 +21,7 @@ use serde_json::Value;
 #[derive(Debug, thiserror::Error)]
 pub enum ConvertError {
     #[error(
-        "unrecognised file: expected an Insomnia, Postman, OpenAPI/Swagger, HAR or cURL export"
+        "unrecognised file: expected a Logic Socket, Postman, OpenAPI/Swagger, HAR, Insomnia or cURL file"
     )]
     Unknown,
     #[error("{format}: {message}")]
@@ -43,6 +44,7 @@ pub type Result<T, E = ConvertError> = std::result::Result<T, E>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Format {
+    LogicSocket,
     InsomniaV5,
     InsomniaV4,
     PostmanCollection,
@@ -56,6 +58,7 @@ pub enum Format {
 impl std::fmt::Display for Format {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Format::LogicSocket => "Logic Socket",
             Format::InsomniaV5 => "Insomnia v5",
             Format::InsomniaV4 => "Insomnia v4",
             Format::PostmanCollection => "Postman collection",
@@ -218,6 +221,9 @@ pub fn detect(text: &str) -> Option<Format> {
 }
 
 fn detect_value(v: &Value) -> Option<Format> {
+    if v.get(native::MARKER).is_some() {
+        return Some(Format::LogicSocket);
+    }
     let s = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("");
     if s("type").ends_with(".insomnia.rest/5.0") || s("type") == "mcpClient.insomnia/5.0" {
         return Some(Format::InsomniaV5);
@@ -269,6 +275,7 @@ pub fn import(text: &str) -> Result<Imported> {
     }
     let v = parse_structured(text).ok_or(ConvertError::Unknown)?;
     match format {
+        Format::LogicSocket => native::import(&v),
         Format::InsomniaV5 => insomnia::import_v5(&v),
         Format::InsomniaV4 => insomnia::import_v4(&v),
         Format::PostmanCollection => postman::import_collection(v.get("collection").unwrap_or(&v)),
@@ -279,7 +286,7 @@ pub fn import(text: &str) -> Result<Imported> {
     }
 }
 
-/// Insomnia stores "inherit" as `{}`; we use a tagged enum.
+/// Other tools store "inherit" as `{}`; we use a tagged enum.
 pub(crate) fn auth_from_json(
     v: Option<&Value>,
     warnings: &mut Vec<String>,
@@ -316,13 +323,25 @@ pub(crate) fn str_of(v: &Value, k: &str) -> String {
     }
 }
 
-/// Turn any JSON scalar into the string Insomnia would show.
+/// Turn any JSON scalar into the string a user would see.
 pub(crate) fn scalar(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
         Value::Null => String::new(),
         other => other.to_string(),
     }
+}
+
+/// Rename a script API object (`pm.` → `ls.` …), leaving identifiers that merely
+/// end with the name, properties and string literals alone.
+pub(crate) fn rename_script_api(src: &str, from: &str, to: &str) -> String {
+    let re = regex::Regex::new(&format!(
+        r#"(?m)(?P<p>^|[^.$\-"'\w]){}\."#,
+        regex::escape(from)
+    ))
+    .unwrap();
+    re.replace_all(src, format!("${{p}}{to}.").as_str())
+        .into_owned()
 }
 
 #[cfg(test)]

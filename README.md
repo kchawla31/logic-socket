@@ -1,17 +1,17 @@
 # Logic Socket
 
-A Rust rewrite of the Insomnia API client: a desktop app (Tauri 2 + React) and the `lsock` CLI sharing one engine.
+An API client for HTTP, GraphQL, gRPC, realtime protocols, MCP and AI, written in Rust: a desktop app (Tauri 2 + React) and the `lsock` CLI sharing one engine.
 
-- **HTTP**: environments with Insomnia's variable precedence, `{{ _.var }}` + template tags, folder-inherited headers/auth, cookies, redirects with a curl-style timeline, response history
+- **HTTP**: layered environments (global → base → sub-environment → folders), `{{ _.var }}` + template tags, folder-inherited headers/auth, cookies, redirects with a curl-style timeline, response history
 - **MCP Inspector**: stdio and Streamable HTTP servers; tools shown as readable cards (behavior badges, parameter tables with nested fields/constraints/enums), generated call forms with live schema validation, resources, prompts, notifications, and a full JSON-RPC protocol log with latencies
-- **Scripts & tests**: pre-request / after-response scripts with Insomnia's `insomnia.*` API in a QuickJS sandbox (chai, lodash, crypto-js, moment, uuid, ajv, tv4), test results and console per response
+- **Scripts & tests**: pre-request / after-response scripts with the `ls.*` API (`pm.*` works too) in a QuickJS sandbox (chai, lodash, crypto-js, moment, uuid, ajv, tv4), test results and console per response
 - **AI requests (LLM ↔ MCP)**: Anthropic, OpenAI, Ollama or any OpenAI-compatible endpoint; streaming answers, thinking, and MCP tools the model can call — read-only tools run automatically, risky ones wait for your approval; token usage, time-to-first-token and the exact provider payloads; MCP sampling backed by your provider. Keys stay in the OS keychain
 - **Protocols & auth**: GraphQL (schema explorer, completion), gRPC (reflection or .proto files, all four call types), WebSocket, Server-Sent Events, Socket.IO; Basic, Bearer, API key, Digest, OAuth 1, OAuth 2 (incl. PKCE), AWS SigV4, netrc; HTTP proxy
-- **Bring your collections**: import Insomnia (v4/v5), Postman (collections, environments, scripts), OpenAPI 3, Swagger 2, HAR and cURL; export to Insomnia v5, Postman v2.1 or HAR; generate code (curl, HTTPie, fetch, Python, Go, Rust)
-- **Secrets & Git**: secret variables encrypted at rest (key in the OS keychain); Git sync with one Insomnia-compatible file per workspace, diffs, commit/pull/push, branches and conflict resolution — secret values never leave your machine
+- **Bring your collections**: import Postman (collections, environments, scripts), OpenAPI 3, Swagger 2, HAR, cURL and Insomnia files; export to Logic Socket YAML, Postman v2.1, HAR or Insomnia; generate code (curl, HTTPie, fetch, Python, Go, Rust)
+- **Secrets & Git**: secret variables encrypted at rest (key in the OS keychain); Git sync with one readable YAML file per workspace, diffs, commit/pull/push, branches and conflict resolution — secret values never leave your machine
 - **Collection runner**: iterations, CSV/JSON data, delays, bail, `setNextRequest` flow control; spec/dot/json/JUnit reports; `lsock run collection` for CI
 
-Status and scope: see `docs/PARITY.md` (what maps to which phase), the phase reports `docs/PHASE1_REPORT.md` … `docs/PHASE5_REPORT.md`, and `docs/DECISIONS.md`.
+Status and scope: see `docs/FEATURES.md` (what lives where, by phase), the phase reports `docs/PHASE1_REPORT.md` … `docs/PHASE5_REPORT.md`, and `docs/DECISIONS.md`.
 
 ## Run the desktop app
 
@@ -56,7 +56,7 @@ lsock grpc grpc://localhost:50051 -l
 lsock grpc grpc://localhost:50051 -m demo.Greeter/Chat --send '{"user":"a","text":"hi"}' --send '{"user":"a","text":"bye"}'
 
 # Import / export / code
-lsock import petstore.yaml                     # Insomnia v4/v5, Postman, OpenAPI 3, Swagger 2, HAR, curl
+lsock import petstore.yaml                     # Logic Socket, Postman, OpenAPI 3, Swagger 2, HAR, Insomnia, curl
 lsock import prod.postman_environment.json --into "My API"
 lsock export "My API" -f postman -o my-api.postman_collection.json
 lsock code "Get JSON" --lang python            # curl, httpie, js, python, go, rust
@@ -65,7 +65,7 @@ lsock code "Get JSON" --lang python            # curl, httpie, js, python, go, r
 lsock env set "My API" token - --secret         # reads the value from stdin
 lsock vault export-key                          # move secrets to another machine
 
-# Git sync (one Insomnia v5 file per workspace; secrets never committed)
+# Git sync (one logic-socket.<name>.yaml per workspace; secrets never committed)
 lsock git clone https://github.com/acme/api-collections.git ~/api-collections
 lsock git open ~/my-repo && lsock git link my-repo "My API"
 lsock git status my-repo && lsock git commit my-repo -m "Add orders" && lsock git push my-repo
@@ -104,7 +104,7 @@ cd apps/desktop && VITE_WEB_BRIDGE=1 npm run dev           # http://localhost:14
 
 ```
 crates/core        models + SQLite store          crates/mcp        MCP client, protocol log, schema tools, mock server
-crates/templating  Nunjucks-compatible rendering  crates/scripting  QuickJS sandbox + insomnia.* API
+crates/templating  Nunjucks-compatible rendering  crates/scripting  QuickJS sandbox + ls.* API
 crates/http        HTTP engine                    crates/runner     collection runner + reporters
 crates/engine      request pipeline               crates/cli        `lsock`
 apps/desktop       Tauri shell (src-tauri) + React UI (src)

@@ -178,7 +178,7 @@ async fn network_errors_are_persisted_too() {
 }
 
 #[test]
-fn layers_follow_insomnia_precedence() {
+fn layers_follow_environment_precedence() {
     let f = fixture("http://x");
     // global env workspace
     let gws =
@@ -296,34 +296,34 @@ async fn send_many_keeps_order_history_prunes_and_large_bodies_go_to_disk() {
 // ---------------------------------------------------------------- scripts in the pipeline
 
 #[tokio::test]
-async fn scripts_run_in_insomnia_order_and_persist_results() {
+async fn scripts_run_in_order_and_persist_results() {
     let base = server().await;
     let f = fixture(&base);
     // outer folder (parent of `f.folder`) gets scripts too
     let outer_id = f.folder.meta.parent_id.clone().unwrap();
     let mut outer = f.e.store.get::<Folder>(&outer_id).unwrap();
     outer.pre_request_script =
-        Some("console.log('outer pre'); insomnia.variables.set('trail', 'outer');".into());
+        Some("console.log('outer pre'); ls.variables.set('trail', 'outer');".into());
     outer.after_response_script = Some("console.log('outer after');".into());
     f.e.store.update(&outer).unwrap();
     let mut inner = f.e.store.get::<Folder>(f.folder.id()).unwrap();
-    inner.pre_request_script = Some("console.log('inner pre'); insomnia.variables.set('trail', insomnia.variables.get('trail') + '>inner');".into());
+    inner.pre_request_script = Some("console.log('inner pre'); ls.variables.set('trail', ls.variables.get('trail') + '>inner');".into());
     inner.after_response_script = Some("console.log('inner after');".into());
     f.e.store.update(&inner).unwrap();
     let mut req = f.e.store.get::<Request>(f.req.id()).unwrap();
     req.pre_request_script = Some(
         r#"console.log('request pre');
-        insomnia.environment.set('user', 'from-script');
-        insomnia.request.headers.add({ key: 'X-Trail', value: '{{ trail }}>request' });"#
+        ls.environment.set('user', 'from-script');
+        ls.request.headers.add({ key: 'X-Trail', value: '{{ trail }}>request' });"#
             .into(),
     );
     req.after_response_script = Some(
         r#"console.log('request after');
-        const body = insomnia.response.json();
-        insomnia.environment.set('lastPath', body.path);
-        insomnia.test('status ok', () => insomnia.expect(insomnia.response.code).to.equal(200));
-        insomnia.test('header came through', () => insomnia.expect(body.headers['x-trail']).to.equal('outer>inner>request'));
-        insomnia.test('fails on purpose', () => insomnia.expect(1).to.equal(2));"#
+        const body = ls.response.json();
+        ls.environment.set('lastPath', body.path);
+        ls.test('status ok', () => ls.expect(ls.response.code).to.equal(200));
+        ls.test('header came through', () => ls.expect(body.headers['x-trail']).to.equal('outer>inner>request'));
+        ls.test('fails on purpose', () => ls.expect(1).to.equal(2));"#
             .into(),
     );
     f.e.store.update(&req).unwrap();
@@ -373,9 +373,8 @@ async fn scripts_run_in_insomnia_order_and_persist_results() {
 async fn skip_and_script_errors_stop_the_send() {
     let f = fixture("http://127.0.0.1:1");
     let mut req = f.e.store.get::<Request>(f.req.id()).unwrap();
-    req.pre_request_script = Some(
-        "insomnia.execution.skipRequest(); insomnia.execution.setNextRequest('Other');".into(),
-    );
+    req.pre_request_script =
+        Some("ls.execution.skipRequest(); ls.execution.setNextRequest('Other');".into());
     f.e.store.update(&req).unwrap();
     let out =
         f.e.send_with_state(f.req.id(), &mut RunState::default())
@@ -403,8 +402,8 @@ async fn send_request_from_script_reaches_server_and_iteration_data_renders() {
     let f = fixture(&base);
     let mut req = f.e.store.get::<Request>(f.req.id()).unwrap();
     req.pre_request_script = Some(format!(
-        r#"const r = await insomnia.sendRequest({{ url: '{base}/token', method: 'POST', body: {{ mode: 'raw', raw: 'x' }} }});
-        insomnia.variables.set('tokenPath', r.json().path);"#
+        r#"const r = await ls.sendRequest({{ url: '{base}/token', method: 'POST', body: {{ mode: 'raw', raw: 'x' }} }});
+        ls.variables.set('tokenPath', r.json().path);"#
     ));
     req.headers
         .push(lsock_core::KeyValue::new("X-Token-Path", "{{ tokenPath }}"));
@@ -429,7 +428,7 @@ async fn send_request_from_script_reaches_server_and_iteration_data_renders() {
 }
 
 #[tokio::test]
-async fn without_sub_environment_insomnia_environment_is_the_base() {
+async fn without_sub_environment_ls_environment_is_the_base() {
     let base = server().await;
     let e = Engine::in_memory();
     let ws = e.store.insert(None, Workspace::default()).unwrap();
@@ -443,7 +442,7 @@ async fn without_sub_environment_insomnia_environment_is_the_base() {
             Request {
                 url: "{{ _.base }}/a".into(),
                 after_response_script: Some(
-                    "insomnia.environment.set('token', 'abc'); insomnia.environment.unset('drop'); insomnia.baseEnvironment.set('other', true);".into(),
+                    "ls.environment.set('token', 'abc'); ls.environment.unset('drop'); ls.baseEnvironment.set('other', true);".into(),
                 ),
                 ..Default::default()
             },
@@ -455,7 +454,10 @@ async fn without_sub_environment_insomnia_environment_is_the_base() {
             Some(ws.id()),
             Request {
                 url: "{{ _.base }}/b".into(),
-                pre_request_script: Some("insomnia.request.headers.add({ key: 'X-T', value: insomnia.environment.get('token') });".into()),
+                pre_request_script: Some(
+                    "ls.request.headers.add({ key: 'X-T', value: ls.environment.get('token') });"
+                        .into(),
+                ),
                 ..Default::default()
             },
         )
@@ -1131,9 +1133,8 @@ mod phase5 {
         f.e.set_env_var(&staging, "user", json!("alice"), true)
             .unwrap();
         let mut r = f.e.store.get::<Request>(f.req.id()).unwrap();
-        r.pre_request_script = Some(
-            "insomnia.environment.set('user', insomnia.environment.get('user') + '-2');".into(),
-        );
+        r.pre_request_script =
+            Some("ls.environment.set('user', ls.environment.get('user') + '-2');".into());
         f.e.store.update(&r).unwrap();
         let resp = f.e.send(f.req.id()).await.unwrap();
         assert_eq!(body_json(&f.e, &resp)["path"], "/users/alice-2");
@@ -1235,7 +1236,7 @@ mod phase5 {
             .unwrap();
         assert_eq!(
             create.after_response_script.as_deref(),
-            Some("insomnia.test('created', () => insomnia.response.to.have.status(201));")
+            Some("ls.test('created', () => ls.response.to.have.status(201));")
         );
         let p = e
             .prepare(create.id(), &[Layer::new("x", vars(json!({"sku": "A1"})))])
@@ -1250,7 +1251,7 @@ mod phase5 {
     }
 
     #[test]
-    fn replace_mode_round_trips_v5_keeping_local_state() {
+    fn replace_mode_round_trips_keeping_local_state() {
         let e = Engine::in_memory();
         let ws = e
             .import_text(&postman(), &ImportOptions::default())
@@ -1313,9 +1314,9 @@ mod phase5 {
             .unwrap();
 
         let out = e
-            .export_workspace(&ws, ExportFormat::InsomniaV5, &ExportOptions::default())
+            .export_workspace(&ws, ExportFormat::LogicSocket, &ExportOptions::default())
             .unwrap();
-        assert_eq!(out.file_name, "insomnia.shop.yaml");
+        assert_eq!(out.file_name, "logic-socket.shop.yaml");
         assert!(
             !out.content.contains("k-local"),
             "secret values never leave the machine"
@@ -1333,7 +1334,7 @@ mod phase5 {
             .replace("name: List", "name: List orders")
             .replace("name: Create", "name: Create order");
         let mut v: serde_json::Value = serde_yaml_ng::from_str(&edited).unwrap();
-        v["collection"][0]["children"]
+        v["items"][0]["children"]
             .as_array_mut()
             .unwrap()
             .retain(|c| c["name"] != "Create order");
@@ -1412,7 +1413,11 @@ mod phase5 {
             )
             .unwrap();
         let out = e
-            .export_workspace(ws.id(), ExportFormat::InsomniaV5, &ExportOptions::default())
+            .export_workspace(
+                ws.id(),
+                ExportFormat::LogicSocket,
+                &ExportOptions::default(),
+            )
             .unwrap();
         let copy = e
             .import_text(&out.content, &ImportOptions::default())
@@ -1607,7 +1612,7 @@ mod git_sync {
             .unwrap();
         let repo_a = set_author(&ana, &repo_a, "Ana", &remote);
         let repo_a = ana.git_link(repo_a.id(), ws.id()).unwrap();
-        assert_eq!(repo_a.files[0].path, "insomnia.shop-api.yaml");
+        assert_eq!(repo_a.files[0].path, "logic-socket.shop-api.yaml");
         let st = ana.git_status(repo_a.id()).unwrap();
         assert_eq!(st.branch, "main");
         assert_eq!(st.changes.len(), 1);
@@ -1620,7 +1625,8 @@ mod git_sync {
         );
         ana.git_commit(repo_a.id(), "Add Shop API", &[]).unwrap();
         ana.git_push(repo_a.id()).unwrap();
-        let file = std::fs::read_to_string(tmp.path().join("ana/insomnia.shop-api.yaml")).unwrap();
+        let file =
+            std::fs::read_to_string(tmp.path().join("ana/logic-socket.shop-api.yaml")).unwrap();
         assert!(
             !file.contains("ana-secret-token") && !file.contains("vault:v1"),
             "no secret in the repo:\n{file}"
@@ -1652,7 +1658,9 @@ mod git_sync {
 
         // Ben renames a request and pushes; Ana pulls
         rename(&ben, "Get order", "Get order by id");
-        let diff = ben.git_diff(repo_b.id(), "insomnia.shop-api.yaml").unwrap();
+        let diff = ben
+            .git_diff(repo_b.id(), "logic-socket.shop-api.yaml")
+            .unwrap();
         assert!(
             diff.contains("+    name: Get order by id")
                 || diff.contains("+  - name: Get order by id")
@@ -1691,7 +1699,7 @@ mod git_sync {
                 .contains("commit or discard")
         );
         // discard brings back the committed version
-        ana.git_discard(repo_a.id(), "insomnia.shop-api.yaml")
+        ana.git_discard(repo_a.id(), "logic-socket.shop-api.yaml")
             .unwrap();
         assert_eq!(names(&ana), ["Get order by id", "List orders"]);
 
@@ -1703,14 +1711,17 @@ mod git_sync {
         ben.git_commit(repo_b.id(), "Ben's name", &[]).unwrap();
         ben.git_push(repo_b.id()).unwrap();
         let res = ana.git_pull(repo_a.id()).unwrap();
-        assert_eq!(res.conflicts, vec!["insomnia.shop-api.yaml".to_string()]);
+        assert_eq!(
+            res.conflicts,
+            vec!["logic-socket.shop-api.yaml".to_string()]
+        );
         assert_eq!(
             names(&ana),
             ["Get order by id", "Orders (Ana)"],
             "nothing imported while conflicted"
         );
         let res = ana
-            .git_resolve(repo_a.id(), "insomnia.shop-api.yaml", "theirs")
+            .git_resolve(repo_a.id(), "logic-socket.shop-api.yaml", "theirs")
             .unwrap();
         assert!(res.conflicts.is_empty());
         assert_eq!(names(&ana), ["Get order by id", "Orders (Ben)"]);

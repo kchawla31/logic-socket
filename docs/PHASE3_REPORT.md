@@ -31,7 +31,7 @@
 - MCP elicitation (`elicitation/create`) still answered with "not supported"
 - No image/audio inputs to models; tool image outputs are summarised as text for the model
 - No per-run cost estimates (token counts only); no prompt caching controls
-- Scripts can't call LLMs yet (`insomnia.llm`), and AI requests aren't part of collection runs
+- Scripts can't call LLMs yet (`ls.llm`), and AI requests aren't part of collection runs
 - Thinking/effort controls for Claude 5 models and OpenAI reasoning effort are not exposed in the UI
 
 ## Try it with a real key

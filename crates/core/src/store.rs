@@ -1,5 +1,5 @@
-//! SQLite-backed document store. One generic `docs` table mirrors Insomnia's
-//! NeDB document model; see docs/ARCHITECTURE.md.
+//! SQLite-backed document store: one generic `docs` table holding typed JSON
+//! documents in a parent/child tree; see docs/ARCHITECTURE.md.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};

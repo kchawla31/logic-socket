@@ -1,0 +1,12 @@
+{
+  "method": "POST",
+  "url": "https://shop.acme.test/api/avatar",
+  "httpVersion": "HTTP/1.1",
+  "headers": [{ "name": "Content-Type", "value": "multipart/form-data; boundary=x" }],
+  "postData": {
+    "params": [
+      { "name": "image", "fileName": "/home/ana/me.png" },
+      { "name": "alt", "value": "Ana" }
+    ]
+  }
+}

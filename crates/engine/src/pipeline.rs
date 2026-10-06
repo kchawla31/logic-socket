@@ -1,5 +1,4 @@
-//! Full request pipeline with scripts, matching Insomnia's order
-//! (packages/insomnia/src/network/network.ts):
+//! Full request pipeline with scripts, in this order:
 //!
 //! folder pre-request scripts (outermost first) → request pre-request script
 //! → render → send → request after-response script → folder after-response
@@ -26,7 +25,7 @@ use crate::{Engine, EngineError, Result};
 #[derive(Debug, Clone, Default)]
 pub struct RunState {
     pub iteration_data: VarMap,
-    /// `insomnia.variables.set` values; highest render precedence.
+    /// `ls.variables.set` values; highest render precedence.
     pub local_variables: VarMap,
     pub iteration: u32,
     pub iteration_count: u32,
@@ -35,13 +34,13 @@ pub struct RunState {
 #[derive(Debug, Clone)]
 pub struct Outcome {
     pub response: Doc<Response>,
-    /// `insomnia.execution.skipRequest()` was called; nothing was sent.
+    /// `ls.execution.skipRequest()` was called; nothing was sent.
     pub skipped: bool,
-    /// From `insomnia.execution.setNextRequest`; `"__stop__"` for `null`.
+    /// From `ls.execution.setNextRequest`; `"__stop__"` for `null`.
     pub next_request: Option<String>,
 }
 
-/// `insomnia.sendRequest` backed by the HTTP engine.
+/// `ls.sendRequest` backed by the HTTP engine.
 struct EngineHost {
     options: lsock_http::Options,
 }
@@ -107,8 +106,8 @@ impl Envs {
             .unwrap_or_default()
     }
 
-    /// What scripts see as `insomnia.environment`: the active sub-environment,
-    /// or the base environment when none is active (as in Insomnia).
+    /// What scripts see as `ls.environment`: the active sub-environment,
+    /// or the base environment when none is active.
     fn script_env(&self) -> NamedVars {
         match &self.sub {
             Some(e) => NamedVars {
@@ -358,8 +357,7 @@ impl Engine {
                     method: req.method.clone(),
                     url: req.url.clone(),
                     error: Some(
-                        "Request skipped by pre-request script (insomnia.execution.skipRequest)"
-                            .into(),
+                        "Request skipped by pre-request script (ls.execution.skipRequest)".into(),
                     ),
                     test_results: tests,
                     console,

@@ -1,0 +1,563 @@
+"""Generate the four Logic Socket look-and-feel mockups + an index page.
+
+    python3 design/mockups/build.py
+
+Every option uses the same markup; only the theme (tokens, fonts, shape and a
+few structural touches) changes, so the pages compare look and feel only.
+"""
+
+from pathlib import Path
+
+OUT = Path(__file__).parent
+
+# ----------------------------------------------------------------- icons (lucide, MIT)
+I = {
+    "folder": '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+    "chev": '<path d="m6 9 6 6 6-6"/>',
+    "chevr": '<path d="m9 18 6-6-6-6"/>',
+    "plus": '<path d="M5 12h14"/><path d="M12 5v14"/>',
+    "send": '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
+    "search": '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    "git": '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+    "plug": '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>',
+    "spark": '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>',
+    "radio": '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
+    "net": '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>',
+    "lock": '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    "code": '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
+    "play": '<polygon points="6 3 20 12 6 21 6 3"/>',
+    "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+    "moon": '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+    "monitor": '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+    "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    "check": '<path d="M20 6 9 17l-5-5"/>',
+    "layers": '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
+    "list": '<path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/>',
+    "settings": '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+}
+
+
+def icon(name, cls="i"):
+    return (f'<svg class="{cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+            f'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{I[name]}</svg>')
+
+
+# ----------------------------------------------------------------- the four directions
+THEMES = [
+    {
+        "slug": "circuit",
+        "name": "Circuit",
+        "tagline": "Electric teal on ink navy — signals, wires and live status.",
+        "fonts": "family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600",
+        "sans": "'Geist', ui-sans-serif, system-ui, sans-serif",
+        "mono": "'Geist Mono', ui-monospace, monospace",
+        "logo": '<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M11 9v6M21 9v6M9 15h14v3a7 7 0 0 1-14 0z" fill="none" stroke="var(--accent-fg)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="25" r="1.6" fill="var(--signal)"/></svg>',
+        "light": dict(bg="#EEF2F7", panel="#FFFFFF", panel2="#F6F8FB", muted="#E8EDF4", line="#DCE3EC", fg="#0F172A", fg2="#5B6B82",
+                      accent="#0EA5A4", accentfg="#FFFFFF", accentsoft="rgba(14,165,164,.12)", signal="#D97706",
+                      ok="#059669", warn="#D97706", err="#E11D48", info="#2563EB",
+                      get="#059669", post="#D97706", put="#2563EB", delete="#E11D48",
+                      key="#0E7490", str="#047857", num="#B45309", bool="#7C3AED", shadow="0 1px 2px rgba(15,23,42,.06)"),
+        "dark": dict(bg="#070C17", panel="#0B1220", panel2="#0F1829", muted="#16213A", line="#1C2842", fg="#E2E8F0", fg2="#8394AE",
+                     accent="#2DD4BF", accentfg="#04201D", accentsoft="rgba(45,212,191,.13)", signal="#FBBF24",
+                     ok="#34D399", warn="#FBBF24", err="#FB7185", info="#60A5FA",
+                     get="#34D399", post="#FBBF24", put="#60A5FA", delete="#FB7185",
+                     key="#5EEAD4", str="#86EFAC", num="#FCD34D", bool="#C4B5FD", shadow="0 0 0 1px rgba(45,212,191,.04)"),
+        "radius": "6px", "radius_lg": "10px", "radius_btn": "6px", "gap": "0px", "fs": "13px",
+        "extra": """
+        .app { border: 1px solid var(--line); }
+        .sidebar { background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 16px 16px; }
+        .status-dot { box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 25%, transparent), 0 0 12px currentColor; }
+        .btn-primary { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), 0 6px 18px -6px var(--accent); }
+        .tab.active { box-shadow: inset 0 -2px 0 var(--accent); }
+        .tree .item.active { box-shadow: inset 2px 0 0 var(--accent); }
+        .sec-title { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg2); }
+        """,
+    },
+    {
+        "slug": "graphite",
+        "name": "Graphite",
+        "tagline": "Calm and premium — floating panels, soft depth, indigo accent.",
+        "fonts": "family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600",
+        "sans": "'Manrope', ui-sans-serif, system-ui, sans-serif",
+        "mono": "'JetBrains Mono', ui-monospace, monospace",
+        "logo": '<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7C8BFF"/><stop offset="1" stop-color="#4F5BEA"/></linearGradient></defs><rect x="3" y="3" width="26" height="26" rx="9" fill="url(#g)"/><circle cx="12.5" cy="16" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="19.5" cy="16" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/></svg>',
+        "light": dict(bg="#ECEDF1", panel="#FFFFFF", panel2="#F7F7FA", muted="#EEEFF4", line="#E3E4EA", fg="#16171D", fg2="#6B6E7B",
+                      accent="#5B6CFF", accentfg="#FFFFFF", accentsoft="rgba(91,108,255,.11)", signal="#5B6CFF",
+                      ok="#16A34A", warn="#CA8A04", err="#DC2626", info="#5B6CFF",
+                      get="#16A34A", post="#CA8A04", put="#5B6CFF", delete="#DC2626",
+                      key="#4F46E5", str="#15803D", num="#B45309", bool="#C026D3", shadow="0 1px 2px rgba(16,17,29,.04), 0 8px 24px -12px rgba(16,17,29,.18)"),
+        "dark": dict(bg="#0E0F12", panel="#17181C", panel2="#1C1D22", muted="#24252B", line="#2A2B32", fg="#ECEDF2", fg2="#9497A3",
+                     accent="#7C8BFF", accentfg="#0B0D24", accentsoft="rgba(124,139,255,.14)", signal="#7C8BFF",
+                     ok="#4ADE80", warn="#FACC15", err="#F87171", info="#7C8BFF",
+                     get="#4ADE80", post="#FACC15", put="#7C8BFF", delete="#F87171",
+                     key="#A5B4FC", str="#86EFAC", num="#FCD34D", bool="#F0ABFC", shadow="0 1px 0 rgba(255,255,255,.03) inset, 0 12px 32px -16px rgba(0,0,0,.6)"),
+        "radius": "10px", "radius_lg": "14px", "radius_btn": "10px", "gap": "10px", "fs": "13.5px",
+        "extra": """
+        .app { background: var(--bg); padding: 0 var(--gap) var(--gap); }
+        .topbar { background: transparent; border-bottom: 0; }
+        .sidebar, .main { border-radius: var(--radius-lg); border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; }
+        .split { gap: 0; }
+        .body { gap: var(--gap); }
+        .statusbar { background: transparent; border-top: 0; padding-top: 6px; }
+        .tabs-bar { background: var(--panel2); }
+        .url { border-radius: 12px; box-shadow: var(--shadow); }
+        .seg, .subtabs { background: var(--muted); border-radius: 10px; padding: 3px; gap: 2px; border-bottom: 0 !important; margin: 10px 12px 0; width: max-content; }
+        .subtabs .tab { border-radius: 8px; height: 28px; }
+        .subtabs .tab.active { background: var(--panel); box-shadow: var(--shadow); color: var(--fg); }
+        .tree .item.active { background: var(--accent-soft); color: var(--fg); }
+        .sec-title { font-weight: 700; font-size: 12px; color: var(--fg2); }
+        """,
+    },
+    {
+        "slug": "terminal",
+        "name": "Terminal",
+        "tagline": "Bold developer aesthetic — phosphor green, mono labels, sharp edges.",
+        "fonts": "family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600",
+        "sans": "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif",
+        "mono": "'IBM Plex Mono', ui-monospace, monospace",
+        "logo": '<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="2.5" y="2.5" width="27" height="27" fill="none" stroke="var(--accent)" stroke-width="2"/><path d="M9 12l5 4-5 4" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="square"/><path d="M16 21h7" stroke="var(--signal)" stroke-width="2.4"/></svg>',
+        "light": dict(bg="#E9EBE4", panel="#F7F8F3", panel2="#EFF1EA", muted="#E3E6DC", line="#CBD0C2", fg="#111511", fg2="#5E665B",
+                      accent="#0F8A4F", accentfg="#F7F8F3", accentsoft="rgba(15,138,79,.12)", signal="#B76E00",
+                      ok="#0F8A4F", warn="#B76E00", err="#C2410C", info="#0E7490",
+                      get="#0F8A4F", post="#B76E00", put="#0E7490", delete="#C2410C",
+                      key="#0E7490", str="#0F8A4F", num="#B76E00", bool="#9333EA", shadow="none"),
+        "dark": dict(bg="#050605", panel="#0A0C0A", panel2="#0E110E", muted="#161A16", line="#1F2A1F", fg="#D8E3D6", fg2="#7E8C7B",
+                     accent="#39D98A", accentfg="#04140B", accentsoft="rgba(57,217,138,.12)", signal="#FFB547",
+                     ok="#39D98A", warn="#FFB547", err="#FF6B5B", info="#5CC8FF",
+                     get="#39D98A", post="#FFB547", put="#5CC8FF", delete="#FF6B5B",
+                     key="#5CC8FF", str="#39D98A", num="#FFB547", bool="#D59BFF", shadow="none"),
+        "radius": "2px", "radius_lg": "2px", "radius_btn": "2px", "gap": "0px", "fs": "13px",
+        "extra": """
+        .app { border: 1px solid var(--line); }
+        .brand .name { font-family: var(--mono); text-transform: uppercase; letter-spacing: .14em; font-size: 12px; }
+        .brand .name::before { content: '['; color: var(--fg2); margin-right: 2px; } .brand .name::after { content: ']'; color: var(--fg2); margin-left: 2px; }
+        .tab, .subtabs .tab, .sec-title, .btn, .badge, .select, .statusbar, .tree .folder > .label { font-family: var(--mono); }
+        .subtabs .tab, .sec-title, .btn { text-transform: uppercase; letter-spacing: .06em; font-size: 11.5px; }
+        .tab.active { color: var(--accent); }
+        .subtabs .tab.active::before { content: '> '; }
+        .tree .item.active { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+        .btn-primary { background: var(--accent); }
+        .statusbar { background: var(--accent); color: var(--accent-fg); border-top: 0; }
+        .statusbar .muted { color: color-mix(in srgb, var(--accent-fg) 70%, transparent); }
+        .cursor::after { content: '▋'; color: var(--accent); animation: blink 1.1s steps(1) infinite; margin-left: 2px; }
+        @keyframes blink { 50% { opacity: 0; } }
+        """,
+    },
+    {
+        "slug": "warm-studio",
+        "name": "Warm Studio",
+        "tagline": "Friendly and distinctive — cream paper, coral accent, soft rounded shapes.",
+        "fonts": "family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500",
+        "sans": "'DM Sans', ui-sans-serif, system-ui, sans-serif",
+        "mono": "'DM Mono', ui-monospace, monospace",
+        "logo": '<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="var(--accent)"/><path d="M11.5 11v4.5M20.5 11v4.5M10 15.5h12v1.5a6 6 0 0 1-12 0z" fill="none" stroke="var(--accent-fg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        "light": dict(bg="#F4EEE4", panel="#FFFCF7", panel2="#FBF6EE", muted="#F2EADD", line="#E8DDCC", fg="#2A211B", fg2="#80705F",
+                      accent="#F2643A", accentfg="#FFFFFF", accentsoft="rgba(242,100,58,.12)", signal="#F2643A",
+                      ok="#3E9B5B", warn="#D6911E", err="#D9443A", info="#3B7FC4",
+                      get="#3E9B5B", post="#D6911E", put="#3B7FC4", delete="#D9443A",
+                      key="#B9481F", str="#3E7F4F", num="#A86A0C", bool="#7A4FC2", shadow="0 1px 2px rgba(80,50,20,.06), 0 10px 30px -18px rgba(80,50,20,.35)"),
+        "dark": dict(bg="#161310", panel="#1E1B18", panel2="#242019", muted="#2D2822", line="#383128", fg="#F2E9DE", fg2="#A79886",
+                     accent="#FF7A50", accentfg="#2A1206", accentsoft="rgba(255,122,80,.14)", signal="#FF7A50",
+                     ok="#7BC98F", warn="#F2B54C", err="#FF7A6E", info="#7FB3EA",
+                     get="#7BC98F", post="#F2B54C", put="#7FB3EA", delete="#FF7A6E",
+                     key="#FFA27F", str="#A8DDB5", num="#F2C66D", bool="#C9A8FF", shadow="0 12px 32px -18px rgba(0,0,0,.7)"),
+        "radius": "10px", "radius_lg": "18px", "radius_btn": "999px", "gap": "12px", "fs": "13.5px",
+        "extra": """
+        .app { padding: 0 var(--gap) var(--gap); }
+        .topbar { background: transparent; border-bottom: 0; }
+        .body { gap: var(--gap); }
+        .sidebar { background: transparent; border: 0; }
+        .main { border-radius: var(--radius-lg); background: var(--panel); box-shadow: var(--shadow); border: 1px solid var(--line); overflow: hidden; }
+        .split { gap: 0; }
+        .statusbar { background: transparent; border-top: 0; padding-top: 6px; }
+        .tree .item { border-radius: 10px; }
+        .tree .item.active { background: var(--panel); box-shadow: var(--shadow); color: var(--fg); }
+        .tree .folder > .label .i { color: var(--accent); }
+        .select, .search { border-radius: 999px; }
+        .url { border-radius: 999px; padding-left: 6px; }
+        .method-select { border-radius: 999px; }
+        .subtabs .tab.active { color: var(--accent); }
+        .tab.active { box-shadow: inset 0 -2px 0 var(--accent); }
+        .badge { border-radius: 999px; }
+        .sec-title { font-weight: 700; font-size: 13px; }
+        """,
+    },
+]
+
+
+# ----------------------------------------------------------------- shared markup
+
+def method(m):
+    return f'<span class="m m-{m.lower()}">{ {"DELETE": "DEL"}.get(m, m) }</span>'
+
+
+def var(name):
+    return f'<span class="var">{{{{ {name} }}}}</span>'
+
+
+TREE = f"""
+<div class="tree">
+  <div class="folder open"><div class="label">{icon('chev','i caret')}{icon('folder')}<span>Orders</span><span class="count">4</span></div>
+    <div class="item active">{method('GET')}<span>List orders</span></div>
+    <div class="item">{method('POST')}<span>Create order</span></div>
+    <div class="item">{method('PATCH')}<span>Update status</span></div>
+    <div class="item">{method('DELETE')}<span>Cancel order</span></div>
+  </div>
+  <div class="folder"><div class="label">{icon('chevr','i caret')}{icon('folder')}<span>Customers</span><span class="count">6</span></div></div>
+  <div class="folder"><div class="label">{icon('chevr','i caret')}{icon('folder')}<span>Payments</span><span class="count">3</span></div></div>
+  <div class="item">{icon('plug','i k-mcp')}<span>GitHub MCP</span><span class="status-dot ok"></span></div>
+  <div class="item">{icon('spark','i k-ai')}<span>Triage open issues</span></div>
+  <div class="item">{icon('radio','i k-rt')}<span>Live prices</span><span class="tag">WS</span></div>
+  <div class="item">{icon('net','i k-grpc')}<span>Inventory.Reserve</span><span class="tag">gRPC</span></div>
+</div>
+"""
+
+JSON = """<span class="p">{</span>
+  <span class="k">"orders"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span> <span class="s">"ord_8K2fQ"</span><span class="p">,</span>
+      <span class="k">"status"</span><span class="p">:</span> <span class="s">"open"</span><span class="p">,</span>
+      <span class="k">"total"</span><span class="p">:</span> <span class="n">129.90</span><span class="p">,</span>
+      <span class="k">"currency"</span><span class="p">:</span> <span class="s">"EUR"</span><span class="p">,</span>
+      <span class="k">"express"</span><span class="p">:</span> <span class="b">true</span><span class="p">,</span>
+      <span class="k">"items"</span><span class="p">:</span> <span class="n">3</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span> <span class="s">"ord_8K2fR"</span><span class="p">,</span>
+      <span class="k">"status"</span><span class="p">:</span> <span class="s">"open"</span><span class="p">,</span>
+      <span class="k">"total"</span><span class="p">:</span> <span class="n">42.00</span><span class="p">,</span>
+      <span class="k">"express"</span><span class="p">:</span> <span class="b">false</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="k">"next_cursor"</span><span class="p">:</span> <span class="b">null</span>
+<span class="p">}</span>"""
+
+
+def page(t, others):
+    nav = " ".join(
+        f'<a href="{o["slug"]}.html" class="{"on" if o["slug"] == t["slug"] else ""}">{i+1}. {o["name"]}</a>'
+        for i, o in enumerate(others)
+    )
+
+    def vars_css(v):
+        return "\n".join(
+            [f"--bg:{v['bg']}; --panel:{v['panel']}; --panel2:{v['panel2']}; --muted:{v['muted']}; --line:{v['line']};",
+             f"--fg:{v['fg']}; --fg2:{v['fg2']}; --accent:{v['accent']}; --accent-fg:{v['accentfg']}; --accent-soft:{v['accentsoft']}; --signal:{v['signal']};",
+             f"--ok:{v['ok']}; --warn:{v['warn']}; --err:{v['err']}; --info:{v['info']};",
+             f"--get:{v['get']}; --post:{v['post']}; --put:{v['put']}; --delete:{v['delete']};",
+             f"--syn-key:{v['key']}; --syn-str:{v['str']}; --syn-num:{v['num']}; --syn-bool:{v['bool']}; --shadow:{v['shadow']};"])
+
+    light, dark = vars_css(t["light"]), vars_css(t["dark"])
+    swatches = "".join(
+        f'<div class="sw"><span style="background:var(--{k})"></span><b>{label}</b><code>--{k}</code></div>'
+        for k, label in [("bg", "Canvas"), ("panel", "Panel"), ("panel2", "Subtle"), ("muted", "Hover"), ("line", "Line"),
+                         ("fg", "Text"), ("fg2", "Muted text"), ("accent", "Accent"), ("signal", "Signal"),
+                         ("ok", "Success"), ("warn", "Warning"), ("err", "Error"), ("info", "Info")]
+    )
+    return f"""<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logic Socket — {t['name']}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?{t['fonts']}&display=swap" rel="stylesheet">
+<style>
+:root {{ --sans:{t['sans']}; --mono:{t['mono']}; --radius:{t['radius']}; --radius-lg:{t['radius_lg']}; --radius-btn:{t['radius_btn']}; --gap:{t['gap']}; --fs:{t['fs']}; }}
+:root, :root[data-theme="light"] {{ {light} color-scheme: light; }}
+:root[data-theme="dark"] {{ {dark} color-scheme: dark; }}
+@media (prefers-color-scheme: dark) {{ :root[data-theme="system"] {{ {dark} color-scheme: dark; }} }}
+
+* {{ box-sizing: border-box; }}
+html, body {{ margin: 0; }}
+body {{ background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: var(--fs); -webkit-font-smoothing: antialiased; }}
+.i {{ width: 15px; height: 15px; flex-shrink: 0; }}
+code, .mono {{ font-family: var(--mono); }}
+
+/* review chrome (not part of the design) */
+.review {{ display: flex; align-items: center; gap: 14px; padding: 12px 20px; font: 13px/1.4 system-ui, sans-serif; color: var(--fg2); flex-wrap: wrap; }}
+.review b {{ color: var(--fg); font-size: 15px; }}
+.review nav {{ display: flex; gap: 4px; flex-wrap: wrap; }}
+.review nav a {{ color: var(--fg2); text-decoration: none; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); }}
+.review nav a.on {{ color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }}
+.wrap {{ padding: 0 20px 40px; max-width: 1440px; margin: 0 auto; }}
+
+/* ---------------- app frame */
+.app {{ height: 760px; display: flex; flex-direction: column; background: var(--panel); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); }}
+.topbar {{ height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); flex-shrink: 0; }}
+.brand {{ display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.01em; margin-right: 6px; }}
+.logo {{ width: 24px; height: 24px; }}
+.select {{ display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--line); background: var(--panel2); border-radius: var(--radius); color: var(--fg); font-size: 12.5px; cursor: pointer; }}
+.select .i {{ width: 13px; height: 13px; color: var(--fg2); }}
+.spacer {{ flex: 1; }}
+.search {{ display: flex; align-items: center; gap: 8px; width: 280px; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--fg2); font-size: 12.5px; background: var(--panel2); }}
+.kbd {{ margin-left: auto; font-family: var(--mono); font-size: 10.5px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }}
+.icon-btn {{ width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; color: var(--fg2); border-radius: var(--radius); border: 0; background: transparent; cursor: pointer; }}
+.icon-btn:hover {{ background: var(--muted); color: var(--fg); }}
+.theme {{ display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-btn); padding: 2px; gap: 2px; background: var(--panel2); }}
+.theme button {{ height: 24px; padding: 0 8px; border: 0; border-radius: calc(var(--radius-btn) - 2px); background: transparent; color: var(--fg2); display: inline-flex; align-items: center; gap: 5px; font: 500 11.5px var(--sans); cursor: pointer; }}
+.theme button .i {{ width: 13px; height: 13px; }}
+.theme button.on {{ background: var(--accent); color: var(--accent-fg); }}
+
+.body {{ flex: 1; display: flex; min-height: 0; }}
+.sidebar {{ width: 270px; display: flex; flex-direction: column; background: var(--panel2); border-right: 1px solid var(--line); flex-shrink: 0; }}
+.side-head {{ display: flex; gap: 6px; padding: 10px; align-items: center; }}
+.filter {{ flex: 1; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--fg2); background: var(--panel); font-size: 12.5px; }}
+.filter .i {{ width: 13px; height: 13px; }}
+.tree {{ padding: 2px 8px; flex: 1; }}
+.tree .label, .tree .item {{ display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 8px; border-radius: var(--radius); color: var(--fg); cursor: pointer; white-space: nowrap; }}
+.tree .label:hover, .tree .item:hover {{ background: var(--muted); }}
+.tree .folder > .item {{ padding-left: 30px; }}
+.tree .caret {{ width: 12px; height: 12px; color: var(--fg2); }}
+.tree .label .i:not(.caret) {{ color: var(--fg2); }}
+.tree .count {{ margin-left: auto; font-size: 11px; color: var(--fg2); }}
+.tree .item > span:not(.m):not(.tag):not(.status-dot) {{ overflow: hidden; text-overflow: ellipsis; }}
+.m {{ font-family: var(--mono); font-size: 10px; font-weight: 600; width: 34px; flex-shrink: 0; }}
+.m-get {{ color: var(--get); }} .m-post {{ color: var(--post); }} .m-put, .m-patch {{ color: var(--put); }} .m-delete {{ color: var(--delete); }}
+.k-mcp {{ color: var(--accent) !important; }} .k-ai {{ color: var(--signal) !important; }} .k-rt {{ color: var(--info) !important; }} .k-grpc {{ color: var(--ok) !important; }}
+.tag {{ margin-left: auto; font-family: var(--mono); font-size: 9.5px; color: var(--fg2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }}
+.status-dot {{ width: 7px; height: 7px; border-radius: 50%; margin-left: auto; background: currentColor; }}
+.status-dot.ok {{ color: var(--ok); }}
+.side-foot {{ display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); color: var(--fg2); font-size: 12px; }}
+
+.main {{ flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--panel); }}
+.tabs-bar {{ display: flex; align-items: flex-end; gap: 2px; height: 38px; padding: 0 8px; border-bottom: 1px solid var(--line); flex-shrink: 0; }}
+.tab {{ display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; color: var(--fg2); font-size: 12.5px; cursor: pointer; border-radius: var(--radius) var(--radius) 0 0; }}
+.tab.active {{ color: var(--fg); background: var(--panel); }}
+.tab .x {{ width: 12px; height: 12px; opacity: .5; }}
+.split {{ flex: 1; display: flex; min-height: 0; gap: var(--gap); }}
+.request {{ flex: 1.05; display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--line); }}
+.reqbar {{ display: flex; gap: 8px; padding: 12px; align-items: center; }}
+.url {{ flex: 1; display: flex; align-items: center; height: 38px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel2); overflow: hidden; }}
+.method-select {{ display: flex; align-items: center; gap: 4px; height: 100%; padding: 0 10px; font-family: var(--mono); font-weight: 700; font-size: 12px; color: var(--get); border-right: 1px solid var(--line); }}
+.url-text {{ padding: 0 10px; font-family: var(--mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; }}
+.var {{ color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 1px 4px; }}
+.btn {{ display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: var(--radius-btn); border: 1px solid var(--line); background: var(--panel); color: var(--fg); font: 600 12.5px var(--sans); cursor: pointer; white-space: nowrap; }}
+.btn .i {{ width: 14px; height: 14px; }}
+.btn-primary {{ background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }}
+.btn-ghost {{ background: transparent; border-color: transparent; color: var(--fg2); }}
+.btn-danger {{ background: var(--err); border-color: var(--err); color: #fff; }}
+.reqbar .btn-primary {{ height: 38px; padding: 0 18px; }}
+.preview {{ margin: -4px 12px 6px; font-family: var(--mono); font-size: 11.5px; color: var(--fg2); }}
+.subtabs {{ display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--line); }}
+.subtabs .tab {{ height: 34px; border-radius: 0; padding: 0 10px; }}
+.subtabs .tab .n {{ font-size: 10.5px; background: var(--muted); color: var(--fg2); border-radius: 999px; padding: 0 6px; }}
+.subtabs .tab .dot {{ width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }}
+.kv {{ padding: 8px 12px; }}
+.sec-title {{ margin: 6px 0 6px; }}
+.kv-row {{ display: grid; grid-template-columns: 22px 1fr 1.4fr 24px; align-items: center; gap: 8px; height: 34px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px; }}
+.kv-row.ph {{ color: var(--fg2); }}
+.chk {{ width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--line); display: inline-flex; align-items: center; justify-content: center; }}
+.chk.on {{ background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }}
+.chk.on .i {{ width: 10px; height: 10px; stroke-width: 3.5; }}
+.hint {{ color: var(--fg2); font-size: 12px; padding: 10px 12px; }}
+
+.response {{ flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--panel); }}
+.resp-head {{ display: flex; align-items: center; gap: 10px; padding: 12px; }}
+.status {{ display: inline-flex; align-items: center; gap: 7px; font-weight: 700; color: var(--ok); }}
+.status .status-dot {{ margin: 0; }}
+.meta {{ color: var(--fg2); font-family: var(--mono); font-size: 12px; }}
+.timing {{ margin: 0 12px 10px; height: 6px; border-radius: 999px; overflow: hidden; display: flex; background: var(--muted); }}
+.timing span {{ display: block; height: 100%; }}
+pre.json {{ flex: 1; margin: 0; padding: 12px 16px; font: 12.5px/1.65 var(--mono); overflow: auto; background: var(--panel); }}
+.json .k {{ color: var(--syn-key); }} .json .s {{ color: var(--syn-str); }} .json .n {{ color: var(--syn-num); }} .json .b {{ color: var(--syn-bool); }} .json .p {{ color: var(--fg2); }}
+.tests {{ display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--fg2); align-items: center; }}
+.badge {{ white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 5px; font-size: 11px; font-weight: 600; }}
+.b-ok {{ background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }}
+.b-warn {{ background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }}
+.b-err {{ background: color-mix(in srgb, var(--err) 15%, transparent); color: var(--err); }}
+.b-info {{ background: color-mix(in srgb, var(--info) 15%, transparent); color: var(--info); }}
+.b-accent {{ background: var(--accent-soft); color: var(--accent); }}
+.statusbar {{ display: flex; align-items: center; gap: 16px; height: 28px; padding: 0 12px; font-size: 11.5px; color: var(--fg2); border-top: 1px solid var(--line); background: var(--panel2); flex-shrink: 0; }}
+.statusbar span {{ display: inline-flex; align-items: center; gap: 6px; }}
+.statusbar .i {{ width: 12px; height: 12px; }}
+
+/* ---------------- design sheet */
+h2 {{ font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--fg2); margin: 36px 0 12px; font-weight: 600; }}
+.sheet {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 16px; }}
+.card {{ background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px; box-shadow: var(--shadow); }}
+.sw-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }}
+.sw {{ display: grid; grid-template-columns: 34px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; }}
+.sw span {{ grid-row: span 2; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); }}
+.sw b {{ font-size: 12.5px; }} .sw code {{ font-size: 11px; color: var(--fg2); }}
+.type .display {{ font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }}
+.type .h {{ font-size: 18px; font-weight: 600; margin-top: 10px; }}
+.type p {{ color: var(--fg2); line-height: 1.55; margin: 8px 0; }}
+.type .code {{ white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }}
+.row {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }}
+.input {{ height: 34px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel2); padding: 0 10px; color: var(--fg); font: 13px var(--sans); width: 100%; }}
+.input.focus {{ border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }}
+.switch {{ width: 32px; height: 18px; border-radius: 999px; background: var(--accent); position: relative; display: inline-block; }}
+.switch::after {{ content: ''; position: absolute; right: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }}
+.switch.off {{ background: var(--muted); }} .switch.off::after {{ left: 2px; right: auto; }}
+.toast {{ display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: var(--radius); padding: 10px 12px; background: var(--panel); box-shadow: var(--shadow); font-size: 12.5px; }}
+.toast .i {{ color: var(--ok); margin-top: 1px; }}
+.tool {{ border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 14px; background: var(--panel); }}
+.tool h4 {{ margin: 0; font-family: var(--mono); font-size: 13.5px; display: flex; gap: 8px; align-items: center; }}
+.tool p {{ color: var(--fg2); margin: 6px 0 10px; font-size: 12.5px; line-height: 1.5; }}
+.tool table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
+.tool td {{ padding: 6px 4px; border-top: 1px solid var(--line); vertical-align: top; }}
+.tool td:first-child {{ font-family: var(--mono); white-space: nowrap; }}
+.tool .req {{ color: var(--err); }}
+.note {{ color: var(--fg2); font-size: 12.5px; margin-top: 18px; }}
+{t['extra']}
+</style>
+</head>
+<body>
+<div class="review"><b>Logic Socket · {t['name']}</b><span>{t['tagline']}</span><span class="spacer"></span><nav>{nav}<a href="index.html">Compare all</a></nav></div>
+<div class="wrap">
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">{t['logo']}<span class="name">Logic Socket</span></div>
+    <span class="select">{icon('layers')} Shop API {icon('chev')}</span>
+    <span class="select"><span class="status-dot ok" style="margin:0"></span> Production {icon('chev')}</span>
+    <span class="spacer"></span>
+    <span class="search">{icon('search')} Search or run a command <span class="kbd">⌘K</span></span>
+    <span class="select">{icon('git')} main <span class="badge b-accent" style="height:16px">↑1</span></span>
+    <div class="theme" role="group" aria-label="Theme">
+      <button data-t="light">{icon('sun')}Light</button><button data-t="dark">{icon('moon')}Dark</button><button data-t="system">{icon('monitor')}System</button>
+    </div>
+    <button class="icon-btn" aria-label="AI providers">{icon('spark')}</button>
+    <button class="icon-btn" aria-label="Settings">{icon('settings')}</button>
+  </header>
+  <div class="body">
+    <aside class="sidebar">
+      <div class="side-head"><span class="filter">{icon('search')} Filter</span><button class="icon-btn">{icon('plus')}</button><button class="icon-btn">{icon('list')}</button></div>
+      {TREE}
+      <div class="side-foot">{icon('play','i')} Run collection<span class="spacer"></span>{icon('git','i')} 2 changes</div>
+    </aside>
+    <section class="main">
+      <div class="tabs-bar">
+        <div class="tab active">{method('GET')} List orders {icon('x','i x')}</div>
+        <div class="tab">{method('POST')} Create order</div>
+        <div class="tab">{icon('plug','i k-mcp')} GitHub MCP</div>
+      </div>
+      <div class="split">
+        <div class="request">
+          <div class="reqbar">
+            <div class="url"><span class="method-select">GET {icon('chev')}</span><span class="url-text">{var('_.base_url')}/v2/orders?status=open&amp;limit=20</span></div>
+            <button class="btn btn-primary">{icon('send')}Send</button>
+            <button class="icon-btn" aria-label="Generate code">{icon('code')}</button>
+          </div>
+          <div class="preview">→ https://api.shop.test/v2/orders?status=open&amp;limit=20</div>
+          <div class="subtabs">
+            <div class="tab active">Params <span class="n">2</span></div><div class="tab">Body</div><div class="tab">Auth <span class="dot"></span></div><div class="tab">Headers <span class="n">3</span></div><div class="tab">Scripts</div><div class="tab">Docs</div>
+          </div>
+          <div class="kv">
+            <div class="sec-title">Query parameters</div>
+            <div class="kv-row"><span class="chk on">{icon('check')}</span><span>status</span><span>open</span><span></span></div>
+            <div class="kv-row"><span class="chk on">{icon('check')}</span><span>limit</span><span>20</span><span></span></div>
+            <div class="kv-row ph"><span class="chk"></span><span>name</span><span>value</span><span></span></div>
+            <div class="sec-title" style="margin-top:18px">Auth · inherited from “Orders”</div>
+            <div class="kv-row"><span></span><span>Bearer</span><span>{var('_.token')} <span class="badge b-warn" style="margin-left:6px">{icon('lock','i')} secret</span></span><span></span></div>
+          </div>
+          <div class="hint">Tip: <span class="mono">:id</span> in the URL becomes a path parameter · paste a cURL command into the URL bar<span class="cursor"></span></div>
+        </div>
+        <div class="response">
+          <div class="resp-head">
+            <span class="status"><span class="status-dot ok"></span>200 OK</span>
+            <span class="meta">84 ms</span><span class="meta">1.2 KB</span>
+            <span class="spacer"></span>
+            <span class="badge b-ok">{icon('check','i')} 3/3 tests</span>
+          </div>
+          <div class="timing"><span style="width:18%;background:var(--info)"></span><span style="width:56%;background:var(--accent)"></span><span style="width:26%;background:var(--signal)"></span></div>
+          <div class="subtabs"><div class="tab active">Body</div><div class="tab">Headers <span class="n">9</span></div><div class="tab">Cookies</div><div class="tab">Timeline</div><div class="tab">Tests</div><div class="tab">Console</div></div>
+          <pre class="json">{JSON}</pre>
+          <div class="tests"><span class="badge b-ok">✓</span> status is 200 <span class="badge b-ok">✓</span> has orders <span class="badge b-ok">✓</span> fast enough</div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <footer class="statusbar">
+    <span><span class="status-dot ok" style="margin:0"></span>Production</span>
+    <span>{icon('git')} main ↑1</span>
+    <span>{icon('lock')} vault · 3 secrets</span>
+    <span class="spacer"></span>
+    <span class="muted">⌘↵ send · ⌘K commands · ⌘E environments</span>
+  </footer>
+</div>
+
+<h2>Design system</h2>
+<div class="sheet">
+  <div class="card"><div class="sec-title" style="margin-top:0">Colour</div><div class="sw-grid">{swatches}</div></div>
+  <div class="card type">
+    <div class="sec-title" style="margin-top:0">Type</div>
+    <div class="display">Every socket, one client.</div>
+    <div class="h">HTTP · GraphQL · gRPC · WebSocket · MCP · AI</div>
+    <p>Body text sets requests, docs and descriptions. It should stay readable at 13px for long sessions, with clear contrast in both themes.</p>
+    <div class="code">ls.test('status is 200', () =&gt; ls.expect(ls.response.code).to.eql(200));</div>
+  </div>
+  <div class="card">
+    <div class="sec-title" style="margin-top:0">Controls</div>
+    <div class="row"><button class="btn btn-primary">{icon('send')}Send</button><button class="btn">Secondary</button><button class="btn btn-ghost">Ghost</button><button class="btn btn-danger">Delete</button></div>
+    <div class="row">{method('GET')}{method('POST')}{method('PUT')}{method('PATCH')}{method('DELETE')}</div>
+    <div class="row"><span class="badge b-ok">200 OK</span><span class="badge b-warn">301 Moved</span><span class="badge b-err">500 Error</span><span class="badge b-info">WS open</span><span class="badge b-accent">read-only</span></div>
+    <div class="row"><input class="input" value="https://api.shop.test"></div>
+    <div class="row"><input class="input focus" value="Focused input"></div>
+    <div class="row"><span class="switch"></span> Follow redirects <span class="switch off" style="margin-left:14px"></span> Validate TLS</div>
+    <div class="toast">{icon('check')}<div><b>Imported 24 requests</b><br><span class="meta">Postman collection → “Shop API”</span></div></div>
+  </div>
+  <div class="card">
+    <div class="sec-title" style="margin-top:0">MCP tool card</div>
+    <div class="tool">
+      <h4>{icon('plug','i k-mcp')} search_issues <span class="badge b-accent">read-only</span><span class="badge b-info">idempotent</span></h4>
+      <p>Search issues and pull requests in a repository. Returns at most <span class="mono">limit</span> results, newest first.</p>
+      <table>
+        <tr><td>repo <span class="req">*</span></td><td class="meta">string</td><td>owner/name, e.g. <span class="mono">acme/shop</span></td></tr>
+        <tr><td>query</td><td class="meta">string</td><td>GitHub search syntax</td></tr>
+        <tr><td>limit</td><td class="meta">integer</td><td>1–100 · default 20</td></tr>
+      </table>
+      <div class="row" style="margin:12px 0 0"><button class="btn btn-primary">{icon('play')}Call tool</button><span class="meta">last call 212 ms</span></div>
+    </div>
+  </div>
+</div>
+<p class="note">Mockup only — the real app keeps every feature; this shows colour, type, shape and spacing. Fonts load from Google Fonts here; the app would bundle them so it works offline.</p>
+</div>
+<script>
+  const root = document.documentElement;
+  const saved = (() => {{ try {{ return localStorage.getItem('ls-mock-theme'); }} catch {{ return null; }} }})();
+  const set = t => {{ root.dataset.theme = t; document.querySelectorAll('.theme button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); try {{ localStorage.setItem('ls-mock-theme', t); }} catch {{}} }};
+  set(saved || 'system');
+  document.querySelectorAll('.theme button').forEach(b => b.addEventListener('click', () => set(b.dataset.t)));
+</script>
+</body>
+</html>
+"""
+
+
+def index():
+    cards = "".join(
+        f"""<a class="c" href="{t['slug']}.html"><div class="frame"><iframe src="{t['slug']}.html" loading="lazy" tabindex="-1" title="{t['name']}"></iframe></div>
+<div class="cap"><b>{i+1}. {t['name']}</b><span>{t['tagline']}</span></div></a>"""
+        for i, t in enumerate(THEMES)
+    )
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logic Socket — look &amp; feel options</title>
+<style>
+:root {{ --bg:#f5f5f7; --fg:#18181b; --fg2:#6b6b76; --line:#e2e2e8; --card:#fff; color-scheme: light dark; }}
+@media (prefers-color-scheme: dark) {{ :root {{ --bg:#111113; --fg:#ececf1; --fg2:#9a9aa6; --line:#2a2a31; --card:#18181c; }} }}
+body {{ margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, -apple-system, sans-serif; }}
+main {{ max-width:1400px; margin:0 auto; padding:28px 20px 48px; }}
+h1 {{ margin:0 0 4px; font-size:22px; }} p {{ margin:0 0 22px; color:var(--fg2); }}
+.grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,620px),1fr)); gap:18px; }}
+.c {{ display:block; text-decoration:none; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }}
+.c:hover {{ border-color:#888; }}
+.frame {{ height:380px; overflow:hidden; position:relative; }}
+.frame iframe {{ width:1440px; height:1300px; border:0; transform:scale(.45); transform-origin:0 0; pointer-events:none; }}
+.cap {{ padding:12px 16px; display:flex; flex-direction:column; gap:2px; border-top:1px solid var(--line); }}
+.cap span {{ color:var(--fg2); font-size:13px; }}
+</style></head><body><main>
+<h1>Logic Socket — look &amp; feel options</h1>
+<p>Same screen, four directions. Open one to switch Light / Dark / System and see the full design sheet (colour, type, controls, MCP tool card). The theme you pick on one page carries over to the others.</p>
+<div class="grid">{cards}</div>
+</main></body></html>"""
+
+
+if __name__ == "__main__":
+    for t in THEMES:
+        (OUT / f"{t['slug']}.html").write_text(page(t, THEMES))
+    (OUT / "index.html").write_text(index())
+    print("wrote", ", ".join(f"{t['slug']}.html" for t in THEMES), "and index.html to", OUT)

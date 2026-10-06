@@ -1,7 +1,7 @@
-//! Nunjucks-compatible variable rendering with Insomnia's environment layering.
+//! Nunjucks-compatible variable rendering with layered environments.
 //!
 //! - `{{ _.var }}` and `{{ var }}` both resolve against the merged context.
-//! - Insomnia template tags (`{% uuid 'v4' %}`, `{% now 'iso-8601' %}`,
+//! - template tags (`{% uuid 'v4' %}`, `{% now 'iso-8601' %}`,
 //!   `{% base64 'encode', 'normal', 'x' %}`, `{% hash 'sha256', 'hex', 'x' %}`)
 //!   are rewritten to function calls before rendering.
 //! - Unresolved variables are reported by name.
@@ -56,7 +56,7 @@ pub struct Context {
 }
 
 impl Context {
-    /// Merge layers following Insomnia's `buildRenderContext`:
+    /// Merge layers, lowest precedence first:
     /// later layers override earlier ones, nested objects merge,
     /// self-referencing strings (`base_url: "{{ base_url }}/v2"`) render
     /// against the value from earlier layers, then up to 3 passes resolve
@@ -155,7 +155,7 @@ fn merge_objects(dst: &mut Map<String, Value>, src: &Map<String, Value>) {
     }
 }
 
-/// Insomnia's check: `{{ ?key[ |][^}]*}}` — the value references its own key.
+/// Self-reference check: `{{ ?key[ |][^}]*}}` — the value references its own key.
 fn is_self_recursive(s: &str, key: &str) -> bool {
     let mut rest = s;
     while let Some(i) = rest.find("{{") {
@@ -366,7 +366,7 @@ mod tests {
             r.render_str("{{ _.obj.a[1].b }}", &c, Mode::Throw).unwrap(),
             "deep"
         );
-        // Postman/Insomnia names with dashes use bracket notation
+        // names with dashes use bracket notation
         let (r2, c2) = ctx(vec![("base", json!({"api-key": "k1"}))]);
         assert_eq!(
             r2.render_str("{{ _['api-key'] }}", &c2, Mode::Throw)

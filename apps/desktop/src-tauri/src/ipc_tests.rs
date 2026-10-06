@@ -328,7 +328,7 @@ fn runner_commands_stream_and_export() {
             "name": "Init", "method": "POST", "url": url,
             "headers": [{"name": "Accept", "value": "application/json"}],
             "body": {"mimeType": "application/json", "text": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}", "params": []},
-            "afterResponseScript": "insomnia.test('ok', () => insomnia.response.to.have.status(200)); console.log('row', insomnia.iterationData.get('n'));"
+            "afterResponseScript": "ls.test('ok', () => ls.response.to.have.status(200)); console.log('row', ls.iterationData.get('n'));"
         }}),
     );
     assert!(
@@ -709,8 +709,8 @@ fn import_export_secrets_code_and_git_commands() {
         "{code}"
     );
 
-    let out = h.ok("export_workspace", json!({"workspaceId": ws_id, "format": "insomnia-v5", "includePrivate": false, "includeCookies": false}));
-    assert_eq!(out["fileName"], "insomnia.shop.yaml");
+    let out = h.ok("export_workspace", json!({"workspaceId": ws_id, "format": "logic-socket", "includePrivate": false, "includeCookies": false}));
+    assert_eq!(out["fileName"], "logic-socket.shop.yaml");
     assert!(!out["content"].as_str().unwrap().contains("typed"));
     let out = h.ok("export_workspace", json!({"workspaceId": ws_id, "format": "postman", "includePrivate": false, "includeCookies": false}));
     assert!(
@@ -745,7 +745,7 @@ fn import_export_secrets_code_and_git_commands() {
     assert!(
         h.ok(
             "git_diff",
-            json!({"repoId": repo_id, "path": "insomnia.shop.yaml"})
+            json!({"repoId": repo_id, "path": "logic-socket.shop.yaml"})
         )
         .as_str()
         .unwrap()

@@ -1,5 +1,5 @@
-// logic-socket script runtime: re-implements the `insomnia.*` object model
-// (packages/insomnia-scripting-environment) on top of a few host functions:
+// logic-socket script runtime: re-implements the `ls.*` object model
+// (ls.* — pm.* and $.* are aliases) on top of a few host functions:
 //   __host.log(level, text)            console capture
 //   __host.render(template, varsJson)  Nunjucks-compatible rendering (Rust)
 //   __host.sleep(ms) -> Promise        timers
@@ -242,7 +242,7 @@
       this._s = scopes; // { globals, base, env, folders: [{name, environment}], iteration, locals }
     }
     _merged() {
-      // Same precedence as Insomnia's Variables.get: local > folders (inner wins)
+      // Precedence: local > folders (inner wins)
       // > iterationData > environment > base (collection) > globals.
       const m = {};
       Object.assign(m, this._s.globals._data, this._s.base._data, this._s.env._data, this._s.iteration._data);
@@ -572,7 +572,7 @@
       ]) {
         A.addProperty(name, function () {
           const r = utils.flag(this, 'object');
-          if (!isResp(r)) throw new Error(`.${name} can only be used on insomnia.response`);
+          if (!isResp(r)) throw new Error(`.${name} can only be used on ls.response`);
           this.assert(check(r), `expected response to have ${msg} (status ${r.code})`, `expected response to not have ${msg} (status ${r.code})`);
         });
       }
@@ -750,7 +750,7 @@
       const requestCookies = new PropertyList(
         cookieStore.list.filter(x => cookieMatches(x, c.request.url)).map(x => ({ key: x.name, value: x.value })),
       );
-      const insomnia = {
+      const ls = {
         environment: env,
         baseEnvironment: base,
         collectionVariables: base,
@@ -771,14 +771,14 @@
           toObject: () => folders,
         },
         settings: {},
-        vault: new Proxy({}, { get: () => { throw new Error('NotSupported: insomnia.vault (arrives with vault support)'); } }),
+        vault: new Proxy({}, { get: () => { throw new Error('NotSupported: ls.vault (arrives with vault support)'); } }),
       };
-      insomnia.cookies = Object.assign(requestCookies, { jar: () => makeJar(cookieStore) });
-      Object.defineProperty(insomnia, 'expect', { get: () => scriptRequire('chai').expect, enumerable: true });
+      ls.cookies = Object.assign(requestCookies, { jar: () => makeJar(cookieStore) });
+      Object.defineProperty(ls, 'expect', { get: () => scriptRequire('chai').expect, enumerable: true });
 
       const error = await (async () => {
         try {
-          await userFn(insomnia, insomnia, insomnia, scriptRequire, scriptConsole, setTimeoutImpl, clearTimeoutImpl);
+          await userFn(ls, ls, ls, scriptRequire, scriptConsole, setTimeoutImpl, clearTimeoutImpl);
           // let timers and async tests finish
           for (let i = 0; i < 100 && (pendingTimers.size || pendingTests.length); i++) {
             await Promise.all([...pendingTimers, ...pendingTests.splice(0)]);

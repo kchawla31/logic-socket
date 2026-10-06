@@ -1,5 +1,5 @@
-//! Git sync: each linked workspace is one Insomnia v5 YAML file in a repository
-//! (the same layout Insomnia uses, so teams can mix both apps).
+//! Git sync: each linked workspace is one Logic Socket YAML file
+//! (`logic-socket.<name>.yaml`) in a repository.
 //!
 //! Uses the system `git`, so SSH agents, credential helpers, signing and hooks
 //! work as usual. An optional HTTPS token is kept in the keychain and passed via
@@ -297,7 +297,7 @@ impl Engine {
         let mut repo: Doc<GitRepo> = self.store.get(repo_id)?;
         if !repo.files.iter().any(|f| f.workspace_id == workspace_id) {
             let ws: Doc<Workspace> = self.store.get(workspace_id)?;
-            let base = lsock_convert::insomnia::file_name_for(&ws.name);
+            let base = lsock_convert::native::file_name_for(&ws.name);
             let mut path = base.clone();
             let mut n = 2;
             while repo.files.iter().any(|f| f.path == path)
@@ -344,7 +344,7 @@ impl Engine {
                 continue; // workspace deleted locally: leave the file alone
             }
             let b = self.export_bundle(&f.workspace_id, &opts)?;
-            let content = lsock_convert::insomnia::export_v5(&b).map_err(|e| err(e.to_string()))?;
+            let content = lsock_convert::native::export(&b).map_err(|e| err(e.to_string()))?;
             let path = Path::new(&repo.path).join(&f.path);
             if std::fs::read_to_string(&path).ok().as_deref() != Some(content.as_str()) {
                 if let Some(dir) = path.parent() {
@@ -357,7 +357,7 @@ impl Engine {
         Ok(())
     }
 
-    /// Import every Insomnia v5 file in the working copy (keeping ids) and update links.
+    /// Import every Logic Socket file in the working copy (keeping ids) and update links.
     pub fn git_import_all(&self, repo_id: &str) -> Result<GitSyncResult> {
         let mut repo: Doc<GitRepo> = self.store.get(repo_id)?;
         let root = PathBuf::from(&repo.path);
@@ -367,7 +367,7 @@ impl Engine {
         let mut links = vec![];
         for rel in files {
             let text = std::fs::read_to_string(root.join(&rel)).unwrap_or_default();
-            if lsock_convert::detect(&text) != Some(lsock_convert::Format::InsomniaV5) {
+            if lsock_convert::detect(&text) != Some(lsock_convert::Format::LogicSocket) {
                 continue;
             }
             match self.import_text(

@@ -90,14 +90,14 @@ async fn fixture() -> Fx {
         "Login",
         "{{ _.base }}/login".into(),
         "",
-        "insomnia.environment.set('token', 'tok-' + insomnia.info.iteration); insomnia.test('login ok', () => insomnia.response.to.have.status(200));",
+        "ls.environment.set('token', 'tok-' + ls.info.iteration); ls.test('login ok', () => ls.response.to.have.status(200));",
     );
     let mut items_req = Request {
         name: "Get items".into(),
         url: "{{ _.base }}/items".into(),
         after_response_script: Some(
-            "insomnia.test('has auth', () => insomnia.expect(insomnia.response.json().headers['x-token']).to.equal('tok-' + insomnia.info.iteration));\n\
-             insomnia.test('row user', () => insomnia.expect(insomnia.response.json().query).to.equal('user=' + insomnia.iterationData.get('user')));"
+            "ls.test('has auth', () => ls.expect(ls.response.json().headers['x-token']).to.equal('tok-' + ls.info.iteration));\n\
+             ls.test('row user', () => ls.expect(ls.response.json().query).to.equal('user=' + ls.iterationData.get('user')));"
                 .into(),
         ),
         ..Default::default()
@@ -167,9 +167,9 @@ async fn set_next_request_loops_and_stops() {
         "Poll",
         format!("{base}/poll"),
         "",
-        r#"const n = (insomnia.variables.get('polls') || 0) + 1;
-           insomnia.variables.set('polls', n);
-           if (n < 3) insomnia.execution.setNextRequest('Poll'); else insomnia.execution.setNextRequest(null);"#,
+        r#"const n = (ls.variables.get('polls') || 0) + 1;
+           ls.variables.set('polls', n);
+           if (n < 3) ls.execution.setNextRequest('Poll'); else ls.execution.setNextRequest(null);"#,
     );
     let never = add(&fx.e, ws.id(), "Never", format!("{base}/never"), "", "");
     let s = run(&fx.e, &[poll, never], &RunOptions::default(), |_| {}).await;
@@ -186,7 +186,7 @@ async fn set_next_request_loops_and_stops() {
         ws.id(),
         "Bad",
         format!("{base}/bad"),
-        "insomnia.execution.setNextRequest('Nope');",
+        "ls.execution.setNextRequest('Nope');",
         "",
     );
     let mut warnings = vec![];
@@ -212,7 +212,7 @@ async fn bail_stops_on_first_failure_and_skip_is_reported() {
         ws.id(),
         "Skip me",
         format!("{base}/skip"),
-        "insomnia.execution.skipRequest();",
+        "ls.execution.skipRequest();",
         "",
     );
     let fail = add(
@@ -221,7 +221,7 @@ async fn bail_stops_on_first_failure_and_skip_is_reported() {
         "Missing",
         format!("{base}/missing"),
         "",
-        "insomnia.test('is 200', () => insomnia.response.to.have.status(200));",
+        "ls.test('is 200', () => ls.response.to.have.status(200));",
     );
     let ids = vec![skip, fail, fx.ids[0].clone()];
     let s = run(

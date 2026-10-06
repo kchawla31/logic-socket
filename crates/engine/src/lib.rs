@@ -201,7 +201,7 @@ impl Engine {
     }
 
     /// Environment layers for `id` (a request, folder or workspace), lowest
-    /// precedence first, matching Insomnia's `buildRenderContext`.
+    /// precedence first (global → base → sub-environment → folders, outer to inner).
     pub fn layers(&self, id: &str) -> Result<Vec<Layer>> {
         let ws = self.workspace_of(id)?;
         let mut layers = vec![];

@@ -1,6 +1,6 @@
 //! Insomnia v5 YAML (import + export) and v4/v3 JSON/YAML exports (import).
 //!
-//! v5 is also the Git-sync file format. Things Insomnia doesn't model (AI requests,
+//! Things Insomnia doesn't model (AI requests,
 //! MCP servers inside collections, proto files, WebSocket payloads, SSE) are kept
 //! under `x-logic-socket` / per-item `x-lsock` keys, which Insomnia ignores.
 
@@ -25,9 +25,9 @@ const SIO_PREFIX: &str = "socketio-req_";
 
 // ------------------------------------------------------------------ helpers
 
-/// Per-item extension block (`x-lsock`; `x-irs` in files written before the rename).
+/// Per-item extension block for fields the Insomnia format has no place for.
 fn item_ext(v: &Value) -> Option<&Value> {
-    v.get("x-lsock").or_else(|| v.get("x-irs"))
+    v.get("x-lsock")
 }
 
 fn arr<'a>(v: &'a Value, k: &str) -> &'a [Value] {
@@ -204,20 +204,26 @@ fn body_out(b: &Body) -> Value {
 
 fn scripts_out(pre: &Option<String>, post: &Option<String>) -> Value {
     let mut o = Map::new();
+    let out = |s: &str| crate::rename_script_api(s, "ls", "insomnia");
     if let Some(p) = pre.as_ref().filter(|s| !s.trim().is_empty()) {
-        o.insert("preRequest".into(), json!(p));
+        o.insert("preRequest".into(), json!(out(p)));
     }
     if let Some(p) = post.as_ref().filter(|s| !s.trim().is_empty()) {
-        o.insert("afterResponse".into(), json!(p));
+        o.insert("afterResponse".into(), json!(out(p)));
     }
     Value::Object(o)
+}
+
+/// Insomnia scripts use `insomnia.*`; ours use `ls.*`.
+fn script_in(s: String) -> Option<String> {
+    non_empty(crate::rename_script_api(&s, "insomnia", "ls"))
 }
 
 fn non_empty(s: String) -> Option<String> {
     (!s.trim().is_empty()).then_some(s)
 }
 
-/// Recursively drop null, empty arrays and empty objects (like Insomnia's `removeEmptyFields`).
+/// Recursively drop null, empty arrays and empty objects.
 pub(crate) fn prune(v: Value) -> Option<Value> {
     match v {
         Value::Null => None,
@@ -519,8 +525,7 @@ pub fn import_v5(v: &Value) -> Result<Imported> {
     if !arr(v, "certificates").is_empty() {
         warnings.push("CA certificates were skipped — certificates aren't supported yet".into());
     }
-    // files written before the rename used `x-insomnia-rs`
-    if let Some(ext) = v.get("x-logic-socket").or_else(|| v.get("x-insomnia-rs")) {
+    if let Some(ext) = v.get("x-logic-socket") {
         apply_extension(&mut b, ext, &mut warnings);
     }
     Ok(Imported {
@@ -635,8 +640,8 @@ fn item_v5(i: &Value, warnings: &mut Vec<String>) -> Option<Item> {
             environment: var_map(i.get("environment")),
             headers: kvs(i, "headers"),
             authentication: auth,
-            pre_request_script: non_empty(str_of(&scripts, "preRequest")),
-            after_response_script: non_empty(str_of(&scripts, "afterResponse")),
+            pre_request_script: script_in(str_of(&scripts, "preRequest")),
+            after_response_script: script_in(str_of(&scripts, "afterResponse")),
         };
         Node::Folder(f, items_v5(arr(i, "children"), warnings))
     };
@@ -687,8 +692,8 @@ fn request_v5(i: &Value, auth: lsock_core::Auth) -> Request {
         headers: kvs(i, "headers"),
         body: body_from(i.get("body")),
         authentication: auth,
-        pre_request_script: non_empty(str_of(&scripts, "preRequest")),
-        after_response_script: non_empty(str_of(&scripts, "afterResponse")),
+        pre_request_script: script_in(str_of(&scripts, "preRequest")),
+        after_response_script: script_in(str_of(&scripts, "afterResponse")),
         settings: RequestSettings {
             store_cookies: b(&cookies, "store", true),
             send_cookies: b(&cookies, "send", true),
@@ -976,28 +981,6 @@ fn request_out(r: &Request, m: &Meta) -> Value {
     v
 }
 
-/// A safe file name for a workspace in a Git repo: `insomnia.<slug>.yaml`.
-pub fn file_name_for(name: &str) -> String {
-    let slug: String = name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .split('-')
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("-");
-    format!(
-        "insomnia.{}.yaml",
-        if slug.is_empty() { "workspace" } else { &slug }
-    )
-}
-
 // ------------------------------------------------------------------ v4 import
 
 pub fn import_v4(v: &Value) -> Result<Imported> {
@@ -1185,8 +1168,8 @@ fn items_v4<'a>(
                     environment: var_map(r.get("environment")),
                     headers: kvs(r, "headers"),
                     authentication: auth_from_json(r.get("authentication"), warnings, &at),
-                    pre_request_script: non_empty(str_of(r, "preRequestScript")),
-                    after_response_script: non_empty(str_of(r, "afterResponseScript")),
+                    pre_request_script: script_in(str_of(r, "preRequestScript")),
+                    after_response_script: script_in(str_of(r, "afterResponseScript")),
                 },
                 items_v4(&id, kids, warnings),
             ),
@@ -1206,8 +1189,8 @@ fn items_v4<'a>(
                     headers: kvs(r, "headers"),
                     body: body_from(r.get("body")),
                     authentication: auth_from_json(r.get("authentication"), warnings, &at),
-                    pre_request_script: non_empty(str_of(r, "preRequestScript")),
-                    after_response_script: non_empty(str_of(r, "afterResponseScript")),
+                    pre_request_script: script_in(str_of(r, "preRequestScript")),
+                    after_response_script: script_in(str_of(r, "afterResponseScript")),
                     settings: RequestSettings {
                         store_cookies: b("settingStoreCookies", true),
                         send_cookies: b("settingSendCookies", true),

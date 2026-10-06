@@ -77,9 +77,9 @@ enum Cmd {
     /// Local demo servers for trying features without external services
     #[command(subcommand)]
     Mock(MockCmd),
-    /// Import Insomnia, Postman, OpenAPI/Swagger, HAR or curl files
+    /// Import Logic Socket, Postman, OpenAPI/Swagger, HAR, Insomnia or curl files
     Import(transfer_cmd::ImportArgs),
-    /// Export a workspace (Insomnia v5, Postman v2.1, HAR)
+    /// Export a workspace (Logic Socket, Postman v2.1, HAR, Insomnia)
     Export(transfer_cmd::ExportArgs),
     /// Generate code for a request (curl, HTTPie, JavaScript, Python, Go, Rust)
     Code(transfer_cmd::CodeArgs),

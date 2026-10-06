@@ -61,7 +61,7 @@ function Connect({ workspaceName, onConnected }: { workspaceName: string; onConn
     <div className="grid gap-4 p-5 md:grid-cols-2">
       <div className="flex flex-col gap-2 rounded-lg border border-app p-4">
         <div className="font-semibold">Clone a repository</div>
-        <p className="text-[12px] text-muted">Every workspace file in it (Insomnia v5 YAML) is imported. Works with repositories Insomnia syncs too.</p>
+        <p className="text-[12px] text-muted">Every Logic Socket workspace file in it is imported.</p>
         <Input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://github.com/acme/api-collections.git or git@…" />
         <Input value={cloneDir} onChange={e => setCloneDir(e.target.value)} placeholder="Local folder" />
         <Input type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="Access token (optional — SSH keys and credential helpers also work)" />

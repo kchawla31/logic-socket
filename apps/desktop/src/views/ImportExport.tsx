@@ -8,7 +8,7 @@ import { cn } from '../lib/utils';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-const SOURCES = 'Insomnia (v4, v5), Postman collections & environments, OpenAPI 3, Swagger 2, HAR, or cURL commands';
+const SOURCES = 'Logic Socket, Postman collections & environments, OpenAPI 3, Swagger 2, HAR, Insomnia or cURL commands';
 
 export function ImportModal({
   open,
@@ -213,14 +213,15 @@ export function ImportModal({
 }
 
 const FORMATS: { id: ExportFormat; label: string; hint: string }[] = [
-  { id: 'insomnia-v5', label: 'Insomnia v5 (YAML)', hint: 'Everything, including gRPC, WebSocket, MCP and AI requests. Opens in Insomnia too.' },
-  { id: 'postman', label: 'Postman collection v2.1', hint: 'HTTP requests, folders, auth, scripts (insomnia.* → pm.*) and variables.' },
+  { id: 'logic-socket', label: 'Logic Socket (YAML)', hint: 'Everything, including gRPC, WebSocket, MCP and AI requests. The same format as Git sync.' },
+  { id: 'postman', label: 'Postman collection v2.1', hint: 'HTTP requests, folders, auth, scripts (ls.* becomes pm.*) and variables.' },
   { id: 'har', label: 'HAR', hint: 'HTTP requests only, as an HTTP Archive.' },
+  { id: 'insomnia-v5', label: 'Insomnia (YAML)', hint: 'HTTP, GraphQL, gRPC and WebSocket requests with environments.' },
 ];
 
 export function ExportModal({ open, onClose, workspaceId, workspaceName }: { open: boolean; onClose: () => void; workspaceId: string; workspaceName: string }) {
   const toast = useToast();
-  const [format, setFormat] = useState<ExportFormat>('insomnia-v5');
+  const [format, setFormat] = useState<ExportFormat>('logic-socket');
   const [includePrivate, setIncludePrivate] = useState(false);
   const [includeCookies, setIncludeCookies] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -296,7 +297,7 @@ export function ExportModal({ open, onClose, workspaceId, workspaceName }: { ope
           </div>
         ))}
         <div className="h-56 overflow-hidden rounded-md border border-app">
-          <CodeEditor value={content} readOnly language={format === 'insomnia-v5' ? 'text' : 'json'} />
+          <CodeEditor value={content} readOnly language={format === 'postman' || format === 'har' ? 'json' : 'text'} />
         </div>
       </div>
     </Modal>

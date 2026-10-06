@@ -1,0 +1,18 @@
+{
+  "info": { "name": "Auth catalogue", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+  "item": [
+    { "name": "no auth", "request": { "method": "GET", "url": "https://a.test/1", "auth": { "type": "noauth" } } },
+    { "name": "basic", "request": { "method": "GET", "url": "https://a.test/2", "auth": { "type": "basic", "basic": [ { "key": "username", "value": "ana" }, { "key": "password", "value": "pw" } ] } } },
+    { "name": "digest", "request": { "method": "GET", "url": "https://a.test/3", "auth": { "type": "digest", "digest": [ { "key": "username", "value": "ben" }, { "key": "password", "value": "pw2" } ] } } },
+    { "name": "api key in query", "request": { "method": "GET", "url": "https://a.test/4", "auth": { "type": "apikey", "apikey": [ { "key": "key", "value": "api_key" }, { "key": "value", "value": "{{key}}" }, { "key": "in", "value": "query" } ] } } },
+    { "name": "aws", "request": { "method": "GET", "url": "https://a.test/5", "auth": { "type": "awsv4", "awsv4": [ { "key": "accessKey", "value": "AKIA1" }, { "key": "secretKey", "value": "s3" }, { "key": "region", "value": "eu-west-1" }, { "key": "service", "value": "execute-api" } ] } } },
+    { "name": "oauth1", "request": { "method": "GET", "url": "https://a.test/6", "auth": { "type": "oauth1", "oauth1": [ { "key": "consumerKey", "value": "ck" }, { "key": "consumerSecret", "value": "cs" }, { "key": "signatureMethod", "value": "HMAC-SHA256" } ] } } },
+    { "name": "oauth2 pkce", "request": { "method": "GET", "url": "https://a.test/7", "auth": { "type": "oauth2", "oauth2": [ { "key": "grant_type", "value": "authorization_code_with_pkce" }, { "key": "authUrl", "value": "https://id.test/authorize" }, { "key": "accessTokenUrl", "value": "https://id.test/token" }, { "key": "clientId", "value": "app" }, { "key": "scope", "value": "orders:read" }, { "key": "audience", "value": { "6a1f": "https://api.acme.test" } }, { "key": "redirect_uri", "value": "http://127.0.0.1:8970/callback" } ] } } },
+    { "name": "oauth2 code", "request": { "method": "GET", "url": "https://a.test/8", "auth": { "type": "oauth2", "oauth2": [ { "key": "grant_type", "value": "authorization_code" }, { "key": "client_authentication", "value": "body" } ] } } },
+    { "name": "oauth2 password", "request": { "method": "GET", "url": "https://a.test/9", "auth": { "type": "oauth2", "oauth2": [ { "key": "grant_type", "value": "password_credentials" }, { "key": "username", "value": "cy" }, { "key": "password", "value": "pw3" } ] } } },
+    { "name": "oauth2 client", "request": { "method": "GET", "url": "https://a.test/10", "auth": { "type": "oauth2", "oauth2": [ { "key": "grant_type", "value": "client_credentials" } ] } } },
+    { "name": "oauth2 implicit", "request": { "method": "GET", "url": "https://a.test/11", "auth": { "type": "oauth2", "oauth2": [ { "key": "grant_type", "value": "implicit" } ] } } },
+    { "name": "hawk", "request": { "method": "GET", "url": "https://a.test/12", "auth": { "type": "hawk", "hawk": [ { "key": "authId", "value": "h" } ] } } },
+    { "name": "from header", "request": { "method": "GET", "url": "https://a.test/13", "header": [ { "key": "Authorization", "value": "Bearer abc" } ] } }
+  ]
+}

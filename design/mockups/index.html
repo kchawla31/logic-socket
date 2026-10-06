@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logic Socket — look &amp; feel options</title>
+<style>
+:root { --bg:#f5f5f7; --fg:#18181b; --fg2:#6b6b76; --line:#e2e2e8; --card:#fff; color-scheme: light dark; }
+@media (prefers-color-scheme: dark) { :root { --bg:#111113; --fg:#ececf1; --fg2:#9a9aa6; --line:#2a2a31; --card:#18181c; } }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui, -apple-system, sans-serif; }
+main { max-width:1400px; margin:0 auto; padding:28px 20px 48px; }
+h1 { margin:0 0 4px; font-size:22px; } p { margin:0 0 22px; color:var(--fg2); }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,620px),1fr)); gap:18px; }
+.c { display:block; text-decoration:none; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+.c:hover { border-color:#888; }
+.frame { height:380px; overflow:hidden; position:relative; }
+.frame iframe { width:1440px; height:1300px; border:0; transform:scale(.45); transform-origin:0 0; pointer-events:none; }
+.cap { padding:12px 16px; display:flex; flex-direction:column; gap:2px; border-top:1px solid var(--line); }
+.cap span { color:var(--fg2); font-size:13px; }
+</style></head><body><main>
+<h1>Logic Socket — look &amp; feel options</h1>
+<p>Same screen, four directions. Open one to switch Light / Dark / System and see the full design sheet (colour, type, controls, MCP tool card). The theme you pick on one page carries over to the others.</p>
+<div class="grid"><a class="c" href="circuit.html"><div class="frame"><iframe src="circuit.html" loading="lazy" tabindex="-1" title="Circuit"></iframe></div>
+<div class="cap"><b>1. Circuit</b><span>Electric teal on ink navy — signals, wires and live status.</span></div></a><a class="c" href="graphite.html"><div class="frame"><iframe src="graphite.html" loading="lazy" tabindex="-1" title="Graphite"></iframe></div>
+<div class="cap"><b>2. Graphite</b><span>Calm and premium — floating panels, soft depth, indigo accent.</span></div></a><a class="c" href="terminal.html"><div class="frame"><iframe src="terminal.html" loading="lazy" tabindex="-1" title="Terminal"></iframe></div>
+<div class="cap"><b>3. Terminal</b><span>Bold developer aesthetic — phosphor green, mono labels, sharp edges.</span></div></a><a class="c" href="warm-studio.html"><div class="frame"><iframe src="warm-studio.html" loading="lazy" tabindex="-1" title="Warm Studio"></iframe></div>
+<div class="cap"><b>4. Warm Studio</b><span>Friendly and distinctive — cream paper, coral accent, soft rounded shapes.</span></div></a></div>
+</main></body></html>

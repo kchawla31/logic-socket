@@ -5,7 +5,7 @@
 | Area | Where | Notes |
 |---|---|---|
 | Data model + SQLite store | `crates/core` | Generic `docs` table, typed models (Workspace, Folder, Request, Environment, McpServer, Response, CookieJar, Settings), batched transactional writes with one change event per batch, additive migrations |
-| Templating | `crates/templating` | Insomnia precedence (global base → global sub → base → sub → folders → extra layers), self-recursive values, 3-pass cross references, `{{ _.x }}` and `{{ x }}`, tags `uuid now base64 hash timestamp urlencode`, unresolved variables reported by name |
+| Templating | `crates/templating` | Layered precedence (global base → global sub → base → sub → folders → extra layers), self-recursive values, 3-pass cross references, `{{ _.x }}` and `{{ x }}`, tags `uuid now base64 hash timestamp urlencode`, unresolved variables reported by name |
 | HTTP engine | `crates/http` | Path/query params, JSON/form/multipart/file/raw bodies, Basic/Bearer/API-key auth, manual redirects (303→GET, 307 keeps body, auth stripped cross-host), RFC 6265 cookie jar incl. intermediate hops, curl-style timeline, timeouts |
 | Engine | `crates/engine` | Request pipeline (render + folder header/auth inheritance + send + persist), history pruning, large bodies to disk, bounded concurrent `send_many`, cURL parser, saved-MCP-server resolution |
 | MCP client | `crates/mcp` | JSON-RPC over stdio and Streamable HTTP (sessions, SSE, DELETE on close), paginated list calls, tools/call, resources, templates, prompts, ping, roots, cancellation on timeout, protocol log with per-response latency, schema → readable parameter rows, argument validation, example args, mock server binary `lsock-mock-mcp` |
@@ -32,5 +32,5 @@
 ## Phase 2 prerequisites
 
 - Engine pipeline has hook points (`prepare` extra layers, `execute`) for pre/after scripts
-- Response history exists for the `{% response %}` tag and `insomnia.response`
+- Response history exists for the `{% response %}` tag and `ls.response`
 - Runner can build on `send_many` + `request_ids_in`

@@ -1,6 +1,6 @@
-//! Insomnia template tags, implemented as minijinja functions.
+//! Template tags, implemented as minijinja functions.
 //!
-//! Insomnia writes tags as `{% name 'arg', 'arg' %}`. minijinja has no custom
+//! Tags are written as `{% name 'arg', 'arg' %}`. minijinja has no custom
 //! block tags, so known tag names are rewritten to `{{ __tag_name('arg', 'arg') }}`.
 //! Built-in statements (`if`, `for`, `set`, ...) pass through unchanged.
 
@@ -181,7 +181,7 @@ fn url_encode(s: &str) -> String {
         .collect()
 }
 
-/// Translate the common moment.js tokens Insomnia's `now` tag accepts.
+/// Translate the common moment.js tokens the `now` tag accepts.
 fn moment_to_strftime(fmt: &str) -> String {
     let pairs = [
         ("YYYY", "%Y"),

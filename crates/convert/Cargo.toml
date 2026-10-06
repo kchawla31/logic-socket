@@ -3,7 +3,7 @@ name = "lsock-convert"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Import/export: Insomnia v4/v5, Postman, OpenAPI/Swagger, HAR, cURL; code snippets"
+description = "Import/export: Logic Socket YAML, Postman, OpenAPI/Swagger, HAR, Insomnia, cURL; code snippets"
 
 [dependencies]
 lsock-core.workspace = true
