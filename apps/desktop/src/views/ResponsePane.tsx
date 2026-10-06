@@ -60,25 +60,25 @@ export function ResponsePane({
     <div className={cn('flex h-full min-h-0 flex-col', sending && 'opacity-60')}>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-app px-3">
         {response.error ? (
-          <span className={cn('rounded px-2 py-0.5 text-[12px] font-semibold', statusTone(0))}>Error</span>
+          <span className={cn('shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-[12px] font-semibold', statusTone(0))}>Error</span>
         ) : (
-          <span className={cn('rounded px-2 py-0.5 text-[12px] font-semibold', statusTone(response.statusCode))}>
+          <span className={cn('shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-[12px] font-semibold', statusTone(response.statusCode))}>
             {response.statusCode} {response.statusMessage}
           </span>
         )}
         {!response.error && (
           <>
-            <span className="text-[12px] text-muted" title="Total time">
+            <span className="shrink-0 whitespace-nowrap text-[12px] text-muted" title="Total time">
               {formatMs(response.timings.totalMs)}
             </span>
-            <span className="text-[12px] text-muted">{formatBytes(response.bytes)}</span>
+            <span className="shrink-0 whitespace-nowrap text-[12px] text-muted">{formatBytes(response.bytes)}</span>
           </>
         )}
         {tests.length > 0 && (
           <button
             onClick={() => setTab('tests')}
             className={cn(
-              'rounded px-2 py-0.5 text-[12px] font-medium',
+              'shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-[12px] font-medium',
               failedTests ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400' : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
             )}
           >
@@ -86,10 +86,10 @@ export function ResponsePane({
           </button>
         )}
         <div className="flex-1" />
-        <History className="size-3.5 text-muted" />
+        <History className="size-3.5 shrink-0 text-muted" />
         <Select
           aria-label="Response history"
-          className="h-7 max-w-56 text-[12px]"
+          className="h-7 min-w-0 max-w-56 text-[12px]"
           value={response.id}
           onChange={e => api.responseGet(e.target.value).then(onSelect)}
         >
@@ -326,7 +326,7 @@ function ConsoleView({ response }: { response: ResponseView }) {
           <button
             key={l}
             onClick={() => setLevel(l)}
-            className={cn('rounded-full px-2.5 py-0.5 text-[12px] capitalize', level === l ? 'bg-accent text-white' : 'bg-muted text-muted hover:text-app')}
+            className={cn('rounded-full px-2.5 py-0.5 text-[12px] capitalize', level === l ? 'bg-accent text-on-accent' : 'bg-muted text-muted hover:text-app')}
           >
             {l}
           </button>

@@ -1,6 +1,7 @@
-import { Command as CommandIcon, Download, FileCode2, Folder, GitBranch, Layers, Upload, ListChecks, Moon, Network, Plug, Plus, Radio, Send, Settings as SettingsIcon, Sparkles, Sun, X } from 'lucide-react';
+import { Command as CommandIcon, Download, FileCode2, Folder, GitBranch, Layers, Upload, ListChecks, Moon, Network, Plug, Plus, Radio, Send, Settings as SettingsIcon, Sparkles, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { Logo, ThemeSwitch } from './components/Brand';
 import { type Command, CommandPalette } from './components/CommandPalette';
 import { Button, DialogProvider, Empty, IconButton, Kbd, Select, Split, ToastProvider, useDialog, useToast } from './components/ui';
 import { api, type EnvList, errorText, type GitRepo, onDbChanged, type TreeNode, type Workspace } from './lib/api';
@@ -308,11 +309,11 @@ function Shell() {
   const activeTab = tabs.find(t => t.id === active);
 
   return (
-    <div className="flex h-full flex-col">
-      {/* top bar */}
-      <header data-tauri-drag-region className="flex h-11 shrink-0 items-center gap-2 border-b border-app bg-subtle px-3">
-        <div className="flex items-center gap-1.5 pr-2 font-semibold tracking-tight">
-          <span className="flex size-5 items-center justify-center rounded-md bg-accent text-[10px] font-bold text-white">LS</span>
+    <div className="flex h-full flex-col bg-canvas">
+      {/* top bar, on the canvas */}
+      <header data-tauri-drag-region className="flex h-13 shrink-0 items-center gap-2 px-3.5">
+        <div className="flex items-center gap-2 pr-2 text-[14px] font-extrabold tracking-tight">
+          <Logo />
           Logic Socket
         </div>
         <Select aria-label="Collection" value={wsId ?? ''} onChange={e => {
@@ -321,7 +322,7 @@ function Shell() {
             else if (v === '__import') setImportOpen(true);
             else if (v === '__export') setExportOpen(true);
             else setWsId(v);
-          }} className="h-7 max-w-52 text-[12.5px]">
+          }} className="h-8 max-w-56 bg-app font-medium shadow-sm">
           {workspaces.map(w => (
             <option key={w.id} value={w.id}>
               {w.name}
@@ -335,7 +336,7 @@ function Shell() {
           aria-label="Environment"
           value={envs?.activeId ?? ''}
           onChange={e => wsId && api.envSetActive(wsId, e.target.value || null)}
-          className="h-7 max-w-48 text-[12.5px]"
+          className="h-8 max-w-52 bg-app shadow-sm"
         >
           <option value="">No environment</option>
           {envs?.subs.map(e => (
@@ -358,15 +359,13 @@ function Shell() {
         })()}
         <button
           onClick={() => setPalette(true)}
-          className="flex h-7 w-64 items-center gap-2 rounded-md border border-app bg-app px-2.5 text-[12.5px] text-muted hover:border-accent"
+          className="flex h-8 w-72 items-center gap-2 rounded-lg border border-app bg-app px-3 text-[12.5px] text-muted shadow-sm transition-colors hover:border-accent hover:text-app"
         >
           <CommandIcon className="size-3.5" /> Search or run a command
           <span className="flex-1" />
           <Kbd>{modKey()} K</Kbd>
         </button>
-        <IconButton label="Toggle theme" onClick={() => setTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark')}>
-          {theme === 'dark' || (theme === 'system' && document.documentElement.classList.contains('dark')) ? <Sun className="size-4" /> : <Moon className="size-4" />}
-        </IconButton>
+        <ThemeSwitch theme={theme} setTheme={setTheme} compact />
         <IconButton label="AI providers" onClick={() => setAiOpen(true)}>
           <Sparkles className="size-4" />
         </IconButton>
@@ -376,7 +375,8 @@ function Shell() {
       </header>
 
       {wsId ? (
-        <Split direction="row" initial={270} min={200} storageKey="lsock-split-sidebar">
+        <div className="flex min-h-0 flex-1 px-2.5 pb-2.5">
+        <Split direction="row" initial={270} min={200} storageKey="lsock-split-sidebar" gap>
           <Sidebar
             workspaceId={wsId}
             tree={tree}
@@ -387,7 +387,7 @@ function Shell() {
             onRun={targetId => open(`${RUNNER}${targetId}`, 'runner')}
             onImport={() => setImportOpen(true)}
           />
-          <main className="flex h-full min-h-0 flex-col">
+          <main className="panel flex h-full min-h-0 flex-col">
             {tabs.length > 0 && (
               <div className="flex h-9 shrink-0 items-end gap-0.5 overflow-x-auto border-b border-app bg-subtle px-1.5">
                 {tabs.map(t => {
@@ -467,6 +467,7 @@ function Shell() {
             </div>
           </main>
         </Split>
+        </div>
       ) : (
         <Empty title="Loading…" />
       )}

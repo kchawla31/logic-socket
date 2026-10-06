@@ -436,7 +436,7 @@ export function LlmView({ id, tree, onOpenProviders }: { id: string; tree: TreeN
               <div className="mx-auto flex max-w-3xl flex-col gap-3 p-4">
                 {items.map((it, i) =>
                   it.kind === 'user' ? (
-                    <div key={i} className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-3.5 py-2 whitespace-pre-wrap text-white">
+                    <div key={i} className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-3.5 py-2 whitespace-pre-wrap text-on-accent">
                       {it.text}
                     </div>
                   ) : it.kind === 'assistant' ? (

@@ -301,7 +301,7 @@ function ToolDetail({ serverId, tool }: { serverId: string; tool: ToolView }) {
                         if (m === 'json') setJsonText(JSON.stringify(args ?? {}, null, 2));
                         setMode(m);
                       }}
-                      className={cn('rounded px-2.5 py-0.5 text-[12px]', mode === m ? 'bg-accent text-white' : 'text-muted hover:text-app')}
+                      className={cn('rounded px-2.5 py-0.5 text-[12px]', mode === m ? 'bg-accent text-on-accent' : 'text-muted hover:text-app')}
                     >
                       {m === 'form' ? 'Form' : 'JSON'}
                     </button>

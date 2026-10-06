@@ -210,7 +210,7 @@ export function RealtimeView({ id }: { id: string }) {
                         <button
                           key={f}
                           onClick={() => update({ payloadFormat: f })}
-                          className={cn('rounded px-2 py-0.5 text-[11.5px] uppercase', req.payloadFormat === f ? 'bg-accent text-white' : 'text-muted')}
+                          className={cn('rounded px-2 py-0.5 text-[11.5px] uppercase', req.payloadFormat === f ? 'bg-accent text-on-accent' : 'text-muted')}
                         >
                           {f}
                         </button>
@@ -279,7 +279,7 @@ export function RealtimeView({ id }: { id: string }) {
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={cn('rounded-full px-2.5 py-0.5 text-[12px] capitalize', filter === f ? 'bg-accent text-white' : 'bg-muted text-muted hover:text-app')}
+                className={cn('rounded-full px-2.5 py-0.5 text-[12px] capitalize', filter === f ? 'bg-accent text-on-accent' : 'bg-muted text-muted hover:text-app')}
               >
                 {f}
               </button>

@@ -1,5 +1,6 @@
 // GraphQL body: query + variables editors, schema introspection with
 // schema-aware completion/lint, and a schema explorer.
+import { editorTheme } from '../lib/editorTheme';
 import { EditorView } from '@codemirror/view';
 import CodeMirror from '@uiw/react-codemirror';
 import { graphql as graphqlLang, updateSchema } from 'cm6-graphql';
@@ -23,7 +24,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { api, errorText } from '../lib/api';
 import { cn, timeAgo } from '../lib/utils';
-import { CodeEditor, useDark } from './editors';
+import { CodeEditor } from './editors';
 import { Button, Select, Split, useToast } from './ui';
 
 interface GqlBody {
@@ -163,7 +164,6 @@ function Explorer({ schema, onClose }: { schema: GraphQLSchema; onClose: () => v
 
 export function GraphQLEditor({ requestId, text, onChange }: { requestId: string; text: string; onChange: (text: string) => void }) {
   const toast = useToast();
-  const dark = useDark();
   const body = useMemo(() => parseGqlBody(text), [text]);
   const [varsText, setVarsText] = useState(() => (body.variables ? JSON.stringify(body.variables, null, 2) : ''));
   const [varsError, setVarsError] = useState<string | null>(null);
@@ -243,7 +243,7 @@ export function GraphQLEditor({ requestId, text, onChange }: { requestId: string
                   view.current = v;
                   if (cached) updateSchema(v, cached.schema);
                 }}
-                theme={dark ? 'dark' : 'light'}
+                theme={editorTheme}
                 extensions={extensions}
                 height="100%"
                 style={{ height: '100%' }}

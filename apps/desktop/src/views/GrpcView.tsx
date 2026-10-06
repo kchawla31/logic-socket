@@ -241,7 +241,7 @@ export function GrpcView({ id, workspaceId }: { id: string; workspaceId: string 
                 update({ schemaSource: src });
                 setTimeout(() => load(true), 400);
               }}
-              className={cn('rounded px-2 py-0.5', req.schemaSource === src ? 'bg-accent text-white' : 'text-muted hover:text-app')}
+              className={cn('rounded px-2 py-0.5', req.schemaSource === src ? 'bg-accent text-on-accent' : 'text-muted hover:text-app')}
             >
               {src === 'reflection' ? 'Server reflection' : 'Proto files'}
             </button>

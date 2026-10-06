@@ -16,6 +16,8 @@
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/language": "^6.12.4",
     "@codemirror/lint": "^6.9.7",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
     "@lezer/highlight": "^1.2.5",
     "@tauri-apps/api": "^2.12.1",
     "@uiw/react-codemirror": "^4.25.12",

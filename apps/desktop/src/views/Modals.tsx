@@ -1,8 +1,9 @@
 import { Check, Eye, EyeOff, KeyRound, Lock, LockOpen, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
+import { ThemeSwitch } from '../components/Brand';
 import { CodeEditor } from '../components/editors';
-import { Button, CopyButton, IconButton, Input, Modal, Select, Toggle, useDialog, useToast } from '../components/ui';
+import { Button, CopyButton, IconButton, Input, Modal, Toggle, useDialog, useToast } from '../components/ui';
 import { api, type EnvList, type Environment, errorText, type Settings, type VaultStatus } from '../lib/api';
 import { cn } from '../lib/utils';
 
@@ -290,11 +291,7 @@ export function SettingsModal({
       {s && (
         <div className="flex flex-col gap-4 p-5">
           <Row label="Theme">
-            <Select value={theme} onChange={e => setTheme(e.target.value)}>
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </Select>
+            <ThemeSwitch theme={theme} setTheme={setTheme} />
           </Row>
           <Row label="Request timeout (ms)">
             <Input type="number" className="w-32" value={s.timeoutMs} onChange={e => update({ timeoutMs: Number(e.target.value) || 0 })} />

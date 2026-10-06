@@ -218,7 +218,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
     });
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-subtle">
+    <div className="panel flex h-full min-h-0 flex-col">
       <div className="flex items-center gap-1 px-2 pt-2 pb-1.5">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-2 left-2 size-3.5 text-muted" />

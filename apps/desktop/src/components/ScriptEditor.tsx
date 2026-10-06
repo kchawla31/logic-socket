@@ -1,4 +1,5 @@
 import { autocompletion, type CompletionContext } from '@codemirror/autocomplete';
+import { editorTheme } from '../lib/editorTheme';
 import { javascript } from '@codemirror/lang-javascript';
 import { EditorView } from '@codemirror/view';
 import CodeMirror from '@uiw/react-codemirror';
@@ -7,7 +8,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { SCRIPT_API } from '../lib/script-api';
 import { cn } from '../lib/utils';
-import { useDark } from './editors';
 import { Button } from './ui';
 
 type Phase = 'pre' | 'after';
@@ -79,7 +79,6 @@ function scriptCompletions(ctx: CompletionContext) {
 }
 
 export function ScriptEditor({ value, onChange, phase }: { value: string; onChange: (v: string) => void; phase: Phase }) {
-  const dark = useDark();
   const viewRef = useRef<EditorView | null>(null);
   const [menu, setMenu] = useState(false);
   const extensions = useMemo(
@@ -136,7 +135,7 @@ export function ScriptEditor({ value, onChange, phase }: { value: string; onChan
           value={value}
           onChange={onChange}
           onCreateEditor={v => (viewRef.current = v)}
-          theme={dark ? 'dark' : 'light'}
+          theme={editorTheme}
           extensions={extensions}
           height="100%"
           style={{ height: '100%' }}

@@ -31,7 +31,7 @@ export function Button({
       className={cn(
         'inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
         size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-8 px-3 text-[13px]',
-        variant === 'primary' && 'bg-accent text-white hover:bg-accent-hover',
+        variant === 'primary' && 'bg-accent text-on-accent shadow-sm hover:bg-accent-hover',
         variant === 'secondary' && 'border border-app bg-app hover:bg-muted',
         variant === 'ghost' && 'hover:bg-muted text-muted hover:text-app',
         variant === 'danger' && 'bg-rose-600 text-white hover:bg-rose-700',
@@ -70,7 +70,7 @@ export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputEleme
     <input
       {...rest}
       className={cn(
-        'h-8 w-full rounded-md border border-app bg-app px-2.5 text-[13px] outline-none placeholder:text-muted focus:border-accent',
+        'h-8 w-full rounded-md border border-app bg-subtle px-2.5 text-[13px] outline-none transition-shadow placeholder:text-muted focus:border-accent focus:bg-app focus:ring-3 focus:ring-accent-soft',
         className,
       )}
     />
@@ -82,7 +82,7 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
     <select
       {...rest}
       className={cn(
-        'h-8 rounded-md border border-app bg-app px-2 text-[13px] outline-none focus:border-accent',
+        'h-8 rounded-md border border-app bg-subtle px-2 text-[13px] outline-none focus:border-accent focus:ring-3 focus:ring-accent-soft',
         className,
       )}
     >
@@ -138,25 +138,27 @@ export function Tabs({
   right?: ReactNode;
 }) {
   return (
-    <div role="tablist" className={cn('flex h-9 shrink-0 items-end gap-1 overflow-x-auto overflow-y-hidden border-b border-app px-2 [scrollbar-width:none]', className)}>
-      {tabs.map(t => (
-        <button
-          key={t.id}
-          role="tab"
-          aria-selected={value === t.id}
-          onClick={() => onChange(t.id)}
-          className={cn(
-            '-mb-px flex h-8 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-[13px] whitespace-nowrap transition-colors',
-            value === t.id ? 'border-accent text-app font-medium' : 'border-transparent text-muted hover:text-app',
-          )}
-        >
-          {t.label}
-          {t.count !== undefined && t.count > 0 && (
-            <span className="rounded-full bg-muted px-1.5 text-[11px] leading-4 text-muted">{t.count}</span>
-          )}
-          {t.dot && <span className="size-1.5 rounded-full bg-accent" />}
-        </button>
-      ))}
+    <div className={cn('flex h-11 shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden px-2 [scrollbar-width:none]', className)}>
+      <div role="tablist" className="inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-muted p-[3px]">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={value === t.id}
+            onClick={() => onChange(t.id)}
+            className={cn(
+              'flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12.5px] whitespace-nowrap transition-all',
+              value === t.id ? 'bg-app font-semibold text-app shadow-sm' : 'font-medium text-muted hover:text-app',
+            )}
+          >
+            {t.label}
+            {t.count !== undefined && t.count > 0 && (
+              <span className={cn('rounded-full px-1.5 text-[10.5px] leading-4', value === t.id ? 'bg-accent-soft text-accent' : 'bg-app/60 text-muted')}>{t.count}</span>
+            )}
+            {t.dot && <span className="size-1.5 rounded-full bg-accent" />}
+          </button>
+        ))}
+      </div>
       <div className="flex-1" />
       {right && <div className="flex h-8 items-center gap-1">{right}</div>}
     </div>
@@ -188,8 +190,8 @@ export function Kbd({ children }: { children: ReactNode }) {
 export function Empty({ icon, title, children }: { icon?: ReactNode; title: string; children?: ReactNode }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-muted">
-      {icon && <div className="mb-1 opacity-60">{icon}</div>}
-      <div className="text-[14px] font-medium text-app">{title}</div>
+      {icon && <div className="mb-2 flex size-14 items-center justify-center rounded-2xl bg-accent-soft text-accent [&>svg]:size-7">{icon}</div>}
+      <div className="text-[15px] font-bold tracking-tight text-app">{title}</div>
       {children && <div className="max-w-sm text-[12.5px] leading-relaxed">{children}</div>}
     </div>
   );
@@ -223,14 +225,14 @@ export function Modal({
       onClose={onClose}
       onClick={e => e.target === ref.current && onClose()}
       className={cn(
-        'm-auto w-[92vw] rounded-xl border border-app bg-app p-0 text-app shadow-2xl backdrop:bg-black/40 backdrop:backdrop-blur-[2px]',
+        'm-auto w-[92vw] rounded-2xl border border-app bg-app p-0 text-app shadow-2xl backdrop:bg-black/35 backdrop:backdrop-blur-[3px]',
         width,
       )}
     >
       {open && (
         <div className="flex max-h-[85vh] flex-col">
-          <div className="flex h-11 shrink-0 items-center justify-between border-b border-app px-4">
-            <div className="text-[14px] font-semibold">{title}</div>
+          <div className="flex h-12 shrink-0 items-center justify-between border-b border-app px-4">
+            <div className="text-[14px] font-bold tracking-tight">{title}</div>
             <IconButton label="Close" onClick={onClose}>
               <X className="size-4" />
             </IconButton>
@@ -291,12 +293,15 @@ export function Split({
   initial,
   min = 200,
   storageKey,
+  gap,
   children,
 }: {
   direction: 'row' | 'col';
   initial: number;
   min?: number;
   storageKey: string;
+  /** Floating panels: the handle is the transparent gap between them. */
+  gap?: boolean;
   children: [ReactNode, ReactNode];
 }) {
   const [size, setSize] = useState<number>(() => {
@@ -338,8 +343,10 @@ export function Split({
         aria-orientation={direction === 'row' ? 'vertical' : 'horizontal'}
         onPointerDown={onDown}
         className={cn(
-          'shrink-0 bg-[var(--border)] transition-colors hover:bg-accent',
-          direction === 'row' ? 'w-px cursor-col-resize hover:w-0.5' : 'h-px cursor-row-resize hover:h-0.5',
+          'shrink-0 transition-colors',
+          gap
+            ? cn('rounded-full hover:bg-accent-soft', direction === 'row' ? 'mx-px w-2 cursor-col-resize' : 'my-px h-2 cursor-row-resize')
+            : cn('bg-[var(--border)] hover:bg-accent', direction === 'row' ? 'w-px cursor-col-resize hover:w-0.5' : 'h-px cursor-row-resize hover:h-0.5'),
         )}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children[1]}</div>

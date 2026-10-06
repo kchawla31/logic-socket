@@ -521,7 +521,7 @@ function ProtocolLog({ entries, onClear }: { entries: LogEntry[]; onClear: () =>
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={cn('rounded-full px-2.5 py-0.5 text-[12px] capitalize', filter === f ? 'bg-accent text-white' : 'bg-muted text-muted hover:text-app')}
+              className={cn('rounded-full px-2.5 py-0.5 text-[12px] capitalize', filter === f ? 'bg-accent text-on-accent' : 'bg-muted text-muted hover:text-app')}
             >
               {f}
             </button>

@@ -1,4 +1,5 @@
 import { javascript } from '@codemirror/lang-javascript';
+import { editorTheme } from '../lib/editorTheme';
 import { json } from '@codemirror/lang-json';
 import { EditorView } from '@codemirror/view';
 import CodeMirror from '@uiw/react-codemirror';
@@ -35,7 +36,6 @@ export function CodeEditor({
   className?: string;
   placeholder?: string;
 }) {
-  const dark = useDark();
   const extensions = useMemo(() => {
     const ext = [EditorView.lineWrapping];
     if (language === 'json') ext.push(json());
@@ -49,7 +49,7 @@ export function CodeEditor({
         onChange={onChange}
         readOnly={readOnly}
         editable={!readOnly}
-        theme={dark ? 'dark' : 'light'}
+        theme={editorTheme}
         extensions={extensions}
         placeholder={placeholder}
         height="100%"
