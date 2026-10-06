@@ -58,6 +58,14 @@ csv = "1"
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 keyring = { version = "3", features = ["apple-native", "windows-native"] }
 
+# Lighter debug builds: file/line info for backtraces, without full debug info
+# for every dependency (keeps target/ a fraction of the size).
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
