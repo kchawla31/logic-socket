@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use futures::future::BoxFuture;
-use irs_mcp::{Client, Hints, Tool};
+use lsock_mcp::{Client, Hints, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -211,7 +211,7 @@ pub fn tool_specs(sources: &[ToolSource]) -> (Vec<ToolSpec>, HashMap<String, (us
     (specs, map)
 }
 
-fn result_text(r: &irs_mcp::CallToolResult, max: usize) -> String {
+fn result_text(r: &lsock_mcp::CallToolResult, max: usize) -> String {
     let mut parts = vec![];
     for c in &r.content {
         match c["type"].as_str() {
@@ -464,7 +464,7 @@ pub struct LlmSampler {
     pub max_tokens: u32,
 }
 
-impl irs_mcp::SamplingHandler for LlmSampler {
+impl lsock_mcp::SamplingHandler for LlmSampler {
     fn create_message(&self, params: Value) -> BoxFuture<'static, Result<Value, String>> {
         let cfg = self.cfg.clone();
         let default_model = self.model.clone();

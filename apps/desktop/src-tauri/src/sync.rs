@@ -1,13 +1,13 @@
 //! Import/export, code generation, vault and Git sync commands.
 
-use irs_convert::codegen::{Target, generate};
-use irs_core::{Doc, Environment, GitRepo, Workspace};
-use irs_engine::Engine;
-use irs_engine::git::{GitCommit, GitStatus, GitSyncResult};
-use irs_engine::transfer::{
+use lsock_convert::codegen::{Target, generate};
+use lsock_core::{Doc, Environment, GitRepo, Workspace};
+use lsock_engine::Engine;
+use lsock_engine::git::{GitCommit, GitStatus, GitSyncResult};
+use lsock_engine::transfer::{
     ExportFormat, ExportOptions, Exported, ImportMode, ImportOptions, ImportSummary,
 };
-use irs_engine::vault::VaultStatus;
+use lsock_engine::vault::VaultStatus;
 use serde::Serialize;
 use serde_json::Value;
 use tauri::State;
@@ -17,7 +17,7 @@ use crate::{AppState, CmdResult, e};
 /// Run blocking engine work (git, file I/O) off the async runtime.
 async fn blocking<T: Send + 'static>(
     engine: &Engine,
-    f: impl FnOnce(&Engine) -> irs_engine::Result<T> + Send + 'static,
+    f: impl FnOnce(&Engine) -> lsock_engine::Result<T> + Send + 'static,
 ) -> CmdResult<T> {
     let engine = engine.clone();
     tauri::async_runtime::spawn_blocking(move || f(&engine))
@@ -32,7 +32,7 @@ async fn blocking<T: Send + 'static>(
 #[serde(rename_all = "camelCase")]
 pub struct PreviewWorkspace {
     name: String,
-    scope: irs_core::WorkspaceScope,
+    scope: lsock_core::WorkspaceScope,
     requests: usize,
     folders: usize,
     environments: usize,
@@ -42,7 +42,7 @@ pub struct PreviewWorkspace {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportPreview {
-    format: irs_convert::Format,
+    format: lsock_convert::Format,
     format_label: String,
     workspaces: Vec<PreviewWorkspace>,
     warnings: Vec<String>,
@@ -51,7 +51,7 @@ pub struct ImportPreview {
 /// What a file would import, without writing anything.
 #[tauri::command]
 pub fn import_preview(state: State<'_, AppState>, text: String) -> CmdResult<ImportPreview> {
-    let i = irs_convert::import(&text).map_err(e)?;
+    let i = lsock_convert::import(&text).map_err(e)?;
     Ok(ImportPreview {
         format: i.format,
         format_label: i.format.to_string(),
@@ -65,7 +65,7 @@ pub fn import_preview(state: State<'_, AppState>, text: String) -> CmdResult<Imp
                 folders: b
                     .walk()
                     .iter()
-                    .filter(|x| matches!(x.node, irs_convert::Node::Folder(..)))
+                    .filter(|x| matches!(x.node, lsock_convert::Node::Folder(..)))
                     .count(),
                 environments: b.base_env.iter().count() + b.sub_envs.len(),
                 exists: b
@@ -321,7 +321,7 @@ pub fn git_repo_list(state: State<'_, AppState>) -> CmdResult<Vec<RepoView>> {
         .collect())
 }
 
-/// Suggested folder for a new repository: ~/Documents/insomnia-rs/<name>.
+/// Suggested folder for a new repository: ~/Documents/logic-socket/<name>.
 #[tauri::command]
 pub fn git_default_dir(name: String) -> CmdResult<String> {
     let home = std::env::var_os("HOME")
@@ -340,7 +340,7 @@ pub fn git_default_dir(name: String) -> CmdResult<String> {
         .collect();
     Ok(std::path::PathBuf::from(home)
         .join("Documents")
-        .join("insomnia-rs")
+        .join("logic-socket")
         .join(if slug.is_empty() { "repo".into() } else { slug })
         .to_string_lossy()
         .into_owned())

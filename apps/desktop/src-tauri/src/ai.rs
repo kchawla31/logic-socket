@@ -5,9 +5,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures::future::BoxFuture;
-use irs_core::{Doc, KeySource, LlmProvider, LlmRequest, LlmRun};
-use irs_engine::llm::parse_kind;
-use irs_llm::agent::{Approval, Approver, ToolCallInfo, ToolSource};
+use lsock_core::{Doc, KeySource, LlmProvider, LlmRequest, LlmRun};
+use lsock_engine::llm::parse_kind;
+use lsock_llm::agent::{Approval, Approver, ToolCallInfo, ToolSource};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::{Emitter, Manager, State};
@@ -92,7 +92,7 @@ pub fn llm_provider_create(
         name,
         kind: kind.clone(),
         base_url: String::new(),
-        key_source: if k == irs_llm::ProviderKind::Ollama {
+        key_source: if k == lsock_llm::ProviderKind::Ollama {
             KeySource::None
         } else {
             KeySource::Keychain
@@ -141,7 +141,7 @@ pub async fn llm_models(state: State<'_, AppState>, provider_id: String) -> CmdR
         .engine
         .provider_config(&provider_id, None)
         .map_err(e)?;
-    irs_llm::list_models(&cfg).await.map_err(e)
+    lsock_llm::list_models(&cfg).await.map_err(e)
 }
 
 #[tauri::command]
@@ -209,7 +209,7 @@ pub async fn llm_run_start<R: tauri::Runtime>(
                 let name = state
                     .engine
                     .store
-                    .get::<irs_core::McpServer>(id)
+                    .get::<lsock_core::McpServer>(id)
                     .map(|s| s.body.name)
                     .unwrap_or_default();
                 sources.push(ToolSource {
@@ -226,7 +226,7 @@ pub async fn llm_run_start<R: tauri::Runtime>(
         .connect_tool_sources(&temporary)
         .await
         .map_err(e)?;
-    let temp_clients: Vec<Arc<irs_mcp::Client>> =
+    let temp_clients: Vec<Arc<lsock_mcp::Client>> =
         connected.iter().map(|s| s.client.clone()).collect();
     sources.extend(connected);
 

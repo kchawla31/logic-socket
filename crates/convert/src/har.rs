@@ -1,6 +1,6 @@
 //! HAR 1.2 (browser "Save all as HAR"): import requests, export requests.
 
-use irs_core::{Body, BodyParam, KeyValue, Request, Workspace, mime};
+use lsock_core::{Body, BodyParam, KeyValue, Request, Workspace, mime};
 use serde_json::{Value, json};
 
 use crate::{Format, Imported, Item, Node, Result, WorkspaceBundle, scalar, str_of};
@@ -169,5 +169,5 @@ pub fn export(b: &WorkspaceBundle) -> String {
                    "cache": {}, "timings": {"send": 0, "wait": 0, "receive": 0}})
         })
         .collect();
-    serde_json::to_string_pretty(&json!({"log": {"version": "1.2", "creator": {"name": "insomnia-rs", "version": env!("CARGO_PKG_VERSION")}, "entries": entries}})).unwrap_or_default()
+    serde_json::to_string_pretty(&json!({"log": {"version": "1.2", "creator": {"name": "logic-socket", "version": env!("CARGO_PKG_VERSION")}, "entries": entries}})).unwrap_or_default()
 }

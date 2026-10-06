@@ -1,11 +1,11 @@
 [package]
-name = "irs-llm"
+name = "lsock-llm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-irs-mcp.workspace = true
+lsock-mcp.workspace = true
 reqwest.workspace = true
 tokio.workspace = true
 serde.workspace = true

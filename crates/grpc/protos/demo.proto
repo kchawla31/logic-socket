@@ -4,7 +4,7 @@ package demo;
 
 import "google/protobuf/timestamp.proto";
 
-// Demo service used by insomnia-rs tests and `irs mock grpc`.
+// Demo service used by logic-socket tests and `lsock mock grpc`.
 service Greeter {
   // Unary: say hello.
   rpc SayHello (HelloRequest) returns (HelloReply);

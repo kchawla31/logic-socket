@@ -72,7 +72,7 @@ function Connect({ workspaceName, onConnected }: { workspaceName: string; onConn
       <div className="flex flex-col gap-2 rounded-lg border border-app p-4">
         <div className="font-semibold">Use a folder on this computer</div>
         <p className="text-[12px] text-muted">An existing Git repository, or a new folder (we run git init). Add a remote later to share it.</p>
-        <Input value={localDir} onChange={e => setLocalDir(e.target.value)} placeholder="/Users/you/Documents/insomnia-rs/my-api" />
+        <Input value={localDir} onChange={e => setLocalDir(e.target.value)} placeholder="/Users/you/Documents/logic-socket/my-api" />
         <div className="flex-1" />
         <Button variant="primary" disabled={!localDir.trim()} loading={busy === 'open'} onClick={() => run('open', () => api.gitOpen(localDir.trim(), null))}>
           Open or create

@@ -7,7 +7,7 @@ use axum::{
     http::{HeaderMap, Uri},
     routing::any,
 };
-use irs_core::{Folder, KeyValue, Workspace};
+use lsock_core::{Folder, KeyValue, Workspace};
 use serde_json::{Value, json};
 
 use super::*;

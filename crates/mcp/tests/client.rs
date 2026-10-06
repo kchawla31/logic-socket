@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use irs_mcp::mock::{HttpState, spawn_http};
-use irs_mcp::{Client, ConnectOptions, Direction, FrameKind, McpError, TransportConfig, schema};
+use lsock_mcp::mock::{HttpState, spawn_http};
+use lsock_mcp::{Client, ConnectOptions, Direction, FrameKind, McpError, TransportConfig, schema};
 use serde_json::json;
 
 fn http(url: &str, headers: Vec<(String, String)>) -> ConnectOptions {
@@ -15,7 +15,7 @@ fn http(url: &str, headers: Vec<(String, String)>) -> ConnectOptions {
 
 fn stdio() -> ConnectOptions {
     ConnectOptions::new(TransportConfig::Stdio {
-        command: env!("CARGO_BIN_EXE_irs-mock-mcp").into(),
+        command: env!("CARGO_BIN_EXE_lsock-mock-mcp").into(),
         args: vec![],
         env: HashMap::new(),
         cwd: None,
@@ -23,7 +23,7 @@ fn stdio() -> ConnectOptions {
 }
 
 async fn exercise(client: &Client) {
-    assert_eq!(client.server().server_info.name, "irs-mock-mcp");
+    assert_eq!(client.server().server_info.name, "lsock-mock-mcp");
     assert!(client.server().instructions.is_some());
 
     let tools = client.list_tools().await.unwrap();
@@ -183,7 +183,7 @@ async fn stdio_end_to_end_with_roots_and_stderr() {
             .entries()
             .iter()
             .any(|e| e.direction == Direction::Stderr
-                && e.message["text"] == "irs-mock-mcp ready on stdio")
+                && e.message["text"] == "lsock-mock-mcp ready on stdio")
     );
     client.close().await;
 }

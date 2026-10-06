@@ -1,7 +1,7 @@
 //! Dev-only: serve the real Tauri command layer over HTTP so the UI can run
 //! in a normal browser (UI development, screenshots, Playwright).
 //!
-//!   cargo run -p insomnia-rs-desktop --example web_bridge
+//!   cargo run -p logic-socket-desktop --example web_bridge
 //!   VITE_WEB_BRIDGE=1 npm run dev   # then open http://localhost:1420
 //!
 //! POST /invoke/<command> with the JSON args → JSON result (400 + JSON error).
@@ -90,22 +90,22 @@ where
 }
 
 fn main() {
-    let data_dir = std::env::var_os("IRS_DATA_DIR")
+    let data_dir = std::env::var_os("LSOCK_DATA_DIR")
         .map(Into::into)
-        .unwrap_or_else(irs_engine::default_data_dir);
+        .unwrap_or_else(lsock_engine::default_data_dir);
     eprintln!(
         "web bridge using data dir {}",
         std::path::Path::new(&data_dir).display()
     );
-    let engine = irs_engine::Engine::open(data_dir).expect("open database");
-    let app = irs_desktop::build(mock_builder(), engine)
+    let engine = lsock_engine::Engine::open(data_dir).expect("open database");
+    let app = lsock_desktop::build(mock_builder(), engine)
         .build(mock_context(noop_assets()))
         .expect("build app");
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .unwrap();
     let (events_tx, _) = broadcast::channel::<String>(1024);
-    for &name in irs_desktop::APP_EVENTS {
+    for &name in lsock_desktop::APP_EVENTS {
         let tx = events_tx.clone();
         app.listen_any(name, move |ev| {
             let _ = tx.send(serde_json::json!({ "event": name, "payload": serde_json::from_str::<Value>(ev.payload()).unwrap_or(Value::Null) }).to_string());

@@ -253,7 +253,7 @@ export function LlmView({ id, tree, onOpenProviders }: { id: string; tree: TreeN
   };
 
   return (
-    <Split direction="row" initial={420} min={340} storageKey="irs-split-llm">
+    <Split direction="row" initial={420} min={340} storageKey="lsock-split-llm">
       <div className="flex h-full min-h-0 flex-col">
         <div className="min-h-0 flex-1 overflow-auto p-4">
           <div className="mb-3 flex items-center gap-2">

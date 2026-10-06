@@ -1,4 +1,4 @@
-//! Core data model and storage for insomnia-rs.
+//! Core data model and storage for logic-socket.
 
 pub mod model;
 pub mod store;

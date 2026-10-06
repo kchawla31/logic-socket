@@ -1,4 +1,4 @@
-//! Import and export between insomnia-rs and other API tools.
+//! Import and export between logic-socket and other API tools.
 //!
 //! Importers turn a file into [`WorkspaceBundle`]s (plain model values plus
 //! optional original ids); the engine writes bundles to the store. Exporters
@@ -11,7 +11,7 @@ pub mod insomnia;
 pub mod openapi;
 pub mod postman;
 
-use irs_core::{
+use lsock_core::{
     CookieJar, Environment, Folder, GrpcRequest, LlmRequest, McpServer, ProtoFile, RealtimeRequest,
     Request, Workspace,
 };
@@ -284,8 +284,8 @@ pub(crate) fn auth_from_json(
     v: Option<&Value>,
     warnings: &mut Vec<String>,
     at: &str,
-) -> irs_core::Auth {
-    use irs_core::Auth;
+) -> lsock_core::Auth {
+    use lsock_core::Auth;
     let Some(v) = v.filter(|v| v.is_object() && v.get("type").is_some()) else {
         return Auth::Inherit;
     };
@@ -301,9 +301,9 @@ pub(crate) fn auth_from_json(
     }
 }
 
-pub(crate) fn auth_to_json(a: &irs_core::Auth) -> Value {
+pub(crate) fn auth_to_json(a: &lsock_core::Auth) -> Value {
     match a {
-        irs_core::Auth::Inherit => Value::Object(Default::default()),
+        lsock_core::Auth::Inherit => Value::Object(Default::default()),
         other => serde_json::to_value(other).unwrap_or_default(),
     }
 }

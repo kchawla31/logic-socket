@@ -49,7 +49,7 @@ function flatten(nodes: TreeNode[], path: string[] = []): (TreeNode & { path: st
 function useTheme() {
   const [theme, setThemeState] = useState<string>(() => {
     try {
-      return localStorage.getItem('irs-theme') || 'system';
+      return localStorage.getItem('lsock-theme') || 'system';
     } catch {
       return 'system';
     }
@@ -67,7 +67,7 @@ function useTheme() {
   const setTheme = (t: string) => {
     setThemeState(t);
     try {
-      localStorage.setItem('irs-theme', t);
+      localStorage.setItem('lsock-theme', t);
     } catch {
       /* ignore */
     }
@@ -80,7 +80,7 @@ function Shell() {
   const dialog = useDialog();
   const [theme, setTheme] = useTheme();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [wsId, setWsId] = useState<string | null>(() => load('irs-ws', null));
+  const [wsId, setWsId] = useState<string | null>(() => load('lsock-ws', null));
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [envs, setEnvs] = useState<EnvList | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -129,14 +129,14 @@ function Shell() {
   const restoredFor = useRef<string | null>(null);
   useEffect(() => {
     if (!wsId) return;
-    store('irs-ws', wsId);
-    const saved = load<{ tabs: Tab[]; active: string | null }>(`irs-tabs-${wsId}`, { tabs: [], active: null });
+    store('lsock-ws', wsId);
+    const saved = load<{ tabs: Tab[]; active: string | null }>(`lsock-tabs-${wsId}`, { tabs: [], active: null });
     setTabs(saved.tabs);
     setActive(saved.active);
     restoredFor.current = wsId;
   }, [wsId]);
   useEffect(() => {
-    if (wsId && restoredFor.current === wsId) store(`irs-tabs-${wsId}`, { tabs, active });
+    if (wsId && restoredFor.current === wsId) store(`lsock-tabs-${wsId}`, { tabs, active });
   }, [tabs, active, wsId]);
 
   const nodes = useMemo(() => flatten(tree), [tree]);
@@ -312,8 +312,8 @@ function Shell() {
       {/* top bar */}
       <header data-tauri-drag-region className="flex h-11 shrink-0 items-center gap-2 border-b border-app bg-subtle px-3">
         <div className="flex items-center gap-1.5 pr-2 font-semibold tracking-tight">
-          <span className="flex size-5 items-center justify-center rounded-md bg-accent text-[11px] text-white">rs</span>
-          insomnia-rs
+          <span className="flex size-5 items-center justify-center rounded-md bg-accent text-[10px] font-bold text-white">LS</span>
+          Logic Socket
         </div>
         <Select aria-label="Collection" value={wsId ?? ''} onChange={e => {
             const v = e.target.value;
@@ -376,7 +376,7 @@ function Shell() {
       </header>
 
       {wsId ? (
-        <Split direction="row" initial={270} min={200} storageKey="irs-split-sidebar">
+        <Split direction="row" initial={270} min={200} storageKey="lsock-split-sidebar">
           <Sidebar
             workspaceId={wsId}
             tree={tree}

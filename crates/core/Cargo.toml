@@ -1,5 +1,5 @@
 [package]
-name = "irs-core"
+name = "lsock-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

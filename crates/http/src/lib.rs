@@ -1,4 +1,4 @@
-//! HTTP execution: build a wire request from a (rendered) `irs_core::Request`,
+//! HTTP execution: build a wire request from a (rendered) `lsock_core::Request`,
 //! send it with manual redirect handling, and capture timings + a timeline.
 
 pub mod cookies;
@@ -7,7 +7,7 @@ pub mod sign;
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
-use irs_core::{Auth, Body, Cookie, KeyValue, Request, TimelineEntry, Timings, mime};
+use lsock_core::{Auth, Body, Cookie, KeyValue, Request, TimelineEntry, Timings, mime};
 use url::Url;
 
 #[derive(Debug, thiserror::Error)]
@@ -50,7 +50,7 @@ impl Default for Options {
             validate_certificates: true,
             send_cookies: true,
             store_cookies: true,
-            user_agent: Some(concat!("insomnia-rs/", env!("CARGO_PKG_VERSION")).to_string()),
+            user_agent: Some(concat!("logic-socket/", env!("CARGO_PKG_VERSION")).to_string()),
             timeline_body_limit: 10 * 1024,
             proxy: None,
             no_proxy: None,
@@ -96,7 +96,7 @@ enum WireBody {
         content_type: Option<String>,
         data: Vec<u8>,
     },
-    Multipart(Vec<irs_core::BodyParam>),
+    Multipart(Vec<lsock_core::BodyParam>),
 }
 
 /// Build the final URL: path params, query params, auth-in-query, scheme default.
@@ -608,7 +608,7 @@ fn apply_wire_auth(
                 .headers()
                 .get(reqwest::header::CONTENT_TYPE)
                 .and_then(|v| v.to_str().ok())
-                .is_some_and(|v| v.starts_with(irs_core::mime::FORM));
+                .is_some_and(|v| v.starts_with(lsock_core::mime::FORM));
             let form = if is_form {
                 body.as_deref().map(sign::form_pairs).unwrap_or_default()
             } else {

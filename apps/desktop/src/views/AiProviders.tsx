@@ -150,13 +150,13 @@ export function AiProvidersModal({ open, onClose }: { open: boolean; onClose: ()
               </Row>
               <Row label="Default model">
                 <Input
-                  list="irs-models"
+                  list="lsock-models"
                   value={draft.defaultModel}
                   onChange={e => setDraft({ ...draft, defaultModel: e.target.value })}
                   onBlur={() => save(draft)}
                   placeholder={draft.suggestedModels[0]}
                 />
-                <datalist id="irs-models">
+                <datalist id="lsock-models">
                   {[...new Set([...models, ...draft.suggestedModels])].map(m => (
                     <option key={m} value={m} />
                   ))}

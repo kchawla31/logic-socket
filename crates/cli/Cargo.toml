@@ -1,23 +1,23 @@
 [package]
-name = "irs-cli"
+name = "lsock-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "irs"
+name = "lsock"
 path = "src/main.rs"
 
 [dependencies]
-irs-core.workspace = true
-irs-engine.workspace = true
-irs-convert.workspace = true
-irs-mcp.workspace = true
-irs-templating.workspace = true
-irs-runner.workspace = true
-irs-llm.workspace = true
-irs-realtime.workspace = true
-irs-grpc.workspace = true
+lsock-core.workspace = true
+lsock-engine.workspace = true
+lsock-convert.workspace = true
+lsock-mcp.workspace = true
+lsock-templating.workspace = true
+lsock-runner.workspace = true
+lsock-llm.workspace = true
+lsock-realtime.workspace = true
+lsock-grpc.workspace = true
 futures.workspace = true
 tokio.workspace = true
 clap.workspace = true
@@ -29,4 +29,4 @@ axum.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-irs-mcp.workspace = true
+lsock-mcp.workspace = true

@@ -1,14 +1,14 @@
-//! `irs import`, `irs export`, `irs code`, `irs vault`, `irs git`.
+//! `lsock import`, `lsock export`, `lsock code`, `lsock vault`, `lsock git`.
 
 use std::io::Read as _;
 
 use anyhow::{Result, anyhow, bail};
 use clap::{Args, Subcommand, ValueEnum};
-use irs_convert::codegen::{Target, generate};
-use irs_core::{Doc, GitRepo, Request, Workspace};
-use irs_engine::Engine;
-use irs_engine::git::GitSyncResult;
-use irs_engine::transfer::{ExportFormat, ExportOptions, ImportMode, ImportOptions};
+use lsock_convert::codegen::{Target, generate};
+use lsock_core::{Doc, GitRepo, Request, Workspace};
+use lsock_engine::Engine;
+use lsock_engine::git::GitSyncResult;
+use lsock_engine::transfer::{ExportFormat, ExportOptions, ImportMode, ImportOptions};
 
 use crate::find;
 use crate::out::*;
@@ -301,7 +301,7 @@ fn repo(engine: &Engine, needle: &str) -> Result<Doc<GitRepo>> {
     {
         return Ok(r);
     }
-    bail!("no repository '{needle}' (see `irs git list`)")
+    bail!("no repository '{needle}' (see `lsock git list`)")
 }
 
 fn token_from(var: &str) -> Result<String> {
@@ -314,7 +314,7 @@ fn print_sync(r: &GitSyncResult) {
     }
     if !r.conflicts.is_empty() {
         println!(
-            "{} conflicts in {} — resolve with `irs git resolve <repo> <file> --take ours|theirs`",
+            "{} conflicts in {} — resolve with `lsock git resolve <repo> <file> --take ours|theirs`",
             red("✗"),
             r.conflicts.join(", ")
         );
@@ -331,7 +331,9 @@ pub fn git(engine: &Engine, c: GitCmd) -> Result<()> {
             if repos.is_empty() {
                 println!(
                     "{}",
-                    dim("no repositories — `irs git open <dir>` or `irs git clone <url> <dir>`")
+                    dim(
+                        "no repositories — `lsock git open <dir>` or `lsock git clone <url> <dir>`"
+                    )
                 );
             }
             for r in repos {

@@ -130,7 +130,7 @@ export function RunnerView({ targetId, workspaceId, workspaceName, tree }: { tar
   let lastIteration = 0;
 
   return (
-    <Split direction="row" initial={360} min={300} storageKey="irs-split-runner">
+    <Split direction="row" initial={360} min={300} storageKey="lsock-split-runner">
       <div className="flex h-full min-h-0 flex-col bg-subtle">
         <div className="shrink-0 border-b border-app px-4 py-3">
           <div className="text-[11px] font-semibold tracking-wide text-muted uppercase">Collection runner</div>

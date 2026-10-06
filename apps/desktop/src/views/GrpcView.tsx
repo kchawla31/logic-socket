@@ -266,7 +266,7 @@ export function GrpcView({ id, workspaceId }: { id: string; workspaceId: string 
       </div>
       {schemaError && <div className="shrink-0 border-b border-rose-500/30 bg-rose-500/5 px-3 py-1.5 font-mono text-[12px] text-rose-700 dark:text-rose-400">{schemaError}</div>}
 
-      <Split direction="row" initial={480} min={320} storageKey="irs-split-grpc">
+      <Split direction="row" initial={480} min={320} storageKey="lsock-split-grpc">
         <div className="flex h-full min-h-0 flex-col">
           <Tabs
             value={tab}

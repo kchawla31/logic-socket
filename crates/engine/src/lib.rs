@@ -1,7 +1,7 @@
 //! Request pipeline shared by the CLI and the desktop app:
 //! load request + ancestors + environments → render → send → persist.
 
-pub use irs_convert::curl;
+pub use lsock_convert::curl;
 pub mod git;
 pub mod grpc;
 pub mod llm;
@@ -19,11 +19,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
-use irs_core::{
+use lsock_core::{
     Auth, CookieJar, Doc, Environment, Folder, KeyValue, RawDoc, Request, Response, Settings,
     Store, StoreError, Toggle, Workspace,
 };
-use irs_templating::{Context, Layer, Mode, RenderError, Renderer, VarRef};
+use lsock_templating::{Context, Layer, Mode, RenderError, Renderer, VarRef};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
@@ -41,29 +41,34 @@ pub enum EngineError {
 
 pub type Result<T> = std::result::Result<T, EngineError>;
 
-/// Shared by the CLI and desktop app: `$IRS_DATA_DIR`, else the platform
-/// app-data directory (`~/Library/Application Support/insomnia-rs` on macOS).
+/// Shared by the CLI and desktop app: `$LSOCK_DATA_DIR`, else the platform
+/// app-data directory (`~/Library/Application Support/logic-socket` on macOS).
 pub fn default_data_dir() -> PathBuf {
-    if let Some(d) = std::env::var_os("IRS_DATA_DIR").filter(|d| !d.is_empty()) {
+    if let Some(d) = std::env::var_os("LSOCK_DATA_DIR").filter(|d| !d.is_empty()) {
         return PathBuf::from(d);
     }
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or_default();
-    if cfg!(target_os = "macos") {
-        home.join("Library/Application Support/insomnia-rs")
+    let base = if cfg!(target_os = "macos") {
+        home.join("Library/Application Support")
     } else if cfg!(windows) {
         std::env::var_os("APPDATA")
             .map(PathBuf::from)
             .unwrap_or(home)
-            .join("insomnia-rs")
     } else {
         std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".local/share"))
-            .join("insomnia-rs")
+    };
+    let dir = base.join("logic-socket");
+    // data from before the rename moves over once
+    let legacy = base.join("insomnia-rs");
+    if !dir.exists() && legacy.is_dir() {
+        let _ = std::fs::rename(&legacy, &dir);
     }
+    dir
 }
 
 /// Bodies larger than this are stored as files next to the database.
@@ -77,7 +82,7 @@ pub struct Engine {
     pub(crate) secrets: Arc<dyn llm::SecretStore>,
 }
 
-/// A request after rendering and inheritance, ready for `irs_http::send`.
+/// A request after rendering and inheritance, ready for `lsock_http::send`.
 #[derive(Debug, Clone)]
 pub struct Prepared {
     pub workspace_id: String,
@@ -85,16 +90,16 @@ pub struct Prepared {
     pub auth_owner: Option<String>,
     pub request: Request,
     pub auth: Auth,
-    pub options: irs_http::Options,
+    pub options: lsock_http::Options,
     pub environment_id: Option<String>,
 }
 
 impl Engine {
     /// Engines backed by a data directory keep API keys in the OS keychain
-    /// (set `IRS_SECRET_STORE=memory` to disable, e.g. in CI); in-memory engines keep them in memory.
+    /// (set `LSOCK_SECRET_STORE=memory` to disable, e.g. in CI); in-memory engines keep them in memory.
     pub fn new(store: Store, data_dir: Option<PathBuf>) -> Self {
         let use_keychain =
-            data_dir.is_some() && std::env::var("IRS_SECRET_STORE").as_deref() != Ok("memory");
+            data_dir.is_some() && std::env::var("LSOCK_SECRET_STORE").as_deref() != Ok("memory");
         let secrets: Arc<dyn llm::SecretStore> = if use_keychain {
             Arc::new(llm::KeychainStore)
         } else {
@@ -115,7 +120,18 @@ impl Engine {
 
     /// Open (or create) the database in `data_dir`.
     pub fn open(data_dir: PathBuf) -> Result<Self> {
-        let store = Store::open(data_dir.join("insomnia.db"))?;
+        let db = data_dir.join("logic-socket.db");
+        let legacy = data_dir.join("insomnia.db");
+        if !db.exists() && legacy.exists() {
+            for suffix in ["", "-wal", "-shm"] {
+                let from = data_dir.join(format!("insomnia.db{suffix}"));
+                if from.exists() {
+                    let _ =
+                        std::fs::rename(&from, data_dir.join(format!("logic-socket.db{suffix}")));
+                }
+            }
+        }
+        let store = Store::open(db)?;
         Ok(Self::new(store, Some(data_dir)))
     }
 
@@ -348,7 +364,7 @@ impl Engine {
             Toggle::On => true,
             Toggle::Off => false,
         };
-        let options = irs_http::Options {
+        let options = lsock_http::Options {
             timeout: Duration::from_millis(settings.timeout_ms.max(1)),
             follow_redirects: follow,
             max_redirects: settings.max_redirects,
@@ -401,7 +417,7 @@ impl Engine {
                 }
             },
             Auth::Netrc { disabled: false } => {
-                let host = irs_http::build_url(&p.request, true)
+                let host = lsock_http::build_url(&p.request, true)
                     .ok()
                     .and_then(|u| u.host_str().map(str::to_string))
                     .unwrap_or_default();
@@ -422,7 +438,7 @@ impl Engine {
         };
         let mut jar = self.cookie_jar(&p.workspace_id)?;
         let mut cookies = jar.cookies.clone();
-        let result = irs_http::send(&p.request, &p.auth, &p.options, &mut cookies).await;
+        let result = lsock_http::send(&p.request, &p.auth, &p.options, &mut cookies).await;
         let jar_changed = cookies != jar.cookies;
         jar.cookies = cookies;
         let resp = match result {
@@ -471,7 +487,7 @@ impl Engine {
                 .unwrap_or_default();
             let path = dir
                 .join("responses")
-                .join(format!("{}.bin", irs_core::new_id("body")));
+                .join(format!("{}.bin", lsock_core::new_id("body")));
             resp.body_path = Some(path.to_string_lossy().into_owned());
             file_to_write = Some((path, bytes));
         }
@@ -515,8 +531,8 @@ impl Engine {
         if let Some(v) = variables {
             body["variables"] = v;
         }
-        p.request.body = irs_core::Body {
-            mime_type: Some(irs_core::mime::JSON.into()),
+        p.request.body = lsock_core::Body {
+            mime_type: Some(lsock_core::mime::JSON.into()),
             text: Some(body.to_string()),
             ..Default::default()
         };
@@ -656,7 +672,7 @@ pub(crate) fn render_auth(auth: &Auth, r: &dyn Fn(&str, &str) -> Result<String>)
             password: r("digest password", password)?,
             disabled: *disabled,
         },
-        Auth::OAuth1(c) => Auth::OAuth1(irs_core::OAuth1Config {
+        Auth::OAuth1(c) => Auth::OAuth1(lsock_core::OAuth1Config {
             consumer_key: r("OAuth 1 consumer key", &c.consumer_key)?,
             consumer_secret: r("OAuth 1 consumer secret", &c.consumer_secret)?,
             token_key: r("OAuth 1 token", &c.token_key)?,
@@ -666,7 +682,7 @@ pub(crate) fn render_auth(auth: &Auth, r: &dyn Fn(&str, &str) -> Result<String>)
             verifier: r("OAuth 1 verifier", &c.verifier)?,
             ..c.clone()
         }),
-        Auth::Iam(c) => Auth::Iam(irs_core::AwsIamConfig {
+        Auth::Iam(c) => Auth::Iam(lsock_core::AwsIamConfig {
             access_key_id: r("AWS access key", &c.access_key_id)?,
             secret_access_key: r("AWS secret key", &c.secret_access_key)?,
             session_token: r("AWS session token", &c.session_token)?,
@@ -674,7 +690,7 @@ pub(crate) fn render_auth(auth: &Auth, r: &dyn Fn(&str, &str) -> Result<String>)
             service: r("AWS service", &c.service)?,
             disabled: c.disabled,
         }),
-        Auth::OAuth2(c) => Auth::OAuth2(irs_core::OAuth2Config {
+        Auth::OAuth2(c) => Auth::OAuth2(lsock_core::OAuth2Config {
             access_token_url: r("OAuth 2 token URL", &c.access_token_url)?,
             authorization_url: r("OAuth 2 authorization URL", &c.authorization_url)?,
             client_id: r("OAuth 2 client id", &c.client_id)?,

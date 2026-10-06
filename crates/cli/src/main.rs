@@ -1,4 +1,4 @@
-//! `irs` — insomnia-rs command line.
+//! `lsock` — logic-socket command line.
 
 mod grpc_cmd;
 mod llm_cmd;
@@ -11,21 +11,21 @@ mod transfer_cmd;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
-use irs_core::{Doc, Environment, Folder, McpServer, Model, Request, Workspace};
-use irs_engine::Engine;
+use lsock_core::{Doc, Environment, Folder, McpServer, Model, Request, Workspace};
+use lsock_engine::Engine;
 use out::*;
 use serde_json::Value;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "irs",
+    name = "lsock",
     version,
-    about = "insomnia-rs: API client for HTTP, GraphQL, gRPC, WebSocket, MCP and AI",
+    about = "logic-socket: API client for HTTP, GraphQL, gRPC, WebSocket, MCP and AI",
     propagate_version = true
 )]
 struct Cli {
-    /// Data directory (default: $IRS_DATA_DIR or the platform app-data dir; shared with the desktop app)
-    #[arg(long, global = true, env = "IRS_DATA_DIR")]
+    /// Data directory (default: $LSOCK_DATA_DIR or the platform app-data dir; shared with the desktop app)
+    #[arg(long, global = true, env = "LSOCK_DATA_DIR")]
     data_dir: Option<std::path::PathBuf>,
     #[command(subcommand)]
     cmd: Cmd,
@@ -134,7 +134,7 @@ enum WorkspaceCmd {
 
 #[derive(Subcommand, Debug)]
 enum RequestCmd {
-    /// Create a request: `irs request add <workspace> "Get users" GET https://...`
+    /// Create a request: `lsock request add <workspace> "Get users" GET https://...`
     Add {
         /// Workspace or folder (id or name)
         parent: String,
@@ -266,7 +266,7 @@ async fn run(cli: Cli) -> Result<()> {
     let dir = cli
         .data_dir
         .clone()
-        .unwrap_or_else(irs_engine::default_data_dir);
+        .unwrap_or_else(lsock_engine::default_data_dir);
     let engine =
         Engine::open(dir.clone()).with_context(|| format!("opening data dir {}", dir.display()))?;
     match cli.cmd {
@@ -278,19 +278,19 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Mock(m) => {
             let url = match m {
                 MockCmd::Realtime { port } => {
-                    let u = irs_realtime::mock::spawn(port).await?;
+                    let u = lsock_realtime::mock::spawn(port).await?;
                     eprintln!(
                         "WebSocket  {}/ws\nSSE        {u}/events\nSocket.IO  {u}",
                         u.replace("http", "ws")
                     );
                     u
                 }
-                MockCmd::Llm { port } => irs_llm::mock::spawn(Default::default(), port).await?,
+                MockCmd::Llm { port } => lsock_llm::mock::spawn(Default::default(), port).await?,
                 MockCmd::Mcp { port } => {
-                    irs_mcp::mock::spawn_http(Default::default(), port).await?
+                    lsock_mcp::mock::spawn_http(Default::default(), port).await?
                 }
                 MockCmd::Graphql { port } => mock_gql::spawn(port).await?,
-                MockCmd::Grpc { port } => irs_grpc::demo::spawn(port, true).await?,
+                MockCmd::Grpc { port } => lsock_grpc::demo::spawn(port, true).await?,
             };
             eprintln!("{} mock server on {url} — Ctrl-C to stop", green("●"));
             tokio::signal::ctrl_c().await?;
@@ -502,11 +502,12 @@ fn request_cmd(engine: &Engine, c: RequestCmd) -> Result<()> {
                 let (k, v) = h
                     .split_once(':')
                     .ok_or_else(|| anyhow!("header '{h}' must look like 'Name: value'"))?;
-                r.headers.push(irs_core::KeyValue::new(k.trim(), v.trim()));
+                r.headers
+                    .push(lsock_core::KeyValue::new(k.trim(), v.trim()));
             }
             if let Some(j) = json {
-                r.body = irs_core::Body {
-                    mime_type: Some(irs_core::mime::JSON.into()),
+                r.body = lsock_core::Body {
+                    mime_type: Some(lsock_core::mime::JSON.into()),
                     text: Some(j),
                     ..Default::default()
                 };
@@ -516,7 +517,7 @@ fn request_cmd(engine: &Engine, c: RequestCmd) -> Result<()> {
         }
         RequestCmd::Curl { parent, command } => {
             let pid = find_parent(engine, &parent)?;
-            let r = irs_engine::curl::parse(&command)?;
+            let r = lsock_engine::curl::parse(&command)?;
             let d = engine.store.insert(Some(&pid), r)?;
             println!(
                 "{} {} {} {}",

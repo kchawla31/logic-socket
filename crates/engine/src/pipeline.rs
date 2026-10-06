@@ -10,15 +10,15 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use futures::future::BoxFuture;
-use irs_core::{
+use lsock_core::{
     ConsoleEntry, CookieJar, Doc, Environment, Folder, RawDoc, Request, Response, TestResult,
     VarMap, Workspace,
 };
-use irs_scripting::{
+use lsock_scripting::{
     Event, FolderVars, Host, HostRequest, Info, Limits, NamedVars, ScriptInput, ScriptOutput,
     ScriptResponseData,
 };
-use irs_templating::Layer;
+use lsock_templating::Layer;
 
 use crate::{Engine, EngineError, Result};
 
@@ -43,7 +43,7 @@ pub struct Outcome {
 
 /// `insomnia.sendRequest` backed by the HTTP engine.
 struct EngineHost {
-    options: irs_http::Options,
+    options: lsock_http::Options,
 }
 
 impl Host for EngineHost {
@@ -51,7 +51,7 @@ impl Host for EngineHost {
         &self,
         req: HostRequest,
     ) -> BoxFuture<'static, std::result::Result<ScriptResponseData, String>> {
-        let options = irs_http::Options {
+        let options = lsock_http::Options {
             send_cookies: false,
             store_cookies: false,
             ..self.options.clone()
@@ -65,10 +65,10 @@ impl Host for EngineHost {
             r.headers = req
                 .headers
                 .into_iter()
-                .map(|(k, v)| irs_core::KeyValue::new(k, v))
+                .map(|(k, v)| lsock_core::KeyValue::new(k, v))
                 .collect();
             r.body.text = req.body;
-            let resp = irs_http::send(&r, &irs_core::Auth::None, &options, &mut vec![])
+            let resp = lsock_http::send(&r, &lsock_core::Auth::None, &options, &mut vec![])
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(ScriptResponseData {
@@ -77,7 +77,7 @@ impl Host for EngineHost {
                 headers: resp
                     .headers
                     .iter()
-                    .map(|h| irs_scripting::ScriptKv {
+                    .map(|h| lsock_scripting::ScriptKv {
                         key: h.name.clone(),
                         value: h.value.clone(),
                         disabled: false,
@@ -252,7 +252,7 @@ impl Engine {
         location.extend(folders.iter().map(|f| f.name.clone()));
 
         let host: Arc<dyn Host> = Arc::new(EngineHost {
-            options: irs_http::Options {
+            options: lsock_http::Options {
                 timeout: Duration::from_millis(settings.timeout_ms.max(1)),
                 validate_certificates: settings.validate_certificates,
                 ..Default::default()
@@ -269,7 +269,7 @@ impl Engine {
             ScriptInput {
                 script: script.to_string(),
                 event: Some(event),
-                request: irs_scripting::to_script_request(request_id, req),
+                request: lsock_scripting::to_script_request(request_id, req),
                 response,
                 environment: envs.script_env(),
                 base_environment: NamedVars {
@@ -312,7 +312,8 @@ impl Engine {
         let mut pre_env_changes: Vec<Doc<Environment>> = vec![];
         for (source, script) in &pre_scripts {
             let input = make_input(script, Event::PreRequest, &req, &envs, &jar, state, None);
-            let out = irs_scripting::run(input, limits, host.clone(), self.renderer.clone()).await;
+            let out =
+                lsock_scripting::run(input, limits, host.clone(), self.renderer.clone()).await;
             console.extend(console_entries(&out, source));
             tests.extend(test_results(&out));
             for c in envs.apply(&out) {
@@ -325,7 +326,7 @@ impl Engine {
                 jar_changed = true;
             }
             if let Some(r) = &out.request {
-                irs_scripting::apply_script_request(&mut req, r);
+                lsock_scripting::apply_script_request(&mut req, r);
             }
             if out.execution.next_request.is_some() {
                 next_request = out.execution.next_request.clone();
@@ -446,7 +447,7 @@ impl Engine {
                 headers: resp
                     .headers
                     .iter()
-                    .map(|h| irs_scripting::ScriptKv {
+                    .map(|h| lsock_scripting::ScriptKv {
                         key: h.name.clone(),
                         value: h.value.clone(),
                         disabled: false,
@@ -466,7 +467,7 @@ impl Engine {
                     Some(response_data.clone()),
                 );
                 let out =
-                    irs_scripting::run(input, limits, host.clone(), self.renderer.clone()).await;
+                    lsock_scripting::run(input, limits, host.clone(), self.renderer.clone()).await;
                 console.extend(console_entries(&out, source));
                 tests.extend(test_results(&out));
                 for c in envs.apply(&out) {

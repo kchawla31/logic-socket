@@ -1,10 +1,10 @@
-//! `irs rt` — WebSocket / SSE / Socket.IO from the terminal.
+//! `lsock rt` — WebSocket / SSE / Socket.IO from the terminal.
 
 use anyhow::{Result, anyhow};
 use clap::Args;
-use irs_core::RealtimeRequest;
-use irs_engine::Engine;
-use irs_realtime::{ConnectOptions, Direction, Kind, RtEvent};
+use lsock_core::RealtimeRequest;
+use lsock_engine::Engine;
+use lsock_realtime::{ConnectOptions, Direction, Kind, RtEvent};
 
 use crate::out::*;
 
@@ -88,7 +88,7 @@ pub async fn run(engine: &Engine, a: RtArgs) -> Result<()> {
         }
         Err(e) => return Err(e),
     };
-    let session = match irs_realtime::connect(opts).await {
+    let session = match lsock_realtime::connect(opts).await {
         Ok(s) => s,
         Err(e) => return Err(anyhow!("{e}")),
     };

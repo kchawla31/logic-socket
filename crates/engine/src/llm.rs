@@ -4,15 +4,17 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use irs_core::{Doc, KeySource, LlmProvider, LlmRequest, LlmRun, McpServer};
-use irs_llm::agent::{AgentEvent, AgentOptions, AgentOutcome, Approver, AutoApprove, ToolSource};
-use irs_llm::{Block, ChatRequest, Message, ProviderConfig, ProviderKind, Role};
-use irs_templating::Mode;
+use lsock_core::{Doc, KeySource, LlmProvider, LlmRequest, LlmRun, McpServer};
+use lsock_llm::agent::{AgentEvent, AgentOptions, AgentOutcome, Approver, AutoApprove, ToolSource};
+use lsock_llm::{Block, ChatRequest, Message, ProviderConfig, ProviderKind, Role};
+use lsock_templating::Mode;
 use serde_json::{Value, json};
 
 use crate::{Engine, EngineError, Result};
 
-const KEYCHAIN_SERVICE: &str = "insomnia-rs";
+const KEYCHAIN_SERVICE: &str = "logic-socket";
+/// Service name used before the project was renamed (read once, then copied over).
+const LEGACY_KEYCHAIN_SERVICE: &str = "insomnia-rs";
 
 /// Where provider API keys live.
 pub trait SecretStore: Send + Sync {
@@ -26,10 +28,18 @@ pub struct KeychainStore;
 
 impl SecretStore for KeychainStore {
     fn get(&self, id: &str) -> Option<String> {
-        keyring::Entry::new(KEYCHAIN_SERVICE, id)
+        if let Ok(v) = keyring::Entry::new(KEYCHAIN_SERVICE, id)
             .ok()?
             .get_password()
-            .ok()
+        {
+            return Some(v);
+        }
+        let old = keyring::Entry::new(LEGACY_KEYCHAIN_SERVICE, id)
+            .ok()?
+            .get_password()
+            .ok()?;
+        let _ = self.set(id, &old);
+        Some(old)
     }
     fn set(&self, id: &str, secret: &str) -> std::result::Result<(), String> {
         keyring::Entry::new(KEYCHAIN_SERVICE, id)
@@ -236,12 +246,12 @@ impl Engine {
         for id in server_ids {
             let server: Doc<McpServer> = self.store.get(id)?;
             let opts = self.mcp_connect_options(id)?;
-            let client = irs_mcp::Client::connect(opts)
+            let client = lsock_mcp::Client::connect(opts)
                 .await
                 .map_err(|e| EngineError::Llm(format!("MCP server '{}': {e}", server.name)))?;
             let tools = match client.list_tools().await {
                 Ok(l) => l.items,
-                Err(irs_mcp::McpError::Unsupported(_)) => vec![],
+                Err(lsock_mcp::McpError::Unsupported(_)) => vec![],
                 Err(e) => {
                     return Err(EngineError::Llm(format!(
                         "MCP server '{}': {e}",
@@ -288,7 +298,7 @@ impl Engine {
             }
             on_event(e);
         };
-        let outcome: AgentOutcome = irs_llm::agent::run(
+        let outcome: AgentOutcome = lsock_llm::agent::run(
             &prepared.config,
             prepared.chat.clone(),
             sources,

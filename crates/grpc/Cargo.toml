@@ -1,11 +1,11 @@
 [package]
-name = "irs-grpc"
+name = "lsock-grpc"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-irs-realtime.workspace = true
+lsock-realtime.workspace = true
 tonic = { version = "0.14", features = ["tls-ring", "tls-webpki-roots", "router"] }
 tonic-reflection = { version = "0.14", features = ["server"] }
 prost = "0.14"

@@ -1,5 +1,5 @@
 //! A small MCP server used by tests and as a demo target for the inspector
-//! (`irs-mock-mcp` binary: stdio by default, `--http <port>` for Streamable HTTP).
+//! (`lsock-mock-mcp` binary: stdio by default, `--http <port>` for Streamable HTTP).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -124,8 +124,8 @@ pub async fn handle(msg: &Value) -> Reply {
             json!({
                 "protocolVersion": p["protocolVersion"].as_str().unwrap_or(crate::LATEST_PROTOCOL_VERSION),
                 "capabilities": {"tools": {"listChanged": false}, "resources": {}, "prompts": {}, "logging": {}},
-                "serverInfo": {"name": "irs-mock-mcp", "title": "Mock MCP server", "version": "1.0.0"},
-                "instructions": "Demo server for insomnia-rs. Try `get_weather` or `create_issue`."
+                "serverInfo": {"name": "lsock-mock-mcp", "title": "Mock MCP server", "version": "1.0.0"},
+                "instructions": "Demo server for logic-socket. Try `get_weather` or `create_issue`."
             }),
         ),
         "ping" => ok(id, json!({})),

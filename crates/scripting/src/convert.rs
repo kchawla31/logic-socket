@@ -1,6 +1,6 @@
-//! `irs_core::Request` ⇄ script-facing request shape (Postman-style body modes).
+//! `lsock_core::Request` ⇄ script-facing request shape (Postman-style body modes).
 
-use irs_core::{Auth, Body, BodyParam, KeyValue, Request, mime};
+use lsock_core::{Auth, Body, BodyParam, KeyValue, Request, mime};
 use serde_json::{Value, json};
 
 use crate::{ScriptKv, ScriptRequest};
@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn non_scriptable_auth_survives_a_script_round_trip() {
         let r = Request {
-            authentication: Auth::Iam(irs_core::AwsIamConfig {
+            authentication: Auth::Iam(lsock_core::AwsIamConfig {
                 region: "eu-west-1".into(),
                 ..Default::default()
             }),

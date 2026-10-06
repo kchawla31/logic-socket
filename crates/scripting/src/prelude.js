@@ -1,4 +1,4 @@
-// insomnia-rs script runtime: re-implements the `insomnia.*` object model
+// logic-socket script runtime: re-implements the `insomnia.*` object model
 // (packages/insomnia-scripting-environment) on top of a few host functions:
 //   __host.log(level, text)            console capture
 //   __host.render(template, varsJson)  Nunjucks-compatible rendering (Rust)
@@ -63,9 +63,9 @@
     else if (name === 'atob') mod = globalThis.atob;
     else if (name === 'btoa') mod = globalThis.btoa;
     else if (NODE_BUILTINS.includes(name) || name.startsWith('node:'))
-      throw new Error(`NotSupported: require('${name}') — Node built-in modules are not available in the insomnia-rs sandbox`);
+      throw new Error(`NotSupported: require('${name}') — Node built-in modules are not available in the logic-socket sandbox`);
     else if (name === 'cheerio' || name === 'xml2js')
-      throw new Error(`NotSupported: require('${name}') — needs a Node runtime; not available in the insomnia-rs sandbox`);
+      throw new Error(`NotSupported: require('${name}') — needs a Node runtime; not available in the logic-socket sandbox`);
     else throw new Error(`Cannot find module '${name}'. Available: chai, lodash, uuid, crypto-js, moment, tv4, ajv, atob, btoa`);
     moduleCache[name] = mod;
     return mod;
@@ -726,7 +726,7 @@
   }
 
   // ---------------------------------------------------------------- entry
-  globalThis.__irs = {
+  globalThis.__lsock = {
     async run(ctxJson, userFn) {
       const c = JSON.parse(ctxJson);
       const env = new Environment(c.environment.name, c.environment.data);

@@ -4,7 +4,7 @@ use serde_json::json;
 
 use super::*;
 
-async fn wait_done(c: &StreamCall) -> Vec<irs_realtime::RtEvent> {
+async fn wait_done(c: &StreamCall) -> Vec<lsock_realtime::RtEvent> {
     for _ in 0..200 {
         if c.is_done() {
             return c.log.entries();
@@ -14,7 +14,7 @@ async fn wait_done(c: &StreamCall) -> Vec<irs_realtime::RtEvent> {
     panic!("stream did not finish: {:#?}", c.log.entries());
 }
 
-fn ins(e: &[irs_realtime::RtEvent]) -> Vec<serde_json::Value> {
+fn ins(e: &[lsock_realtime::RtEvent]) -> Vec<serde_json::Value> {
     e.iter()
         .filter(|x| x.direction == Direction::In)
         .map(|x| serde_json::from_str(&x.data).unwrap())
@@ -84,7 +84,7 @@ async fn unary_success_errors_and_metadata() {
     assert!(
         r.headers
             .iter()
-            .any(|(k, v)| k == "x-served-by" && v == "irs-demo")
+            .any(|(k, v)| k == "x-served-by" && v == "lsock-demo")
     );
 
     let r = unary(ch.clone(), &m, "{}", &[], Duration::from_secs(5))

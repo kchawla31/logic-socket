@@ -7,7 +7,7 @@ pub mod demo;
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
-use irs_realtime::{Direction, EventLog};
+use lsock_realtime::{Direction, EventLog};
 use prost::Message as _;
 use prost_reflect::{
     DescriptorPool, DeserializeOptions, DynamicMessage, MessageDescriptor, MethodDescriptor,
@@ -74,7 +74,7 @@ impl Schema {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         let dir = std::env::temp_dir().join(format!(
-            "irs-protos-{}-{nanos}-{}",
+            "lsock-protos-{}-{nanos}-{}",
             std::process::id(),
             SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
         ));

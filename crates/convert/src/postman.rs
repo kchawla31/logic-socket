@@ -3,7 +3,7 @@
 use std::sync::LazyLock;
 
 use indexmap::IndexMap;
-use irs_core::{
+use lsock_core::{
     Auth, AwsIamConfig, Body, BodyParam, Environment, Folder, KeyValue, OAuth1Config, OAuth2Config,
     Request, Workspace, WorkspaceScope, mime,
 };

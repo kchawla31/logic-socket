@@ -1,13 +1,13 @@
-//! End-to-end: seed the Phase 2 fixture with the real `irs` binary, run it
+//! End-to-end: seed the Phase 2 fixture with the real `lsock` binary, run it
 //! against an in-process mock MCP server, check reporters and exit codes.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn irs(data: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_irs"))
+fn lsock(data: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_lsock"))
         .args(args)
-        .env("IRS_DATA_DIR", data)
+        .env("LSOCK_DATA_DIR", data)
         .env("NO_COLOR", "1")
         .output()
         .unwrap()
@@ -37,7 +37,7 @@ fn seed(data: &Path, base_url: &str) {
     .collect();
     for s in steps {
         let args: Vec<&str> = s.iter().map(String::as_str).collect();
-        let o = irs(data, &args);
+        let o = lsock(data, &args);
         assert!(
             o.status.success(),
             "{args:?}: {}",
@@ -48,7 +48,7 @@ fn seed(data: &Path, base_url: &str) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn run_collection_reporters_and_exit_codes() {
-    let url = irs_mcp::mock::spawn_http(Default::default(), 0)
+    let url = lsock_mcp::mock::spawn_http(Default::default(), 0)
         .await
         .unwrap();
     let base = url.trim_end_matches("/mcp").to_string();
@@ -62,7 +62,7 @@ async fn run_collection_reporters_and_exit_codes() {
     let o = tokio::task::spawn_blocking({
         let data = data.to_path_buf();
         let csv = csv.to_string();
-        move || irs(&data, &["run", "collection", "Smoke", "-d", &csv])
+        move || lsock(&data, &["run", "collection", "Smoke", "-d", &csv])
     })
     .await
     .unwrap();
@@ -85,7 +85,7 @@ async fn run_collection_reporters_and_exit_codes() {
         let csv = csv.to_string();
         let report = report.clone();
         move || {
-            irs(
+            lsock(
                 &data,
                 &[
                     "run",
@@ -113,7 +113,7 @@ async fn run_collection_reporters_and_exit_codes() {
     // exit 1: no data file → unresolved {{ city }} fails the Weather request
     let o = tokio::task::spawn_blocking({
         let data = data.to_path_buf();
-        move || irs(&data, &["run", "collection", "Smoke", "-r", "json"])
+        move || lsock(&data, &["run", "collection", "Smoke", "-r", "json"])
     })
     .await
     .unwrap();
@@ -123,11 +123,11 @@ async fn run_collection_reporters_and_exit_codes() {
 
     // exit 2: usage errors
     assert_eq!(
-        irs(data, &["run", "collection", "Nope"]).status.code(),
+        lsock(data, &["run", "collection", "Nope"]).status.code(),
         Some(2)
     );
     assert_eq!(
-        irs(data, &["run", "collection", "Smoke", "-r", "xml"])
+        lsock(data, &["run", "collection", "Smoke", "-r", "xml"])
             .status
             .code(),
         Some(2)

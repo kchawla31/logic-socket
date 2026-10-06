@@ -9,8 +9,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use irs_core::{ConsoleEntry, Request, TestResult, VarMap};
-use irs_engine::{Engine, RunState};
+use lsock_core::{ConsoleEntry, Request, TestResult, VarMap};
+use lsock_engine::{Engine, RunState};
 use serde::Serialize;
 
 #[derive(Debug, thiserror::Error)]
@@ -20,7 +20,7 @@ pub enum RunError {
     #[error("data file must be CSV with a header row or a JSON array of objects: {0}")]
     DataFormat(String),
     #[error(transparent)]
-    Engine(#[from] irs_engine::EngineError),
+    Engine(#[from] lsock_engine::EngineError),
 }
 
 #[derive(Debug, Clone)]

@@ -1,4 +1,4 @@
-//! `irs mock graphql`: a tiny canned GraphQL server (library schema) for demos.
+//! `lsock mock graphql`: a tiny canned GraphQL server (library schema) for demos.
 
 use axum::{Json, Router, routing::post};
 use serde_json::{Value, json};

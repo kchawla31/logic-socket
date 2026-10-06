@@ -3,7 +3,7 @@
 
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
-use irs_core::{Doc, OAuth2Config, OAuth2Token, now_ms};
+use lsock_core::{Doc, OAuth2Config, OAuth2Token, now_ms};
 use serde_json::Value;
 use sha2::Digest as _;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -40,19 +40,19 @@ impl Engine {
             .store
             .raw(owner_id)?
             .ok_or_else(|| err("item not found"))?;
-        let auth: irs_core::Auth = serde_json::from_value(raw.data["authentication"].clone())
+        let auth: lsock_core::Auth = serde_json::from_value(raw.data["authentication"].clone())
             .map_err(|e| err(e.to_string()))?;
         let ctx = self.context(owner_id)?;
         let r = |f: &str, s: &str| {
             self.renderer()
-                .render_str(s, &ctx, irs_templating::Mode::Throw)
+                .render_str(s, &ctx, lsock_templating::Mode::Throw)
                 .map_err(|source| EngineError::Render {
                     field: f.to_string(),
                     source,
                 })
         };
         match crate::render_auth(&auth, &r)? {
-            irs_core::Auth::OAuth2(c) => Ok(c),
+            lsock_core::Auth::OAuth2(c) => Ok(c),
             _ => Err(err("this item does not use OAuth 2")),
         }
     }
@@ -291,7 +291,7 @@ impl Engine {
         let host = redirect.host_str().unwrap_or("");
         if !(host == "localhost" || host == "127.0.0.1") || redirect.scheme() != "http" {
             return Err(err(
-                "OAuth 2: the redirect URL must be http://localhost:<port>/… or http://127.0.0.1:<port>/… so insomnia-rs can catch it",
+                "OAuth 2: the redirect URL must be http://localhost:<port>/… or http://127.0.0.1:<port>/… so logic-socket can catch it",
             ));
         }
         let port = redirect.port().unwrap_or(80);
@@ -343,7 +343,7 @@ impl Engine {
                     (Some(_), _) => ("Sign-in failed", Err(err("OAuth 2: state mismatch (possible CSRF) — try again"))),
                     _ => continue, // favicon or unrelated request
                 };
-                let html = format!("<!doctype html><meta charset=utf-8><title>{title}</title><body style='font-family:system-ui;padding:3em'><h2>{title}</h2><p>You can close this window and return to insomnia-rs.</p></body>");
+                let html = format!("<!doctype html><meta charset=utf-8><title>{title}</title><body style='font-family:system-ui;padding:3em'><h2>{title}</h2><p>You can close this window and return to logic-socket.</p></body>");
                 let _ = sock
                     .write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}", html.len()).as_bytes())
                     .await;

@@ -1,8 +1,8 @@
-//! Demo MCP server. `irs-mock-mcp` speaks stdio; `irs-mock-mcp --http 3333`
+//! Demo MCP server. `lsock-mock-mcp` speaks stdio; `lsock-mock-mcp --http 3333`
 //! serves Streamable HTTP at http://127.0.0.1:3333/mcp
 //! (add `--token secret` to require `Authorization: Bearer secret`).
 
-use irs_mcp::mock::{HttpState, handle, spawn_http};
+use lsock_mcp::mock::{HttpState, handle, spawn_http};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -20,12 +20,12 @@ async fn main() -> std::io::Result<()> {
             .map(HttpState::with_token)
             .unwrap_or_default();
         let url = spawn_http(state, port.parse().unwrap_or(3333)).await?;
-        eprintln!("irs-mock-mcp listening on {url}");
+        eprintln!("lsock-mock-mcp listening on {url}");
         tokio::signal::ctrl_c().await?;
         return Ok(());
     }
 
-    eprintln!("irs-mock-mcp ready on stdio");
+    eprintln!("lsock-mock-mcp ready on stdio");
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut out = tokio::io::stdout();
     let write = async |v: &Value, out: &mut tokio::io::Stdout| -> std::io::Result<()> {

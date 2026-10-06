@@ -1,13 +1,13 @@
-//! `irs grpc` — list and call gRPC methods (reflection or .proto files).
+//! `lsock grpc` — list and call gRPC methods (reflection or .proto files).
 
 use std::time::Duration;
 
 use anyhow::{Result, anyhow, bail};
 use clap::Args;
-use irs_core::GrpcRequest;
-use irs_engine::Engine;
-use irs_grpc::Schema;
-use irs_realtime::Direction;
+use lsock_core::GrpcRequest;
+use lsock_engine::Engine;
+use lsock_grpc::Schema;
+use lsock_realtime::Direction;
 
 use crate::out::*;
 
@@ -50,7 +50,7 @@ pub async fn run(engine: &Engine, a: GrpcArgs) -> Result<()> {
         }
         None => {
             let schema = if a.protos.is_empty() {
-                irs_grpc::reflect(irs_grpc::connect(&a.target).await?)
+                lsock_grpc::reflect(lsock_grpc::connect(&a.target).await?)
                     .await
                     .map_err(|e| {
                         anyhow!("{e} (pass --proto files if the server has no reflection)")
@@ -128,9 +128,9 @@ pub async fn run(engine: &Engine, a: GrpcArgs) -> Result<()> {
         method.clone()
     };
     let m = schema.method(&path)?;
-    let channel = irs_grpc::connect(&url).await?;
+    let channel = lsock_grpc::connect(&url).await?;
     if !m.is_client_streaming() && !m.is_server_streaming() {
-        let r = irs_grpc::unary(channel, &m, &data, &metadata, Duration::from_secs(30)).await?;
+        let r = lsock_grpc::unary(channel, &m, &data, &metadata, Duration::from_secs(30)).await?;
         let status = format!("{} {}", r.status.code, r.status.code_name);
         eprintln!(
             "{} {} {}",
@@ -150,13 +150,13 @@ pub async fn run(engine: &Engine, a: GrpcArgs) -> Result<()> {
         }
         return Ok(());
     }
-    let mut call = irs_grpc::start_stream(channel, &m, Some(&data), &metadata).await?;
+    let mut call = lsock_grpc::start_stream(channel, &m, Some(&data), &metadata).await?;
     let mut rx = call.log.subscribe();
     let earlier = call.log.entries();
     let printer = tokio::spawn(async move {
         let mut failed = false;
         let mut last = 0;
-        let mut queue: std::collections::VecDeque<irs_realtime::RtEvent> = earlier.into();
+        let mut queue: std::collections::VecDeque<lsock_realtime::RtEvent> = earlier.into();
         loop {
             let e = match queue.pop_front() {
                 Some(e) => e,

@@ -1,26 +1,26 @@
 [package]
-name = "insomnia-rs-desktop"
+name = "logic-socket-desktop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "irs_desktop"
+name = "lsock_desktop"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-irs-core.workspace = true
-irs-engine.workspace = true
-irs-mcp.workspace = true
-irs-templating.workspace = true
-irs-runner.workspace = true
-irs-llm.workspace = true
-irs-realtime.workspace = true
-irs-grpc.workspace = true
-irs-convert.workspace = true
+lsock-core.workspace = true
+lsock-engine.workspace = true
+lsock-mcp.workspace = true
+lsock-templating.workspace = true
+lsock-runner.workspace = true
+lsock-llm.workspace = true
+lsock-realtime.workspace = true
+lsock-grpc.workspace = true
+lsock-convert.workspace = true
 reqwest.workspace = true
 prost-reflect = "0.16"
 futures.workspace = true
@@ -31,12 +31,12 @@ serde_json.workspace = true
 base64.workspace = true
 
 [dev-dependencies]
-irs-grpc.workspace = true
-irs-realtime.workspace = true
-irs-llm.workspace = true
+lsock-grpc.workspace = true
+lsock-realtime.workspace = true
+lsock-llm.workspace = true
 tempfile.workspace = true
 tauri = { version = "2", features = ["test"] }
-irs-mcp.workspace = true
+lsock-mcp.workspace = true
 axum.workspace = true
 futures.workspace = true
 tower-http = { version = "0.6", features = ["cors"] }

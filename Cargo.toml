@@ -22,17 +22,17 @@ edition = "2024"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-irs-core = { path = "crates/core" }
-irs-templating = { path = "crates/templating" }
-irs-http = { path = "crates/http" }
-irs-mcp = { path = "crates/mcp" }
-irs-engine = { path = "crates/engine" }
-irs-scripting = { path = "crates/scripting" }
-irs-runner = { path = "crates/runner" }
-irs-llm = { path = "crates/llm" }
-irs-realtime = { path = "crates/realtime" }
-irs-grpc = { path = "crates/grpc" }
-irs-convert = { path = "crates/convert" }
+lsock-core = { path = "crates/core" }
+lsock-templating = { path = "crates/templating" }
+lsock-http = { path = "crates/http" }
+lsock-mcp = { path = "crates/mcp" }
+lsock-engine = { path = "crates/engine" }
+lsock-scripting = { path = "crates/scripting" }
+lsock-runner = { path = "crates/runner" }
+lsock-llm = { path = "crates/llm" }
+lsock-realtime = { path = "crates/realtime" }
+lsock-grpc = { path = "crates/grpc" }
+lsock-convert = { path = "crates/convert" }
 
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "multipart", "stream", "gzip", "brotli", "deflate", "zstd"] }

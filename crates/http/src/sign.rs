@@ -3,7 +3,7 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use hmac::{Hmac, Mac};
-use irs_core::{AwsIamConfig, OAuth1Config};
+use lsock_core::{AwsIamConfig, OAuth1Config};
 use sha1::Sha1;
 use sha2::{Digest as _, Sha256};
 
@@ -271,7 +271,7 @@ pub fn aws_sigv4_headers(
         &cfg.secret_access_key,
         session,
         None,
-        "insomnia-rs",
+        "logic-socket",
     )
     .into();
     let region = if cfg.region.is_empty() {

@@ -234,7 +234,7 @@ export function GraphQLEditor({ requestId, text, onChange }: { requestId: string
       </div>
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <Split direction="col" initial={300} min={100} storageKey="irs-split-gql">
+          <Split direction="col" initial={300} min={100} storageKey="lsock-split-gql">
             <div className={cn('h-full min-h-0 overflow-hidden')}>
               <CodeMirror
                 value={body.query}

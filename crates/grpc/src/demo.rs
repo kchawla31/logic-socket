@@ -1,5 +1,5 @@
 //! Demo gRPC server (`demo.Greeter`) with server reflection — used by tests
-//! and `irs mock grpc`. Implemented with dynamic messages, no codegen.
+//! and `lsock mock grpc`. Implemented with dynamic messages, no codegen.
 
 use std::convert::Infallible;
 use std::pin::Pin;
@@ -92,7 +92,7 @@ impl tonic::server::UnaryService<DynamicMessage> for Unary {
             );
             let mut r = Response::new(reply);
             r.metadata_mut()
-                .insert("x-served-by", "irs-demo".parse().unwrap());
+                .insert("x-served-by", "lsock-demo".parse().unwrap());
             Ok(r)
         })
     }

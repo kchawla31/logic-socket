@@ -303,7 +303,7 @@ export function ExportModal({ open, onClose, workspaceId, workspaceName }: { ope
   );
 }
 
-const LANG_KEY = 'irs-code-lang';
+const LANG_KEY = 'lsock-code-lang';
 
 export function CodeModal({ open, onClose, requestId, requestName }: { open: boolean; onClose: () => void; requestId: string; requestName: string }) {
   const [targets, setTargets] = useState<{ id: CodeTargetId; label: string }[]>([]);

@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Redirect},
     routing::{any, get, post},
 };
-use irs_core::{BodyParam, RequestSettings};
+use lsock_core::{BodyParam, RequestSettings};
 use serde_json::{Value, json};
 
 async fn echo(method: Method, uri: Uri, headers: HeaderMap, body: Bytes) -> impl IntoResponse {
@@ -58,14 +58,14 @@ pub(crate) async fn server() -> String {
                 if !auth.starts_with("Digest ") {
                     return (
                         StatusCode::UNAUTHORIZED,
-                        [("www-authenticate", r#"Digest realm="irs", qop="auth", nonce="abc123", opaque="xyz", algorithm=MD5"#)],
+                        [("www-authenticate", r#"Digest realm="lsock", qop="auth", nonce="abc123", opaque="xyz", algorithm=MD5"#)],
                         String::new(),
                     );
                 }
                 // verify like a server would
                 let get = |k: &str| auth.split(&format!("{k}=\"")).nth(1).and_then(|r| r.split('"').next()).unwrap_or("").to_string();
                 let nc = auth.split("nc=").nth(1).and_then(|r| r.split(',').next()).unwrap_or("").to_string();
-                let ha1 = format!("{:x}", md5::compute("ada:irs:lovelace"));
+                let ha1 = format!("{:x}", md5::compute("ada:lsock:lovelace"));
                 let ha2 = format!("{:x}", md5::compute(format!("GET:{}", get("uri"))));
                 let expected = format!("{:x}", md5::compute(format!("{ha1}:abc123:{nc}:{}:auth:{ha2}", get("cnonce"))));
                 if get("response") == expected {
@@ -137,7 +137,7 @@ async fn get_with_query_path_params_and_headers() {
         j["headers"]["user-agent"]
             .as_str()
             .unwrap()
-            .starts_with("insomnia-rs/")
+            .starts_with("logic-socket/")
     );
     assert!(res.timings.total_ms > 0.0);
     assert!(
@@ -207,7 +207,7 @@ async fn json_form_and_raw_bodies() {
 #[tokio::test]
 async fn multipart_with_file() {
     let base = server().await;
-    let dir = std::env::temp_dir().join(format!("irs-mp-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lsock-mp-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("hello.txt");
     std::fs::write(&file, "file-content").unwrap();
@@ -506,7 +506,7 @@ async fn digest_oauth1_and_sigv4_end_to_end() {
         }],
         ..Default::default()
     };
-    let cfg = irs_core::OAuth1Config {
+    let cfg = lsock_core::OAuth1Config {
         consumer_key: "ck".into(),
         consumer_secret: "cs".into(),
         token_key: "tk".into(),
@@ -526,7 +526,7 @@ async fn digest_oauth1_and_sigv4_end_to_end() {
         "{h}"
     );
 
-    let iam = irs_core::AwsIamConfig {
+    let iam = lsock_core::AwsIamConfig {
         access_key_id: "AKID".into(),
         secret_access_key: "secret".into(),
         region: "eu-west-1".into(),

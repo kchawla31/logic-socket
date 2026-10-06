@@ -1,4 +1,4 @@
-//! Tauri shell: thin commands over irs-engine / irs-mcp. The UI never touches
+//! Tauri shell: thin commands over lsock-engine / lsock-mcp. The UI never touches
 //! SQLite or the network directly, so the CLI and desktop behave identically.
 
 mod ai;
@@ -11,13 +11,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use base64::Engine as _;
-use irs_core::{
+use lsock_core::{
     CookieJar, Doc, Environment, Folder, McpServer, McpTransport, RawDoc, Request, Response,
     Settings, Workspace,
 };
-use irs_engine::Engine;
-use irs_mcp::schema::{self, ParamRow};
-use irs_mcp::{Client, Hints, InitializeResult, LogEntry, Notification, ProtocolLog, Tool};
+use lsock_engine::Engine;
+use lsock_mcp::schema::{self, ParamRow};
+use lsock_mcp::{Client, Hints, InitializeResult, LogEntry, Notification, ProtocolLog, Tool};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::{Emitter, Manager, State};
@@ -35,15 +35,15 @@ pub struct AppState {
     logs: std::sync::Mutex<HashMap<String, ProtocolLog>>,
     runs: std::sync::Mutex<HashMap<String, RunSlot>>,
     ai_runs: std::sync::Mutex<HashMap<String, ai::AiRunSlot>>,
-    rt: std::sync::Mutex<HashMap<String, Arc<irs_realtime::Session>>>,
-    grpc_schemas: std::sync::Mutex<HashMap<String, irs_grpc::Schema>>,
-    grpc_calls: std::sync::Mutex<HashMap<String, Arc<std::sync::Mutex<irs_grpc::StreamCall>>>>,
+    rt: std::sync::Mutex<HashMap<String, Arc<lsock_realtime::Session>>>,
+    grpc_schemas: std::sync::Mutex<HashMap<String, lsock_grpc::Schema>>,
+    grpc_calls: std::sync::Mutex<HashMap<String, Arc<std::sync::Mutex<lsock_grpc::StreamCall>>>>,
 }
 
 #[derive(Default)]
 struct RunSlot {
     cancel: Arc<std::sync::atomic::AtomicBool>,
-    summary: Option<irs_runner::Summary>,
+    summary: Option<lsock_runner::Summary>,
 }
 
 impl AppState {
@@ -150,7 +150,7 @@ fn workspace_list(state: State<'_, AppState>) -> CmdResult<Vec<Doc<Workspace>>> 
     let all = state.engine.store.all_of::<Workspace>().map_err(e)?;
     Ok(all
         .into_iter()
-        .filter(|w| w.scope != irs_core::WorkspaceScope::Environment)
+        .filter(|w| w.scope != lsock_core::WorkspaceScope::Environment)
         .collect())
 }
 
@@ -257,7 +257,7 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
             store
                 .insert(
                     parent.as_deref(),
-                    serde_json::from_value::<irs_core::LlmRequest>(data).map_err(e)?,
+                    serde_json::from_value::<lsock_core::LlmRequest>(data).map_err(e)?,
                 )
                 .map_err(e)?
                 .meta
@@ -267,7 +267,7 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
             store
                 .insert(
                     parent.as_deref(),
-                    serde_json::from_value::<irs_core::GrpcRequest>(data).map_err(e)?,
+                    serde_json::from_value::<lsock_core::GrpcRequest>(data).map_err(e)?,
                 )
                 .map_err(e)?
                 .meta
@@ -277,7 +277,7 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
             store
                 .insert(
                     parent.as_deref(),
-                    serde_json::from_value::<irs_core::RealtimeRequest>(data).map_err(e)?,
+                    serde_json::from_value::<lsock_core::RealtimeRequest>(data).map_err(e)?,
                 )
                 .map_err(e)?
                 .meta
@@ -285,7 +285,7 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
         }
         "Folder" => {
             // Deep copy: folder + all requests/folders/servers under it.
-            fn copy(store: &irs_core::Store, src: &str, dst: &str) -> CmdResult<()> {
+            fn copy(store: &lsock_core::Store, src: &str, dst: &str) -> CmdResult<()> {
                 for c in store.all_children(src).map_err(e)? {
                     match c.meta.kind.as_str() {
                         "Request" => {
@@ -308,7 +308,7 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                             store
                                 .insert(
                                     Some(dst),
-                                    serde_json::from_value::<irs_core::LlmRequest>(c.data)
+                                    serde_json::from_value::<lsock_core::LlmRequest>(c.data)
                                         .map_err(e)?,
                                 )
                                 .map_err(e)?;
@@ -317,7 +317,7 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                             store
                                 .insert(
                                     Some(dst),
-                                    serde_json::from_value::<irs_core::GrpcRequest>(c.data)
+                                    serde_json::from_value::<lsock_core::GrpcRequest>(c.data)
                                         .map_err(e)?,
                                 )
                                 .map_err(e)?;
@@ -326,7 +326,7 @@ fn item_duplicate(state: State<'_, AppState>, id: String) -> CmdResult<String> {
                             store
                                 .insert(
                                     Some(dst),
-                                    serde_json::from_value::<irs_core::RealtimeRequest>(c.data)
+                                    serde_json::from_value::<lsock_core::RealtimeRequest>(c.data)
                                         .map_err(e)?,
                                 )
                                 .map_err(e)?;
@@ -426,7 +426,7 @@ fn mcp_server_update(state: State<'_, AppState>, doc: Doc<McpServer>) -> CmdResu
 
 #[tauri::command]
 fn curl_parse(text: String) -> CmdResult<Request> {
-    irs_engine::curl::parse(&text).map_err(e)
+    lsock_engine::curl::parse(&text).map_err(e)
 }
 
 #[derive(Serialize)]
@@ -591,7 +591,7 @@ fn env_set_active(
 struct Preview {
     rendered: Option<String>,
     error: Option<String>,
-    refs: Vec<irs_templating::VarRef>,
+    refs: Vec<lsock_templating::VarRef>,
 }
 
 #[tauri::command]
@@ -864,7 +864,7 @@ async fn runner_start<R: tauri::Runtime>(
     run: RunRequest,
 ) -> CmdResult<String> {
     let data = match run.data_text.as_deref().filter(|t| !t.trim().is_empty()) {
-        Some(t) => irs_runner::parse_data(t).map_err(e)?,
+        Some(t) => lsock_runner::parse_data(t).map_err(e)?,
         None => vec![],
     };
     if run.request_ids.is_empty() {
@@ -874,7 +874,7 @@ async fn runner_start<R: tauri::Runtime>(
         .run_id
         .clone()
         .filter(|r| !r.is_empty())
-        .unwrap_or_else(|| irs_core::new_id("run"));
+        .unwrap_or_else(|| lsock_core::new_id("run"));
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
     state.runs.lock().unwrap().insert(
         run_id.clone(),
@@ -883,7 +883,7 @@ async fn runner_start<R: tauri::Runtime>(
             summary: None,
         },
     );
-    let opts = irs_runner::RunOptions {
+    let opts = lsock_runner::RunOptions {
         iterations: run.iterations.max(1),
         delay_ms: run.delay_ms,
         data,
@@ -894,7 +894,7 @@ async fn runner_start<R: tauri::Runtime>(
     let engine = state.engine.clone();
     let id = run_id.clone();
     tauri::async_runtime::spawn(async move {
-        let summary = irs_runner::run(&engine, &run.request_ids, &opts, |ev| {
+        let summary = lsock_runner::run(&engine, &run.request_ids, &opts, |ev| {
             let _ = app.emit("runner-event", json!({ "runId": id, "event": ev }));
         })
         .await;
@@ -927,7 +927,7 @@ fn runner_export(
         .get(&run_id)
         .and_then(|s| s.summary.as_ref())
         .ok_or("The run has not finished yet")?;
-    let text = irs_runner::report::render(summary, &reporter).ok_or("Unknown report format")?;
+    let text = lsock_runner::report::render(summary, &reporter).ok_or("Unknown report format")?;
     let ext = match reporter.as_str() {
         "junit" => "xml",
         "json" => "json",
@@ -944,7 +944,7 @@ fn runner_export(
             .unwrap_or(home),
     };
     let stamp = chrono_like_stamp();
-    let path = dir.join(format!("insomnia-rs-run-{stamp}.{ext}"));
+    let path = dir.join(format!("logic-socket-run-{stamp}.{ext}"));
     std::fs::write(&path, text).map_err(e)?;
     Ok(path.to_string_lossy().into_owned())
 }
@@ -959,7 +959,7 @@ fn chrono_like_stamp() -> String {
 
 // ------------------------------------------------------------------ app
 
-fn seed_if_empty(engine: &Engine) -> irs_core::store::Result<()> {
+fn seed_if_empty(engine: &Engine) -> lsock_core::store::Result<()> {
     if !engine.store.all_of::<Workspace>()?.is_empty() {
         return Ok(());
     }
@@ -973,7 +973,7 @@ fn seed_if_empty(engine: &Engine) -> irs_core::store::Result<()> {
     let mut base =
         engine
             .base_environment(ws.id())
-            .map_err(|_| irs_core::StoreError::NotFound {
+            .map_err(|_| lsock_core::StoreError::NotFound {
                 kind: "Environment",
                 id: "base".into(),
             })?;
@@ -1001,8 +1001,8 @@ fn seed_if_empty(engine: &Engine) -> irs_core::store::Result<()> {
             name: "Post body".into(),
             method: "POST".into(),
             url: "{{ _.base_url }}/post".into(),
-            body: irs_core::Body {
-                mime_type: Some(irs_core::mime::JSON.into()),
+            body: lsock_core::Body {
+                mime_type: Some(lsock_core::mime::JSON.into()),
                 text: Some("{\n  \"id\": \"{% uuid 'v4' %}\",\n  \"hello\": \"world\"\n}".into()),
                 ..Default::default()
             },
@@ -1162,12 +1162,12 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let engine = Engine::open(irs_engine::default_data_dir())
-        .expect("could not open the insomnia-rs database");
+    let engine = Engine::open(lsock_engine::default_data_dir())
+        .expect("could not open the logic-socket database");
     let _ = seed_if_empty(&engine);
     build(tauri::Builder::default(), engine)
         .run(tauri::generate_context!())
-        .expect("error while running insomnia-rs");
+        .expect("error while running logic-socket");
 }
 
 #[cfg(test)]

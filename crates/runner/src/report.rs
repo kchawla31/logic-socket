@@ -226,7 +226,7 @@ pub fn junit(s: &Summary) -> String {
         ));
     }
     format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites name=\"insomnia-rs\" tests=\"{total_tests}\" failures=\"{total_failures}\" errors=\"0\" skipped=\"{total_skipped}\" time=\"{:.3}\">\n{suites}</testsuites>\n",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites name=\"logic-socket\" tests=\"{total_tests}\" failures=\"{total_failures}\" errors=\"0\" skipped=\"{total_skipped}\" time=\"{:.3}\">\n{suites}</testsuites>\n",
         s.duration_ms / 1000.0
     )
 }

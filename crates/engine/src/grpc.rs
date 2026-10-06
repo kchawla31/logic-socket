@@ -1,8 +1,8 @@
 //! gRPC requests: schema (workspace protos or server reflection) and rendering.
 
-use irs_core::{Doc, GrpcRequest, ProtoFile};
-use irs_grpc::Schema;
-use irs_templating::Mode;
+use lsock_core::{Doc, GrpcRequest, ProtoFile};
+use lsock_grpc::Schema;
+use lsock_templating::Mode;
 
 use crate::{Engine, EngineError, Result};
 
@@ -72,10 +72,10 @@ impl Engine {
             return Schema::from_protos(&files).map_err(|e| EngineError::Message(e.to_string()));
         }
         let url = self.render(id, "URL", &r.url)?;
-        let channel = irs_grpc::connect(&url)
+        let channel = lsock_grpc::connect(&url)
             .await
             .map_err(|e| EngineError::Message(e.to_string()))?;
-        irs_grpc::reflect(channel).await.map_err(|e| {
+        lsock_grpc::reflect(channel).await.map_err(|e| {
             let hint = if e.to_string().contains("Unimplemented") {
                 " — the server has no reflection service; add its .proto files instead"
             } else {

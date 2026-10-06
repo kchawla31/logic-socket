@@ -1,9 +1,9 @@
 //! Render a saved realtime request into connection options and messages.
 
 use base64::Engine as _;
-use irs_core::{Auth, Doc, Folder, RawDoc, RealtimeRequest};
-use irs_realtime::{ConnectOptions, Kind};
-use irs_templating::Mode;
+use lsock_core::{Auth, Doc, Folder, RawDoc, RealtimeRequest};
+use lsock_realtime::{ConnectOptions, Kind};
+use lsock_templating::Mode;
 use serde_json::Value;
 
 use crate::{Engine, EngineError, Result};

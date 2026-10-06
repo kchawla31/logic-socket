@@ -1,6 +1,6 @@
 //! Turn a tool's JSON Schema into readable rows and validate arguments.
 //!
-//! Rows power both `irs mcp tools` (terminal table) and the desktop
+//! Rows power both `lsock mcp tools` (terminal table) and the desktop
 //! inspector's parameter table, so both read the schema the same way.
 
 use std::collections::HashSet;

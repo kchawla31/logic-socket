@@ -1,12 +1,12 @@
 [package]
-name = "irs-mcp"
+name = "lsock-mcp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "irs-mock-mcp"
-path = "src/bin/irs-mock-mcp.rs"
+name = "lsock-mock-mcp"
+path = "src/bin/lsock-mock-mcp.rs"
 
 [dependencies]
 tokio.workspace = true

@@ -2,7 +2,7 @@
 //! folders per tag, `base_url` and credential placeholders in the base environment.
 
 use indexmap::IndexMap;
-use irs_core::{
+use lsock_core::{
     Auth, Body, BodyParam, Environment, Folder, KeyValue, OAuth2Config, Request, Workspace, mime,
 };
 use serde_json::{Map, Value, json};

@@ -11,7 +11,7 @@ mod tags;
 
 use std::collections::{BTreeSet, HashMap};
 
-use irs_core::VarMap;
+use lsock_core::VarMap;
 use minijinja::{Environment, UndefinedBehavior};
 use serde_json::{Map, Value};
 

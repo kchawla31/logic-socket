@@ -2,7 +2,7 @@
 //!
 //! The `insomnia.*` object model lives in `prelude.js`; this crate provides
 //! the host functions (HTTP, templating, timers, logging, vendored modules),
-//! resource limits, and conversion between `irs_core::Request` and the
+//! resource limits, and conversion between `lsock_core::Request` and the
 //! script-facing request shape.
 
 mod convert;
@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures::future::BoxFuture;
-use irs_core::{Cookie, VarMap};
-use irs_templating::{Context, Layer, Mode, Renderer};
+use lsock_core::{Cookie, VarMap};
+use lsock_templating::{Context, Layer, Mode, Renderer};
 use rquickjs::context::EvalOptions;
 use rquickjs::prelude::{Async, Func};
 use rquickjs::{
@@ -298,7 +298,7 @@ pub async fn run(
     // thread + current-thread runtime, which also isolates it from app workers.
     let (tx, rx) = tokio::sync::oneshot::channel();
     let spawned = std::thread::Builder::new()
-        .name("irs-script".into())
+        .name("lsock-script".into())
         .stack_size(32 * 1024 * 1024)
         .spawn(move || {
             let out = match tokio::runtime::Builder::new_current_thread()
@@ -439,8 +439,8 @@ async fn execute(
                 "(async function (insomnia, $, pm, require, console, setTimeout, clearTimeout) {{{script}\n}})"
             );
             let user_fn: Function = ctx.eval_with_options(wrapped, opts).catch(&ctx).map_err(caught_to_error)?;
-            let irs: Object = ctx.globals().get("__irs").map_err(|e| fail(e.to_string()))?;
-            let run_fn: Function = irs.get("run").map_err(|e| fail(e.to_string()))?;
+            let lsock: Object = ctx.globals().get("__lsock").map_err(|e| fail(e.to_string()))?;
+            let run_fn: Function = lsock.get("run").map_err(|e| fail(e.to_string()))?;
             let promise: Promise = run_fn.call((ctx_json, user_fn)).catch(&ctx).map_err(caught_to_error)?;
             promise.into_future::<String>().await.catch(&ctx).map_err(|e| {
                 let mut err = caught_to_error(e);

@@ -1,6 +1,6 @@
-//! Minimal RFC 6265 cookie jar operating directly on `irs_core::Cookie`.
+//! Minimal RFC 6265 cookie jar operating directly on `lsock_core::Cookie`.
 
-use irs_core::Cookie;
+use lsock_core::Cookie;
 use url::Url;
 
 fn now_ms() -> i64 {

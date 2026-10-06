@@ -1,13 +1,13 @@
-//! `irs mcp ...` — connect to an MCP server and print readable results.
+//! `lsock mcp ...` — connect to an MCP server and print readable results.
 
 use std::collections::HashMap;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use clap::{Args, Subcommand};
-use irs_core::{McpServer, McpTransport};
-use irs_engine::Engine;
-use irs_mcp::schema::{self, ParamRow};
-use irs_mcp::{Client, ConnectOptions, Direction, FrameKind, LogEntry, Tool, TransportConfig};
+use lsock_core::{McpServer, McpTransport};
+use lsock_engine::Engine;
+use lsock_mcp::schema::{self, ParamRow};
+use lsock_mcp::{Client, ConnectOptions, Direction, FrameKind, LogEntry, Tool, TransportConfig};
 use serde_json::Value;
 
 use crate::out::*;
@@ -92,7 +92,7 @@ pub enum McpCmd {
 }
 
 pub fn split_command(cmd: &str) -> Result<(String, Vec<String>)> {
-    let words = irs_engine::curl::split_words(cmd).map_err(|e| anyhow!("{e}"))?;
+    let words = lsock_engine::curl::split_words(cmd).map_err(|e| anyhow!("{e}"))?;
     let mut it = words.into_iter();
     let program = it.next().ok_or_else(|| anyhow!("empty --stdio command"))?;
     Ok((program, it.collect()))
@@ -154,7 +154,7 @@ fn connect_options(engine: &Engine, a: &ServerArgs) -> Result<(String, ConnectOp
 async fn connect(engine: &Engine, a: &ServerArgs) -> Result<(String, Client)> {
     let (label, mut opts) = connect_options(engine, a)?;
     opts.request_timeout = std::time::Duration::from_secs(a.timeout);
-    let log = irs_mcp::ProtocolLog::default();
+    let log = lsock_mcp::ProtocolLog::default();
     match Client::connect_with_log(opts, log.clone()).await {
         Ok(c) => Ok((label, c)),
         Err(e) => {
@@ -175,7 +175,7 @@ pub async fn run(engine: &Engine, cmd: McpCmd) -> Result<()> {
             stdio,
             headers,
         } => {
-            let ws = crate::find::<irs_core::Workspace>(engine, workspace)?;
+            let ws = crate::find::<lsock_core::Workspace>(engine, workspace)?;
             let transport = match (url, stdio) {
                 (Some(u), _) => McpTransport::StreamableHttp { url: u.clone() },
                 (None, Some(c)) => {
@@ -190,7 +190,7 @@ pub async fn run(engine: &Engine, cmd: McpCmd) -> Result<()> {
             };
             let headers = headers
                 .iter()
-                .map(|h| parse_header(h).map(|(k, v)| irs_core::KeyValue::new(k, v)))
+                .map(|h| parse_header(h).map(|(k, v)| lsock_core::KeyValue::new(k, v)))
                 .collect::<Result<_>>()?;
             let s = engine.store.insert(
                 Some(ws.id()),

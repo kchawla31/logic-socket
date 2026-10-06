@@ -1,7 +1,7 @@
 //! Parse a `curl` command line into a Request (paste-to-import in the URL bar).
 
 use base64::Engine as _;
-use irs_core::{Auth, Body, BodyParam, KeyValue, Request, mime};
+use lsock_core::{Auth, Body, BodyParam, KeyValue, Request, mime};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum CurlError {
@@ -366,7 +366,7 @@ pub fn import_many(text: &str) -> crate::Result<crate::Imported> {
     Ok(crate::Imported {
         format: crate::Format::Curl,
         workspaces: vec![crate::WorkspaceBundle {
-            workspace: irs_core::Workspace {
+            workspace: lsock_core::Workspace {
                 name: "cURL import".into(),
                 ..Default::default()
             },

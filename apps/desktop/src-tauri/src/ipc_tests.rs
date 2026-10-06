@@ -192,7 +192,7 @@ fn send_error_response_is_returned_as_view() {
 fn mcp_inspector_commands_against_mock_server() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let url = rt
-        .block_on(irs_mcp::mock::spawn_http(Default::default(), 0))
+        .block_on(lsock_mcp::mock::spawn_http(Default::default(), 0))
         .unwrap();
 
     let h = Harness::new();
@@ -215,7 +215,7 @@ fn mcp_inspector_commands_against_mock_server() {
     );
     let st = h.ok("mcp_connect", json!({"serverId": id}));
     assert_eq!(st["connected"], true);
-    assert_eq!(st["server"]["serverInfo"]["name"], "irs-mock-mcp");
+    assert_eq!(st["server"]["serverInfo"]["name"], "lsock-mock-mcp");
     assert!(st["sessionId"].as_str().unwrap().starts_with("sess-"));
 
     let tools = h.ok("mcp_list", json!({"serverId": id, "kind": "tools"}));
@@ -318,7 +318,7 @@ fn mcp_inspector_commands_against_mock_server() {
 fn runner_commands_stream_and_export() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let url = rt
-        .block_on(irs_mcp::mock::spawn_http(Default::default(), 0))
+        .block_on(lsock_mcp::mock::spawn_http(Default::default(), 0))
         .unwrap();
     let h = Harness::new();
     let ws = h.ok("workspace_create", json!({"name": "API"}));
@@ -372,10 +372,10 @@ fn runner_commands_stream_and_export() {
 fn ai_providers_requests_and_runs_with_approval() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let llm_base = rt
-        .block_on(irs_llm::mock::spawn(Default::default(), 0))
+        .block_on(lsock_llm::mock::spawn(Default::default(), 0))
         .unwrap();
     let mcp_url = rt
-        .block_on(irs_mcp::mock::spawn_http(Default::default(), 0))
+        .block_on(lsock_mcp::mock::spawn_http(Default::default(), 0))
         .unwrap();
     let h = Harness::new();
     let events: Arc<std::sync::Mutex<Vec<Value>>> = Arc::default();
@@ -398,12 +398,12 @@ fn ai_providers_requests_and_runs_with_approval() {
     h.ok("llm_provider_update", json!({"doc": doc}));
     h.ok(
         "llm_provider_set_key",
-        json!({"id": p["id"], "key": irs_llm::mock::MOCK_KEY}),
+        json!({"id": p["id"], "key": lsock_llm::mock::MOCK_KEY}),
     );
     let list = h.ok("llm_provider_list", json!({}));
     assert_eq!(list[0]["hasKey"], true);
     assert!(
-        !list.to_string().contains(irs_llm::mock::MOCK_KEY),
+        !list.to_string().contains(lsock_llm::mock::MOCK_KEY),
         "key never sent to the UI"
     );
     assert_eq!(
@@ -493,7 +493,7 @@ fn ai_providers_requests_and_runs_with_approval() {
 #[test]
 fn realtime_commands_connect_send_and_log() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let base = rt.block_on(irs_realtime::mock::spawn(0)).unwrap();
+    let base = rt.block_on(lsock_realtime::mock::spawn(0)).unwrap();
     let h = Harness::new();
     let ws = h.ok("workspace_create", json!({"name": "RT"}));
     let r = h.ok(
@@ -555,7 +555,7 @@ fn realtime_commands_connect_send_and_log() {
 #[test]
 fn grpc_commands_with_protos_and_reflection() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let url = rt.block_on(irs_grpc::demo::spawn(0, true)).unwrap();
+    let url = rt.block_on(lsock_grpc::demo::spawn(0, true)).unwrap();
     let h = Harness::new();
     let ws = h.ok("workspace_create", json!({"name": "G"}));
     let r = h.ok("grpc_create", json!({"parentId": ws["id"]}));
@@ -588,7 +588,7 @@ fn grpc_commands_with_protos_and_reflection() {
             .unwrap()
             .contains("No proto files")
     );
-    h.ok("proto_file_create", json!({"workspaceId": ws["id"], "name": "demo.proto", "contents": irs_grpc::demo::DEMO_PROTO}));
+    h.ok("proto_file_create", json!({"workspaceId": ws["id"], "name": "demo.proto", "contents": lsock_grpc::demo::DEMO_PROTO}));
     assert_eq!(
         h.ok("grpc_methods", json!({"id": r["id"], "refresh": true}))[0]["methods"]
             .as_array()

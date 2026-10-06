@@ -290,7 +290,7 @@ function ToolDetail({ serverId, tool }: { serverId: string; tool: ToolView }) {
           </div>
         )}
         {view === 'try' && (
-          <Split direction="col" initial={300} min={140} storageKey="irs-split-try">
+          <Split direction="col" initial={300} min={140} storageKey="lsock-split-try">
             <div className="flex h-full min-h-0 flex-col">
               <div className="flex shrink-0 items-center gap-2 border-b border-app px-4 py-2">
                 <div className="flex rounded-md border border-app p-0.5">
@@ -411,7 +411,7 @@ export function ToolsPanel({ serverId, tools }: { serverId: string; tools: ToolV
   const tool = tools.find(t => t.name === selected) ?? filtered[0];
   if (!tools.length) return <Empty icon={<Wrench className="size-8" />} title="This server exposes no tools" />;
   return (
-    <Split direction="row" initial={300} min={220} storageKey="irs-split-tools">
+    <Split direction="row" initial={300} min={220} storageKey="lsock-split-tools">
       <div className="flex h-full min-h-0 flex-col bg-subtle">
         <div className="relative shrink-0 p-2">
           <Search className="pointer-events-none absolute top-4 left-4 size-3.5 text-muted" />

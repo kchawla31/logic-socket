@@ -1,11 +1,11 @@
 [package]
-name = "irs-http"
+name = "lsock-http"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-irs-core.workspace = true
+lsock-core.workspace = true
 reqwest.workspace = true
 tokio.workspace = true
 serde.workspace = true

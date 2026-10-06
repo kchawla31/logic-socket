@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use base64::Engine as _;
-use irs_core::{Doc, GitFile, GitRepo, Workspace};
+use lsock_core::{Doc, GitFile, GitRepo, Workspace};
 use serde::Serialize;
 
 use crate::transfer::{ExportOptions, ImportMode, ImportOptions};
@@ -154,7 +154,7 @@ impl Engine {
             return Ok((r, GitSyncResult::default()));
         }
         let tmp = Doc {
-            meta: irs_core::Meta {
+            meta: lsock_core::Meta {
                 id: String::new(),
                 kind: String::new(),
                 parent_id: None,
@@ -297,7 +297,7 @@ impl Engine {
         let mut repo: Doc<GitRepo> = self.store.get(repo_id)?;
         if !repo.files.iter().any(|f| f.workspace_id == workspace_id) {
             let ws: Doc<Workspace> = self.store.get(workspace_id)?;
-            let base = irs_convert::insomnia::file_name_for(&ws.name);
+            let base = lsock_convert::insomnia::file_name_for(&ws.name);
             let mut path = base.clone();
             let mut n = 2;
             while repo.files.iter().any(|f| f.path == path)
@@ -344,7 +344,7 @@ impl Engine {
                 continue; // workspace deleted locally: leave the file alone
             }
             let b = self.export_bundle(&f.workspace_id, &opts)?;
-            let content = irs_convert::insomnia::export_v5(&b).map_err(|e| err(e.to_string()))?;
+            let content = lsock_convert::insomnia::export_v5(&b).map_err(|e| err(e.to_string()))?;
             let path = Path::new(&repo.path).join(&f.path);
             if std::fs::read_to_string(&path).ok().as_deref() != Some(content.as_str()) {
                 if let Some(dir) = path.parent() {
@@ -367,7 +367,7 @@ impl Engine {
         let mut links = vec![];
         for rel in files {
             let text = std::fs::read_to_string(root.join(&rel)).unwrap_or_default();
-            if irs_convert::detect(&text) != Some(irs_convert::Format::InsomniaV5) {
+            if lsock_convert::detect(&text) != Some(lsock_convert::Format::InsomniaV5) {
                 continue;
             }
             match self.import_text(

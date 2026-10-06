@@ -1,4 +1,4 @@
-use irs_core::*;
+use lsock_core::*;
 use serde_json::json;
 
 use super::Meta;
@@ -673,14 +673,14 @@ fn v5_export_stays_loadable_by_insomnia() {
             .any(|h| h["value"] == "text/event-stream")
     );
     // AI requests and MCP servers live in our extension, not in `collection`
-    let names: Vec<_> = v["x-insomnia-rs"]["items"]
+    let names: Vec<_> = v["x-logic-socket"]["items"]
         .as_array()
         .unwrap()
         .iter()
         .map(|i| i["type"].as_str().unwrap())
         .collect();
     assert_eq!(names, ["LlmRequest", "McpServer"]);
-    assert_eq!(v["x-insomnia-rs"]["items"][0]["parentId"], "fld_1");
+    assert_eq!(v["x-logic-socket"]["items"][0]["parentId"], "fld_1");
     // inherit auth is Insomnia's `{}`, which the exporter prunes
     assert!(
         coll.iter()
@@ -864,4 +864,13 @@ fn code_snippets() {
     assert_eq!(Target::parse("python"), Some(Target::PythonRequests));
     assert_eq!(Target::parse("fetch"), Some(Target::JsFetch));
     assert_eq!(Target::parse("cobol"), None);
+}
+
+#[test]
+fn files_written_before_the_rename_still_import() {
+    let text = insomnia::export_v5(&full_bundle())
+        .unwrap()
+        .replace("x-logic-socket", "x-insomnia-rs")
+        .replace("x-lsock", "x-irs");
+    assert_eq!(import(&text).unwrap().workspaces[0], full_bundle());
 }

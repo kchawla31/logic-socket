@@ -384,7 +384,7 @@ function ResourcesPanel({
   };
   if (!connected) return <Empty title="Connect to browse resources" />;
   return (
-    <Split direction="row" initial={340} min={220} storageKey="irs-split-resources">
+    <Split direction="row" initial={340} min={220} storageKey="lsock-split-resources">
       <div className="h-full overflow-auto bg-subtle p-2">
         <div className="px-1 pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">Resources</div>
         {resources.map(r => (
@@ -429,7 +429,7 @@ function PromptsPanel({ serverId, prompts, connected }: { serverId: string; prom
   if (!connected) return <Empty title="Connect to browse prompts" />;
   if (!p) return <Empty title="This server exposes no prompts" />;
   return (
-    <Split direction="row" initial={300} min={200} storageKey="irs-split-prompts">
+    <Split direction="row" initial={300} min={200} storageKey="lsock-split-prompts">
       <div className="h-full overflow-auto bg-subtle p-2">
         {prompts.map(x => (
           <button
@@ -514,7 +514,7 @@ function ProtocolLog({ entries, onClear }: { entries: LogEntry[]; onClear: () =>
   }, [shown.length, follow]);
   const sel = entries.find(e => e.seq === selected);
   return (
-    <Split direction="row" initial={620} min={360} storageKey="irs-split-log">
+    <Split direction="row" initial={620} min={360} storageKey="lsock-split-log">
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-app p-2">
           {['all', 'request', 'response', 'notification', 'error', 'transport'].map(f => (

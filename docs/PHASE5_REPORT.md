@@ -9,10 +9,10 @@
 | Script translation | `convert::postman` | Insomnia's Postman rules (legacy `tests[…]`, `environment.x`, `postman.*`, `responseBody`, …) then `pm.` → `insomnia.`; Rust `regex` has no look-behind, so the guard is a captured prefix |
 | `{% faker %}` tag | `crates/templating` | 38 Postman dynamic variables (`randomEmail`, `randomInt`, `guid`, …) so imported `{{$…}}` keep working |
 | Code generation | `convert::codegen`, `engine::code_request` | curl, HTTPie, JavaScript fetch, Python requests, Go net/http, Rust reqwest, from the fully rendered request (environment, inherited headers, auth, OAuth 2 token) |
-| Vault | `engine::vault` | AES-256-GCM key in the OS keychain (or `IRS_VAULT_KEY` for CI). Secret values are stored as `vault:v1:…` and decrypted only for rendering and scripts. Every write path re-seals; OAuth 2 tokens are encrypted too. Recovery-key export/import (refuses a key that can't decrypt existing data) and reset |
+| Vault | `engine::vault` | AES-256-GCM key in the OS keychain (or `LSOCK_VAULT_KEY` for CI). Secret values are stored as `vault:v1:…` and decrypted only for rendering and scripts. Every write path re-seals; OAuth 2 tokens are encrypted too. Recovery-key export/import (refuses a key that can't decrypt existing data) and reset |
 | Import/export into the store | `engine::transfer` | **Copy** (fresh ids; MCP references re-keyed), **Replace** (keep ids, overwrite in place, remove what the file dropped; keeps local secrets, private environments, response/run history and this machine's active environment), **merge into a workspace** |
 | Git sync | `engine::git` | One v5 file per workspace (Insomnia's layout) via the system `git`: open/init, clone, link/unlink, status, diff, commit, pull (refuses over uncommitted edits; reports conflicts; resolve with mine/theirs; abort), push, discard, log, branches. HTTPS token in the keychain, passed through `GIT_CONFIG_*` env (never argv). Secret values, private envs and cookies are never written |
-| CLI | `irs import`, `export`, `code`, `vault`, `git`, `env set --secret`, `env reveal` | |
+| CLI | `lsock import`, `export`, `code`, `vault`, `git`, `env set --secret`, `env reveal` | |
 | Desktop | `ImportExport.tsx`, `GitPanel.tsx`, `Modals.tsx` | Import dialog (file / drop, paste, URL) with a live preview and warnings; export with format choice → Downloads; "Generate code" next to Send; Secrets panel in Environments (masked, reveal, copy, make plain); Settings → Secrets vault; Git sync panel (connect, changes with diffs, commit, pull/push with ahead/behind, conflict resolution, branches, history, remote/author/token, synced workspaces) |
 
 ## Verification (actual results)
@@ -56,7 +56,7 @@
 - HAR form params without a MIME type were dropped; bare-request HAR files weren't recognised
 - MCP-client exports lost sampling/cwd settings; MCP ids were re-keyed in Replace mode
 - The workspace timestamp and secret-only edits caused phantom Git diffs
-- `IRS_SECRET_STORE=memory` made every CLI process use a different vault key → added `IRS_VAULT_KEY`
+- `LSOCK_SECRET_STORE=memory` made every CLI process use a different vault key → added `LSOCK_VAULT_KEY`
 - Desktop: a slow refresh for the previous workspace could overwrite the sidebar after an import/switch
 
 ## Known gaps

@@ -11,7 +11,7 @@
 | gRPC | `crates/grpc` | Schema from server reflection (v1, falling back to v1alpha) or from `.proto` files compiled in-process (protox) with file:line:col errors; unary, server, client and bidi streaming through a dynamic codec; metadata, deadlines, TLS (`grpcs://`); JSON examples generated per method |
 | Auth | `crates/http/src/sign.rs`, `crates/engine/src/oauth2.rs` | Digest (MD5/SHA-256, qop auth, 401 challenge retry), OAuth 1.0a (HMAC-SHA1/256, PLAINTEXT; header/query/body), AWS SigV4 (incl. session token, service/region), OAuth 2 (client credentials, password, authorization code with PKCE via a localhost redirect catcher, refresh tokens; tokens cached per request/folder), netrc |
 | Proxy | `crates/http`, Settings | Proxy URL + no-proxy list in Settings; system env proxies are used when unset |
-| CLI | `irs rt`, `irs grpc`, `irs mock` | Realtime connect/send/emit; gRPC list/unary/streaming with `--proto`; local demo servers (`mock realtime / graphql / grpc / llm / mcp`) |
+| CLI | `lsock rt`, `lsock grpc`, `lsock mock` | Realtime connect/send/emit; gRPC list/unary/streaming with `--proto`; local demo servers (`mock realtime / graphql / grpc / llm / mcp`) |
 | Desktop | `apps/desktop` | Single "New…" menu; Realtime view (connect panel, message composer, filterable event log); gRPC view (method picker, proto files manager, Start/Send/Commit/Cancel, streamed responses, status + trailers); auth editor covering every auth kind with an OAuth 2 token panel |
 
 ## Verification (actual results)
@@ -24,7 +24,7 @@
   - engine (+): OAuth 2 against a mock auth server (client credentials, password, PKCE code flow, refresh, cache/clear), netrc, script round-trip keeping OAuth2/IAM config
   - desktop IPC (+): realtime and gRPC commands, and a guard that every emitted event reaches the web bridge
 - `tsc --noEmit` and `vitest`: clean
-- CLI end-to-end against `irs mock realtime|graphql|grpc`
+- CLI end-to-end against `lsock mock realtime|graphql|grpc`
 - Desktop UI driven headlessly through the web bridge (GraphQL explorer and completion, WebSocket/SSE/Socket.IO logs, gRPC unary + server/bidi streaming, OAuth 2 editor). I reviewed the screenshots.
 
 ## Bugs found and fixed during verification

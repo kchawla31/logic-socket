@@ -1,4 +1,4 @@
-# Parity map: Insomnia (TypeScript) → insomnia-rs
+# Parity map: Insomnia (TypeScript) → logic-socket
 
 Source paths are relative to `packages/`. Phase: 1 core/HTTP/env/MCP inspector · 2 scripting/runner/CLI · 3 LLM · 4 other protocols · 5 import/export/sync/vault.
 
@@ -71,7 +71,7 @@ Source paths are relative to `packages/`. Phase: 1 core/HTTP/env/MCP inspector �
 | `insomnia.*` script API (environment, variables, request, response, cookies, sendRequest, test, expect, execution) | insomnia-scripting-environment/src/objects/ | scripting (rquickjs) | 2 |
 | Pre-request / after-response on request + folders | network/network.ts | engine::pipeline | 2 |
 | Collection runner (iterations, delay, data file, bail, flow control) | routes/*.debug.runner.tsx | runner | 2 |
-| `inso run collection` CLI + reporters | insomnia-inso/src/commands/run-collection/ | cli `irs run collection` | 2 |
+| `inso run collection` CLI + reporters | insomnia-inso/src/commands/run-collection/ | cli `lsock run collection` | 2 |
 | `inso lint spec` / `export spec` | insomnia-inso/src/commands/*-specification.ts | — | 5 |
 
 ## AI / LLM

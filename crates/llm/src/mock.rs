@@ -1,6 +1,6 @@
 //! Scripted mock LLM speaking both the Anthropic Messages and OpenAI Chat
 //! Completions streaming formats. Used by tests and for offline demos
-//! (`irs llm mock-server`).
+//! (`lsock llm mock-server`).
 //!
 //! Behavior, based on the last message:
 //! - it contains a tool result → answer "Based on the tool: <result>"

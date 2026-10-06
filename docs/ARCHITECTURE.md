@@ -3,7 +3,7 @@
 ## Crate layout
 
 ```
-insomnia-rs/
+logic-socket/
   Cargo.toml                 workspace
   crates/
     core/        models (serde), SQLite store, migrations, batched writes
@@ -14,7 +14,7 @@ insomnia-rs/
     scripting/   (Phase 2) rquickjs sandbox + insomnia.* API
     runner/      (Phase 2) collection runner, event stream, reporters
     llm/         (Phase 3) provider abstraction, streaming, MCP bridge
-    cli/         `irs` binary (clap) — thin layer over engine/mcp/runner
+    cli/         `lsock` binary (clap) — thin layer over engine/mcp/runner
   apps/desktop/
     src-tauri/   Tauri 2 shell: commands = thin wrappers over engine/mcp
     src/         React + TypeScript + Tailwind UI (Vite)
@@ -24,7 +24,7 @@ Dependency direction: `core ← templating ← http ← engine ← {cli, desktop
 
 ## Storage
 
-A single SQLite file (`<data_dir>/insomnia-rs/insomnia.db`, override with `IRS_DATA_DIR`).
+A single SQLite file (`<data_dir>/logic-socket/insomnia.db`, override with `LSOCK_DATA_DIR`).
 
 ```sql
 CREATE TABLE docs (

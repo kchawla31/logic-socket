@@ -8,7 +8,7 @@
 | Sandbox | same | timeout via interrupt handler + outer deadline (default 5 s, `Settings.scriptTimeoutMs`), 64 MB memory limit, no fs/process/network globals, Node modules → `NotSupported`, errors report script line/column, partial results kept |
 | Pipeline | `crates/engine/src/pipeline.rs` | folder pre-scripts (outer→inner) → request pre-script → render → send → request after-script → folder after-scripts (inner→outer); env/global/cookie mutations persisted in batched transactions; tests + console stored on the response; `skipRequest`, `setNextRequest` surfaced to the runner |
 | Runner | `crates/runner` | iterations, CSV/JSON data (rows cycle), delay, bail, cancel, `setNextRequest` jumps/loops (step guard), `setNextRequest(null)` stop, event stream, reporters spec/dot/json/junit |
-| CLI | `irs run collection` | inso-compatible flags (`-e -i -n -d --delay-request -b -r --env-var`), `--output`, live spec output, exit codes 0 / 1 (failures) / 2 (usage/runtime); `irs request script` attaches scripts from files |
+| CLI | `lsock run collection` | inso-compatible flags (`-e -i -n -d --delay-request -b -r --env-var`), `--output`, live spec output, exit codes 0 / 1 (failures) / 2 (usage/runtime); `lsock request script` attaches scripts from files |
 | Desktop | `apps/desktop` | Scripts tab on requests (pre/after) and folders, CodeMirror JS with `insomnia.` completions (Insomnia's snippet list) + example snippets; response Tests tab (pass/fail/skip, errors), Console tab (level filter, source), script-error banner, test summary pill; Runner tab (request checklist, iterations, delay, bail, CSV/JSON load or paste, live results grouped by iteration, expandable tests/console, JUnit/JSON export to Downloads, stop) |
 
 ## Verification (actual results)

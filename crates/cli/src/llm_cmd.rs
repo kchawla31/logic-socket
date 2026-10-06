@@ -1,17 +1,17 @@
-//! `irs llm ...` — AI providers, chat with MCP tools, saved AI requests.
+//! `lsock llm ...` — AI providers, chat with MCP tools, saved AI requests.
 
 use std::io::{IsTerminal, Write};
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use clap::{Args, Subcommand};
 use futures::future::BoxFuture;
-use irs_core::{KeySource, LlmPromptMessage, LlmProvider, LlmRequest, McpServer, Workspace};
-use irs_engine::Engine;
-use irs_engine::llm::{LlmPrepared, parse_kind};
-use irs_llm::agent::{
+use lsock_core::{KeySource, LlmPromptMessage, LlmProvider, LlmRequest, McpServer, Workspace};
+use lsock_engine::Engine;
+use lsock_engine::llm::{LlmPrepared, parse_kind};
+use lsock_llm::agent::{
     AgentEvent, AgentOptions, AllowAll, Approval, Approver, AutoApprove, ToolCallInfo, ToolSource,
 };
-use irs_llm::{ChatRequest, Message, StreamEvent};
+use lsock_llm::{ChatRequest, Message, StreamEvent};
 
 use crate::out::*;
 
@@ -159,7 +159,7 @@ impl Approver for TerminalApprover {
     }
 }
 
-fn find_provider(engine: &Engine, needle: Option<&str>) -> Result<irs_core::Doc<LlmProvider>> {
+fn find_provider(engine: &Engine, needle: Option<&str>) -> Result<lsock_core::Doc<LlmProvider>> {
     match needle {
         Some(n) => crate::find::<LlmProvider>(engine, n),
         None => engine
@@ -167,7 +167,7 @@ fn find_provider(engine: &Engine, needle: Option<&str>) -> Result<irs_core::Doc<
             .all_of::<LlmProvider>()?
             .into_iter()
             .next()
-            .ok_or_else(|| anyhow!("no AI provider yet — add one: irs llm provider add Claude --kind anthropic --model claude-sonnet-5-5")),
+            .ok_or_else(|| anyhow!("no AI provider yet — add one: lsock llm provider add Claude --kind anthropic --model claude-sonnet-5-5")),
     }
 }
 
@@ -249,13 +249,13 @@ fn usage_line(
 pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
     match cmd {
         LlmCmd::MockServer { port } => {
-            let url = irs_llm::mock::spawn(Default::default(), port).await?;
+            let url = lsock_llm::mock::spawn(Default::default(), port).await?;
             eprintln!(
                 "mock LLM listening on {url} (API key: {})",
-                irs_llm::mock::MOCK_KEY
+                lsock_llm::mock::MOCK_KEY
             );
             eprintln!(
-                "  irs llm provider add Mock --kind anthropic --base-url {url} --model mock-large"
+                "  lsock llm provider add Mock --kind anthropic --base-url {url} --model mock-large"
             );
             tokio::signal::ctrl_c().await?;
         }
@@ -273,7 +273,7 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
                 bail!("unknown kind '{kind}' (anthropic, openai, ollama, openai-compatible)");
             }
             let key_source = if no_key
-                || (k == irs_llm::ProviderKind::Ollama
+                || (k == lsock_llm::ProviderKind::Ollama
                     && key_env.is_none()
                     && key_template.is_none())
             {
@@ -366,7 +366,7 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
         LlmCmd::Models { provider } => {
             let p = crate::find::<LlmProvider>(engine, &provider)?;
             let (_, cfg) = engine.provider_config(p.id(), None)?;
-            for m in irs_llm::list_models(&cfg).await? {
+            for m in lsock_llm::list_models(&cfg).await? {
                 let mark = if m == p.default_model {
                     green(" (default)")
                 } else {
@@ -385,8 +385,8 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
             }
             let mut sources: Vec<ToolSource> = engine.connect_tool_sources(&ids).await?;
             for (i, url) in a.mcp_urls.iter().enumerate() {
-                let c = irs_mcp::Client::connect(irs_mcp::ConnectOptions::new(
-                    irs_mcp::TransportConfig::Http {
+                let c = lsock_mcp::Client::connect(lsock_mcp::ConnectOptions::new(
+                    lsock_mcp::TransportConfig::Http {
                         url: url.clone(),
                         headers: vec![],
                         validate_certificates: true,
@@ -403,8 +403,8 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
             }
             for cmd in &a.mcp_stdio {
                 let (command, args) = crate::mcp_cmd::split_command(cmd)?;
-                let c = irs_mcp::Client::connect(irs_mcp::ConnectOptions::new(
-                    irs_mcp::TransportConfig::Stdio {
+                let c = lsock_mcp::Client::connect(lsock_mcp::ConnectOptions::new(
+                    lsock_mcp::TransportConfig::Stdio {
                         command: command.clone(),
                         args,
                         env: Default::default(),
@@ -460,7 +460,7 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
                 Box::new(TerminalApprover)
             };
             let mut print = printer();
-            let out = irs_llm::agent::run(
+            let out = lsock_llm::agent::run(
                 &prepared.config,
                 prepared.chat,
                 &sources,

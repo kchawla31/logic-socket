@@ -3,9 +3,9 @@
 
 use std::collections::HashMap;
 
-use irs_core::{Auth, McpServer, McpTransport};
-use irs_mcp::{ConnectOptions, TransportConfig};
-use irs_templating::Mode;
+use lsock_core::{Auth, McpServer, McpTransport};
+use lsock_mcp::{ConnectOptions, TransportConfig};
+use lsock_templating::Mode;
 
 use crate::{Engine, EngineError, Result};
 
@@ -100,7 +100,7 @@ impl Engine {
             } else {
                 server.sampling.max_tokens
             };
-            opts.sampling = Some(std::sync::Arc::new(irs_llm::agent::LlmSampler {
+            opts.sampling = Some(std::sync::Arc::new(lsock_llm::agent::LlmSampler {
                 cfg,
                 model,
                 max_tokens,
@@ -118,7 +118,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use irs_core::{KeyValue, Workspace};
+    use lsock_core::{KeyValue, Workspace};
 
     #[test]
     fn renders_saved_server_config() {

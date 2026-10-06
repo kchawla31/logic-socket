@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use irs_core::{Doc, RealtimeRequest};
-use irs_realtime::{Kind, RtEvent, Session};
+use lsock_core::{Doc, RealtimeRequest};
+use lsock_realtime::{Kind, RtEvent, Session};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::{Emitter, State};
@@ -56,7 +56,7 @@ pub async fn rt_connect<R: tauri::Runtime>(
     }
     let opts = state.engine.realtime_options(&id).map_err(e)?;
     let kind = opts.kind;
-    let session = irs_realtime::connect(opts).await.map_err(e)?;
+    let session = lsock_realtime::connect(opts).await.map_err(e)?;
     let mut rx = session.log.subscribe();
     // replay what happened during the handshake, then stream
     for ev in session.log.entries() {

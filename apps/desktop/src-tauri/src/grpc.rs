@@ -2,9 +2,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use irs_core::{Doc, GrpcRequest, ProtoFile};
-use irs_grpc::{ServiceInfo, StreamCall, UnaryResult};
-use irs_realtime::RtEvent;
+use lsock_core::{Doc, GrpcRequest, ProtoFile};
+use lsock_grpc::{ServiceInfo, StreamCall, UnaryResult};
+use lsock_realtime::RtEvent;
 use serde_json::json;
 use tauri::{Emitter, State};
 
@@ -105,8 +105,8 @@ pub async fn grpc_invoke(state: State<'_, AppState>, id: String) -> CmdResult<Un
     if m.is_client_streaming() || m.is_server_streaming() {
         return Err("This is a streaming method — use Start".into());
     }
-    let channel = irs_grpc::connect(&p.url).await.map_err(e)?;
-    irs_grpc::unary(channel, &m, &p.body, &p.metadata, p.timeout)
+    let channel = lsock_grpc::connect(&p.url).await.map_err(e)?;
+    lsock_grpc::unary(channel, &m, &p.body, &p.metadata, p.timeout)
         .await
         .map_err(e)
 }
@@ -122,8 +122,8 @@ pub async fn grpc_stream_start<R: tauri::Runtime>(
     }
     let p = state.engine.grpc_prepare(&id).map_err(e)?;
     let m = method(&state, &id, &p.method).await?;
-    let channel = irs_grpc::connect(&p.url).await.map_err(e)?;
-    let call = irs_grpc::start_stream(channel, &m, Some(&p.body), &p.metadata)
+    let channel = lsock_grpc::connect(&p.url).await.map_err(e)?;
+    let call = lsock_grpc::start_stream(channel, &m, Some(&p.body), &p.metadata)
         .await
         .map_err(e)?;
     let mut rx = call.log.subscribe();

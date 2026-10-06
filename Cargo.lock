@@ -2260,263 +2260,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "insomnia-rs-desktop"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "futures",
- "irs-convert",
- "irs-core",
- "irs-engine",
- "irs-grpc",
- "irs-llm",
- "irs-mcp",
- "irs-realtime",
- "irs-runner",
- "irs-templating",
- "prost-reflect",
- "reqwest",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tempfile",
- "tokio",
- "tower-http",
-]
-
-[[package]]
 name = "ipnet"
 version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
-
-[[package]]
-name = "irs-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "clap",
- "futures",
- "irs-convert",
- "irs-core",
- "irs-engine",
- "irs-grpc",
- "irs-llm",
- "irs-mcp",
- "irs-realtime",
- "irs-runner",
- "irs-templating",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "irs-convert"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "indexmap 2.14.2",
- "irs-core",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "thiserror 2.0.21",
- "url",
-]
-
-[[package]]
-name = "irs-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "indexmap 2.14.2",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.21",
- "uuid",
-]
-
-[[package]]
-name = "irs-engine"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "axum",
- "base64 0.22.1",
- "futures",
- "irs-convert",
- "irs-core",
- "irs-grpc",
- "irs-http",
- "irs-llm",
- "irs-mcp",
- "irs-realtime",
- "irs-scripting",
- "irs-templating",
- "keyring",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "sha2 0.10.9",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "irs-grpc"
-version = "0.1.0"
-dependencies = [
- "futures",
- "http",
- "http-body",
- "irs-realtime",
- "miette",
- "prost",
- "prost-reflect",
- "prost-types",
- "protox",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tokio-stream",
- "tonic",
- "tonic-reflection",
- "tower-service",
-]
-
-[[package]]
-name = "irs-http"
-version = "0.1.0"
-dependencies = [
- "aws-credential-types",
- "aws-sigv4",
- "axum",
- "base64 0.22.1",
- "chrono",
- "futures",
- "hmac 0.12.1",
- "irs-core",
- "md5",
- "reqwest",
- "serde",
- "serde_json",
- "sha1 0.10.7",
- "sha2 0.10.9",
- "thiserror 2.0.21",
- "tokio",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "irs-llm"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "futures",
- "irs-mcp",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
-]
-
-[[package]]
-name = "irs-mcp"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "futures",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
-]
-
-[[package]]
-name = "irs-realtime"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "futures",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tokio-tungstenite 0.30.0",
- "url",
-]
-
-[[package]]
-name = "irs-runner"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "csv",
- "irs-core",
- "irs-engine",
- "roxmltree",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
-]
-
-[[package]]
-name = "irs-scripting"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "futures",
- "irs-core",
- "irs-templating",
- "rquickjs",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "irs-templating"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "indexmap 2.14.2",
- "irs-core",
- "md5",
- "minijinja",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror 2.0.21",
- "uuid",
-]
 
 [[package]]
 name = "is_terminal_polyfill"
@@ -2860,6 +2607,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
+name = "logic-socket-desktop"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "futures",
+ "lsock-convert",
+ "lsock-core",
+ "lsock-engine",
+ "lsock-grpc",
+ "lsock-llm",
+ "lsock-mcp",
+ "lsock-realtime",
+ "lsock-runner",
+ "lsock-templating",
+ "prost-reflect",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tempfile",
+ "tokio",
+ "tower-http",
+]
+
+[[package]]
 name = "logos"
 version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2930,6 +2704,232 @@ name = "lru-slab"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
+
+[[package]]
+name = "lsock-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "clap",
+ "futures",
+ "lsock-convert",
+ "lsock-core",
+ "lsock-engine",
+ "lsock-grpc",
+ "lsock-llm",
+ "lsock-mcp",
+ "lsock-realtime",
+ "lsock-runner",
+ "lsock-templating",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "lsock-convert"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "indexmap 2.14.2",
+ "lsock-core",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "thiserror 2.0.21",
+ "url",
+]
+
+[[package]]
+name = "lsock-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "indexmap 2.14.2",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "lsock-engine"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "axum",
+ "base64 0.22.1",
+ "futures",
+ "keyring",
+ "lsock-convert",
+ "lsock-core",
+ "lsock-grpc",
+ "lsock-http",
+ "lsock-llm",
+ "lsock-mcp",
+ "lsock-realtime",
+ "lsock-scripting",
+ "lsock-templating",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "lsock-grpc"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http",
+ "http-body",
+ "lsock-realtime",
+ "miette",
+ "prost",
+ "prost-reflect",
+ "prost-types",
+ "protox",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-reflection",
+ "tower-service",
+]
+
+[[package]]
+name = "lsock-http"
+version = "0.1.0"
+dependencies = [
+ "aws-credential-types",
+ "aws-sigv4",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "futures",
+ "hmac 0.12.1",
+ "lsock-core",
+ "md5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha1 0.10.7",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "lsock-llm"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "futures",
+ "lsock-mcp",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "lsock-mcp"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "lsock-realtime"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "url",
+]
+
+[[package]]
+name = "lsock-runner"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "csv",
+ "lsock-core",
+ "lsock-engine",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "lsock-scripting"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "futures",
+ "lsock-core",
+ "lsock-templating",
+ "rquickjs",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "lsock-templating"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "indexmap 2.14.2",
+ "lsock-core",
+ "md5",
+ "minijinja",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "uuid",
+]
 
 [[package]]
 name = "markup5ever"

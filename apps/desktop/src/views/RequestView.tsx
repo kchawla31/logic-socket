@@ -158,7 +158,7 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
   const setBody = (b: Partial<Body>) => update({ body: { ...req.body, ...b } });
 
   return (
-    <Split direction="row" initial={640} min={360} storageKey="irs-split-request">
+    <Split direction="row" initial={640} min={360} storageKey="lsock-split-request">
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-2 border-b border-app p-2">
           <Select

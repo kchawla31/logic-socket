@@ -325,7 +325,7 @@ export function SettingsModal({
             <Input value={s.noProxy} placeholder="Bypass: localhost,127.0.0.1,.internal" onChange={e => update({ noProxy: e.target.value })} />
           </div>
           <VaultSection />
-          <p className="text-[12px] text-muted">Settings are saved immediately and shared with the irs command-line tool.</p>
+          <p className="text-[12px] text-muted">Settings are saved immediately and shared with the lsock command-line tool.</p>
         </div>
       )}
     </Modal>
@@ -362,7 +362,7 @@ function VaultSection() {
           {st.hasKey ? 'key in your keychain' : 'no key yet'} · {st.sealedValues} encrypted value{st.sealedValues === 1 ? '' : 's'}
         </span>
       </div>
-      <p className="text-[12px] text-muted">To use your secrets on another computer, copy the recovery key there (Settings → Secrets vault → Import key, or <code className="font-mono">irs vault import-key</code>).</p>
+      <p className="text-[12px] text-muted">To use your secrets on another computer, copy the recovery key there (Settings → Secrets vault → Import key, or <code className="font-mono">lsock vault import-key</code>).</p>
       <div className="flex flex-wrap gap-2">
         {key ? (
           <>

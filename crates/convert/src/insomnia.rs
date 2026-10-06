@@ -2,12 +2,12 @@
 //!
 //! v5 is also the Git-sync file format. Things Insomnia doesn't model (AI requests,
 //! MCP servers inside collections, proto files, WebSocket payloads, SSE) are kept
-//! under `x-insomnia-rs` / per-item `x-irs` keys, which Insomnia ignores.
+//! under `x-logic-socket` / per-item `x-lsock` keys, which Insomnia ignores.
 
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
-use irs_core::{
+use lsock_core::{
     Body, BodyParam, Cookie, CookieJar, Environment, Folder, GrpcRequest, KeyValue, LlmRequest,
     McpRoot, McpServer, McpTransport, ProtoFile, RealtimeRequest, Request, RequestSettings, Toggle,
     VarMap, Workspace, WorkspaceScope,
@@ -24,6 +24,11 @@ const WS_PREFIX: &str = "ws-req_";
 const SIO_PREFIX: &str = "socketio-req_";
 
 // ------------------------------------------------------------------ helpers
+
+/// Per-item extension block (`x-lsock`; `x-irs` in files written before the rename).
+fn item_ext(v: &Value) -> Option<&Value> {
+    v.get("x-lsock").or_else(|| v.get("x-irs"))
+}
 
 fn arr<'a>(v: &'a Value, k: &str) -> &'a [Value] {
     v.get(k)
@@ -280,7 +285,7 @@ fn cookie_out(c: &Cookie) -> Value {
 }
 
 fn secret_keys(v: &Value) -> Vec<String> {
-    v.get("x-irs")
+    item_ext(v)
         .map(|x| arr(x, "secretKeys"))
         .unwrap_or(&[])
         .iter()
@@ -328,7 +333,10 @@ fn env_out(e: &Entry<Environment>, sub: bool) -> Value {
         o.insert("color".into(), json!(c));
     }
     if !e.body.secret_keys.is_empty() {
-        o.insert("x-irs".into(), json!({ "secretKeys": e.body.secret_keys }));
+        o.insert(
+            "x-lsock".into(),
+            json!({ "secretKeys": e.body.secret_keys }),
+        );
     }
     Value::Object(o)
 }
@@ -361,7 +369,7 @@ fn shell_join(parts: &[String]) -> String {
 
 fn mcp_from(m: &Value) -> McpServer {
     // our own exports carry the full config (sampling, cwd, TLS) alongside Insomnia's fields
-    if let Some(full) = m.get("x-irs").and_then(|x| x.get("server"))
+    if let Some(full) = item_ext(m).and_then(|x| x.get("server"))
         && let Ok(s) = serde_json::from_value::<McpServer>(full.clone())
     {
         return s;
@@ -429,7 +437,7 @@ fn mcp_out(s: &McpServer, meta: &Meta) -> Value {
             "name": e.name, "value": e.value, "type": "str", "enabled": !e.disabled,
         })).collect::<Vec<_>>(),
         "roots": s.roots.iter().map(|r| json!({"uri": r.uri, "name": r.name})).collect::<Vec<_>>(),
-        "x-irs": { "server": s },
+        "x-lsock": { "server": s },
     })
 }
 
@@ -511,7 +519,8 @@ pub fn import_v5(v: &Value) -> Result<Imported> {
     if !arr(v, "certificates").is_empty() {
         warnings.push("CA certificates were skipped — certificates aren't supported yet".into());
     }
-    if let Some(ext) = v.get("x-insomnia-rs") {
+    // files written before the rename used `x-insomnia-rs`
+    if let Some(ext) = v.get("x-logic-socket").or_else(|| v.get("x-insomnia-rs")) {
         apply_extension(&mut b, ext, &mut warnings);
     }
     Ok(Imported {
@@ -527,7 +536,7 @@ fn items_v5(list: &[Value], warnings: &mut Vec<String>) -> Vec<Item> {
 
 fn item_v5(i: &Value, warnings: &mut Vec<String>) -> Option<Item> {
     let mut meta = meta_v5(i.get("meta"));
-    let ext = i.get("x-irs").cloned().unwrap_or(Value::Null);
+    let ext = item_ext(i).cloned().unwrap_or(Value::Null);
     let name = str_of(i, "name");
     let at = if name.is_empty() {
         "item".to_string()
@@ -662,12 +671,12 @@ fn apply_rt_ext(r: &mut RealtimeRequest, ext: &Value) {
     }
 }
 
-fn request_v5(i: &Value, auth: irs_core::Auth) -> Request {
+fn request_v5(i: &Value, auth: lsock_core::Auth) -> Request {
     let scripts = i.get("scripts").cloned().unwrap_or(Value::Null);
     let st = i.get("settings").cloned().unwrap_or(Value::Null);
     let b = |o: &Value, k: &str, d: bool| o.get(k).and_then(Value::as_bool).unwrap_or(d);
     let cookies = st.get("cookies").cloned().unwrap_or(Value::Null);
-    let ext = i.get("x-irs").cloned().unwrap_or(Value::Null);
+    let ext = item_ext(i).cloned().unwrap_or(Value::Null);
     Request {
         name: str_of(i, "name"),
         description: desc_v5(i),
@@ -815,7 +824,7 @@ pub fn export_v5(b: &WorkspaceBundle) -> Result<String> {
     }
     if !ext_items.is_empty() || !b.protos.is_empty() {
         doc.insert(
-            "x-insomnia-rs".into(),
+            "x-logic-socket".into(),
             json!({
                 "version": 1,
                 "protoFiles": b.protos.iter().map(|p| json!({
@@ -876,7 +885,7 @@ fn collection_out(items: &[Item], parent: &str, ext: &mut Vec<Value>) -> Vec<Val
                 let mut v = request_out(&req, m);
                 v.as_object_mut()
                     .unwrap()
-                    .insert("x-irs".into(), json!({ "kind": "sse" }));
+                    .insert("x-lsock".into(), json!({ "kind": "sse" }));
                 out.push(v);
             }
             Node::Realtime(r) => {
@@ -899,7 +908,7 @@ fn collection_out(items: &[Item], parent: &str, ext: &mut Vec<Value>) -> Vec<Val
                     },
                     "authentication": auth_to_json(&r.authentication),
                     "headers": kvs_out(&r.headers),
-                    "x-irs": {
+                    "x-lsock": {
                         "payload": r.payload, "payloadFormat": r.payload_format,
                         "subprotocols": r.subprotocols,
                         "event": if sio { Value::from(r.event.clone()) } else { Value::Null },
@@ -925,7 +934,7 @@ fn collection_out(items: &[Item], parent: &str, ext: &mut Vec<Value>) -> Vec<Val
                     "protoFileId": "",
                     "protoMethodName": g.method,
                     "reflectionApi": { "enabled": false, "url": "", "apiKey": "", "module": "" },
-                    "x-irs": { "schemaSource": g.schema_source, "timeoutMs": g.timeout_ms },
+                    "x-lsock": { "schemaSource": g.schema_source, "timeoutMs": g.timeout_ms },
                 }));
             }
             Node::Mcp(s) => ext.push(ext_item("McpServer", parent, m, s)),
@@ -962,7 +971,7 @@ fn request_out(r: &Request, m: &Meta) -> Value {
     if r.settings.disable_user_agent {
         v.as_object_mut()
             .unwrap()
-            .insert("x-irs".into(), json!({ "disableUserAgent": true }));
+            .insert("x-lsock".into(), json!({ "disableUserAgent": true }));
     }
     v
 }

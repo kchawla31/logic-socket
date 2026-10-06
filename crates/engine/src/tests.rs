@@ -1,6 +1,6 @@
 use super::*;
 use axum::{Router, body::Bytes, http::HeaderMap, http::Uri, routing::any};
-use irs_core::{Body, mime};
+use lsock_core::{Body, mime};
 use serde_json::{Value, json};
 
 async fn server() -> String {
@@ -25,7 +25,7 @@ async fn server() -> String {
     format!("http://{addr}")
 }
 
-fn vars(v: Value) -> irs_core::VarMap {
+fn vars(v: Value) -> lsock_core::VarMap {
     serde_json::from_value(v).unwrap()
 }
 
@@ -187,7 +187,7 @@ fn layers_follow_insomnia_precedence() {
                 None,
                 Workspace {
                     name: "Globals".into(),
-                    scope: irs_core::WorkspaceScope::Environment,
+                    scope: lsock_core::WorkspaceScope::Environment,
                     ..Default::default()
                 },
             )
@@ -407,9 +407,9 @@ async fn send_request_from_script_reaches_server_and_iteration_data_renders() {
         insomnia.variables.set('tokenPath', r.json().path);"#
     ));
     req.headers
-        .push(irs_core::KeyValue::new("X-Token-Path", "{{ tokenPath }}"));
+        .push(lsock_core::KeyValue::new("X-Token-Path", "{{ tokenPath }}"));
     req.headers
-        .push(irs_core::KeyValue::new("X-Row", "{{ email }}"));
+        .push(lsock_core::KeyValue::new("X-Row", "{{ email }}"));
     f.e.store.update(&req).unwrap();
     let mut state = RunState {
         iteration_data: vars(json!({ "email": "a@b.c" })),
@@ -484,19 +484,19 @@ async fn without_sub_environment_insomnia_environment_is_the_base() {
 
 mod ai {
     use super::*;
-    use irs_core::{
+    use lsock_core::{
         KeySource, LlmPromptMessage, LlmProvider, LlmRequest, McpSampling, McpServer, McpTransport,
     };
-    use irs_llm::agent::{AgentEvent, AllowAll};
+    use lsock_llm::agent::{AgentEvent, AllowAll};
 
     async fn setup() -> (
         Engine,
         Doc<Workspace>,
         Doc<LlmProvider>,
-        irs_llm::mock::MockLlm,
+        lsock_llm::mock::MockLlm,
     ) {
-        let mock = irs_llm::mock::MockLlm::default();
-        let base = irs_llm::mock::spawn(mock.clone(), 0).await.unwrap();
+        let mock = lsock_llm::mock::MockLlm::default();
+        let base = lsock_llm::mock::spawn(mock.clone(), 0).await.unwrap();
         let e = Engine::in_memory();
         let ws = e
             .store
@@ -521,7 +521,7 @@ mod ai {
                 },
             )
             .unwrap();
-        e.secrets().set(p.id(), irs_llm::mock::MOCK_KEY).unwrap();
+        e.secrets().set(p.id(), lsock_llm::mock::MOCK_KEY).unwrap();
         (e, ws, p, mock)
     }
 
@@ -529,7 +529,7 @@ mod ai {
     async fn key_sources_resolve_and_missing_keys_explain_how_to_fix() {
         let (e, ws, p, _) = setup().await;
         let (_, cfg) = e.provider_config(p.id(), None).unwrap();
-        assert_eq!(cfg.api_key.as_deref(), Some(irs_llm::mock::MOCK_KEY));
+        assert_eq!(cfg.api_key.as_deref(), Some(lsock_llm::mock::MOCK_KEY));
 
         let mut tpl = p.clone();
         tpl.key_source = KeySource::Template {
@@ -555,12 +555,12 @@ mod ai {
 
         let mut envvar = p.clone();
         envvar.key_source = KeySource::Env {
-            var: "IRS_TEST_SURELY_UNSET_KEY".into(),
+            var: "LSOCK_TEST_SURELY_UNSET_KEY".into(),
         };
         e.store.update(&envvar).unwrap();
         let err = e.provider_config(p.id(), None).unwrap_err().to_string();
         assert!(
-            err.contains("set the IRS_TEST_SURELY_UNSET_KEY environment variable"),
+            err.contains("set the LSOCK_TEST_SURELY_UNSET_KEY environment variable"),
             "{err}"
         );
 
@@ -583,7 +583,7 @@ mod ai {
     #[tokio::test]
     async fn ai_request_renders_runs_with_mcp_tools_and_persists() {
         let (e, ws, p, mock) = setup().await;
-        let mcp_url = irs_mcp::mock::spawn_http(Default::default(), 0)
+        let mcp_url = lsock_mcp::mock::spawn_http(Default::default(), 0)
             .await
             .unwrap();
         let mut env = e.base_environment(ws.id()).unwrap();
@@ -649,7 +649,7 @@ mod ai {
         assert!(
             !serde_json::to_string(&*run)
                 .unwrap()
-                .contains(irs_llm::mock::MOCK_KEY),
+                .contains(lsock_llm::mock::MOCK_KEY),
             "no secrets persisted"
         );
         assert!(
@@ -676,7 +676,7 @@ mod ai {
     #[tokio::test]
     async fn saved_server_with_sampling_enabled_uses_the_provider() {
         let (e, ws, p, _) = setup().await;
-        let mcp_url = irs_mcp::mock::spawn_http(Default::default(), 0)
+        let mcp_url = lsock_mcp::mock::spawn_http(Default::default(), 0)
             .await
             .unwrap();
         let server = e
@@ -696,7 +696,7 @@ mod ai {
                 },
             )
             .unwrap();
-        let client = irs_mcp::Client::connect(e.mcp_connect_options(server.id()).unwrap())
+        let client = lsock_mcp::Client::connect(e.mcp_connect_options(server.id()).unwrap())
             .await
             .unwrap();
         let r = client
@@ -714,7 +714,7 @@ fn realtime_options_render_and_inherit() {
         f.e.store
             .insert(
                 Some(f.folder.id()),
-                irs_core::RealtimeRequest {
+                lsock_core::RealtimeRequest {
                     kind: "socketio".into(),
                     url: "{{ _.base }}/{{ path }}".into(),
                     headers: vec![KeyValue::new("X-User", "{{ user }}")],
@@ -725,7 +725,7 @@ fn realtime_options_render_and_inherit() {
             )
             .unwrap();
     let o = f.e.realtime_options(rt.id()).unwrap();
-    assert_eq!(o.kind, irs_realtime::Kind::Socketio);
+    assert_eq!(o.kind, lsock_realtime::Kind::Socketio);
     assert_eq!(o.url, "http://x/users");
     assert!(
         o.headers.contains(&("X-Outer".into(), "o".into())),
@@ -825,7 +825,7 @@ mod oauth {
         response::Redirect,
         routing::{get, post},
     };
-    use irs_core::OAuth2Config;
+    use lsock_core::OAuth2Config;
     use sha2::Digest as _;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
@@ -1088,7 +1088,7 @@ mod oauth {
 mod phase5 {
     use super::*;
     use crate::transfer::{ExportFormat, ExportOptions, ImportMode, ImportOptions};
-    use irs_core::{LlmRequest, McpServer, McpTransport, OAuth2Token};
+    use lsock_core::{LlmRequest, McpServer, McpTransport, OAuth2Token};
 
     fn raw_value(e: &Engine, env_id: &str, key: &str) -> Value {
         e.store.raw(env_id).unwrap().unwrap().data["data"][key].clone()
@@ -1452,7 +1452,7 @@ mod phase5 {
             .remove(0);
         let rt = e
             .store
-            .insert(Some(&ws), irs_core::RealtimeRequest::default())
+            .insert(Some(&ws), lsock_core::RealtimeRequest::default())
             .unwrap();
         let out = e
             .export_workspace(&ws, ExportFormat::Postman, &ExportOptions::default())
@@ -1493,7 +1493,7 @@ mod phase5 {
             code.headers
                 .contains(&("Content-Type".into(), "application/json".into()))
         );
-        let curl = irs_convert::codegen::generate(&code, irs_convert::codegen::Target::Curl);
+        let curl = lsock_convert::codegen::generate(&code, lsock_convert::codegen::Target::Curl);
         assert!(
             curl.contains("--header 'Authorization: Bearer folder-token'"),
             "{curl}"
@@ -1504,7 +1504,7 @@ mod phase5 {
 
 mod git_sync {
     use super::*;
-    use irs_core::GitRepo;
+    use lsock_core::GitRepo;
 
     fn teammate(name: &str) -> Engine {
         let _ = name;

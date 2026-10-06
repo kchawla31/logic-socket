@@ -17,7 +17,7 @@ interface Props {
 }
 
 function useExpanded(workspaceId: string) {
-  const key = `irs-expanded-${workspaceId}`;
+  const key = `lsock-expanded-${workspaceId}`;
   const [set, setSet] = useState<Set<string>>(() => {
     try {
       return new Set(JSON.parse(localStorage.getItem(key) || '[]'));
@@ -143,7 +143,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
             aria-selected={activeId === n.id}
             aria-expanded={n.kind === 'folder' ? open : undefined}
             draggable={renaming !== n.id}
-            onDragStart={e => e.dataTransfer.setData('text/irs-id', n.id)}
+            onDragStart={e => e.dataTransfer.setData('text/lsock-id', n.id)}
             onDragOver={e => {
               e.preventDefault();
               setDragOver(n.id);
@@ -153,7 +153,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
               e.preventDefault();
               e.stopPropagation();
               setDragOver(null);
-              drop(e.dataTransfer.getData('text/irs-id'), n, nodes, parentId);
+              drop(e.dataTransfer.getData('text/lsock-id'), n, nodes, parentId);
             }}
             onClick={() => (n.kind === 'folder' ? (toggle(n.id), onOpen(n)) : onOpen(n))}
             onDoubleClick={() => setRenaming(n.id)}
@@ -250,7 +250,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
         onDragOver={e => e.preventDefault()}
         onDrop={e => {
           e.preventDefault();
-          drop(e.dataTransfer.getData('text/irs-id'), null, tree, workspaceId);
+          drop(e.dataTransfer.getData('text/lsock-id'), null, tree, workspaceId);
         }}
         onContextMenu={e => {
           e.preventDefault();

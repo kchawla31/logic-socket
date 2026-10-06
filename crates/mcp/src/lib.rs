@@ -78,7 +78,7 @@ impl ConnectOptions {
             transport,
             root_uris: vec![],
             request_timeout: Duration::from_secs(60),
-            client_name: "insomnia-rs".into(),
+            client_name: "logic-socket".into(),
             sampling: None,
         }
     }
@@ -488,7 +488,7 @@ async fn dispatch(
                             "message": if method == "sampling/createMessage" {
                                 "Sampling is disabled for this server (enable it and pick an AI provider in the server settings)".to_string()
                             } else {
-                                format!("insomnia-rs does not support '{method}' yet")
+                                format!("logic-socket does not support '{method}' yet")
                             },
                         }}),
                     };

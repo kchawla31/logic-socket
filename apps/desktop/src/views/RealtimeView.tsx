@@ -155,7 +155,7 @@ export function RealtimeView({ id }: { id: string }) {
         <span>↑ {sent} sent</span>
         <span>↓ {received} received</span>
       </div>
-      <Split direction="row" initial={460} min={320} storageKey="irs-split-rt">
+      <Split direction="row" initial={460} min={320} storageKey="lsock-split-rt">
         <div className="flex h-full min-h-0 flex-col">
           <Tabs
             value={tab}
@@ -290,7 +290,7 @@ export function RealtimeView({ id }: { id: string }) {
               <Trash2 className="size-3.5" /> Clear
             </Button>
           </div>
-          <Split direction="col" initial={420} min={120} storageKey="irs-split-rt-log">
+          <Split direction="col" initial={420} min={120} storageKey="lsock-split-rt-log">
             <div ref={list} className="h-full overflow-auto font-mono text-[12px]">
               {shown.map(e => (
                 <button

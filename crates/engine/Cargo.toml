@@ -1,19 +1,19 @@
 [package]
-name = "irs-engine"
+name = "lsock-engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-irs-core.workspace = true
-irs-templating.workspace = true
-irs-http.workspace = true
-irs-mcp.workspace = true
-irs-scripting.workspace = true
-irs-llm.workspace = true
-irs-realtime.workspace = true
-irs-grpc.workspace = true
-irs-convert.workspace = true
+lsock-core.workspace = true
+lsock-templating.workspace = true
+lsock-http.workspace = true
+lsock-mcp.workspace = true
+lsock-scripting.workspace = true
+lsock-llm.workspace = true
+lsock-realtime.workspace = true
+lsock-grpc.workspace = true
+lsock-convert.workspace = true
 url.workspace = true
 keyring.workspace = true
 sha2 = "0.10"

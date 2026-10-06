@@ -1,12 +1,12 @@
 [package]
-name = "irs-scripting"
+name = "lsock-scripting"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-irs-core.workspace = true
-irs-templating.workspace = true
+lsock-core.workspace = true
+lsock-templating.workspace = true
 rquickjs.workspace = true
 tokio.workspace = true
 serde.workspace = true

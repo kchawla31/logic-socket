@@ -1,5 +1,5 @@
 [package]
-name = "irs-realtime"
+name = "lsock-realtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -213,11 +213,11 @@ async fn lists_models() {
 // ---------------------------------------------------------------- agent ↔ MCP
 
 async fn mcp_source(name: &str) -> ToolSource {
-    let url = irs_mcp::mock::spawn_http(Default::default(), 0)
+    let url = lsock_mcp::mock::spawn_http(Default::default(), 0)
         .await
         .unwrap();
-    let client = irs_mcp::Client::connect(irs_mcp::ConnectOptions::new(
-        irs_mcp::TransportConfig::Http {
+    let client = lsock_mcp::Client::connect(lsock_mcp::ConnectOptions::new(
+        lsock_mcp::TransportConfig::Http {
             url,
             headers: vec![],
             validate_certificates: true,
@@ -423,10 +423,10 @@ async fn max_turns_stops_cleanly() {
 #[tokio::test]
 async fn mcp_sampling_is_answered_by_the_llm() {
     let (cfg, mock) = provider(ProviderKind::Anthropic).await;
-    let url = irs_mcp::mock::spawn_http(Default::default(), 0)
+    let url = lsock_mcp::mock::spawn_http(Default::default(), 0)
         .await
         .unwrap();
-    let mut opts = irs_mcp::ConnectOptions::new(irs_mcp::TransportConfig::Http {
+    let mut opts = lsock_mcp::ConnectOptions::new(lsock_mcp::TransportConfig::Http {
         url,
         headers: vec![],
         validate_certificates: true,
@@ -436,7 +436,7 @@ async fn mcp_sampling_is_answered_by_the_llm() {
         model: "mock-large".into(),
         max_tokens: 500,
     }));
-    let client = irs_mcp::Client::connect(opts).await.unwrap();
+    let client = lsock_mcp::Client::connect(opts).await.unwrap();
     let r = client
         .call_tool("ask_llm", json!({"prompt": "say hi"}))
         .await
@@ -453,15 +453,15 @@ async fn mcp_sampling_is_answered_by_the_llm() {
             .entries()
             .iter()
             .any(|e| e.method.as_deref() == Some("sampling/createMessage")
-                && e.direction == irs_mcp::Direction::Out)
+                && e.direction == lsock_mcp::Direction::Out)
     );
 
     // without a handler the client refuses with a readable reason
-    let url = irs_mcp::mock::spawn_http(Default::default(), 0)
+    let url = lsock_mcp::mock::spawn_http(Default::default(), 0)
         .await
         .unwrap();
-    let plain = irs_mcp::Client::connect(irs_mcp::ConnectOptions::new(
-        irs_mcp::TransportConfig::Http {
+    let plain = lsock_mcp::Client::connect(lsock_mcp::ConnectOptions::new(
+        lsock_mcp::TransportConfig::Http {
             url,
             headers: vec![],
             validate_certificates: true,

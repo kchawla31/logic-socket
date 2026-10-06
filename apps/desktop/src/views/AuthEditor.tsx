@@ -196,7 +196,7 @@ export function AuthEditor({
           {auth.grantType === 'authorization_code' && (
             <>
               <Field label="Authorization URL">{v(auth.authorizationUrl, authorizationUrl => onChange({ ...auth, authorizationUrl }), 'https://auth.example.com/authorize')}</Field>
-              <Field label="Redirect URL" hint="Must be http://localhost or http://127.0.0.1 with a free port — insomnia-rs listens there during sign-in. Register it with your provider.">
+              <Field label="Redirect URL" hint="Must be http://localhost or http://127.0.0.1 with a free port — Logic Socket listens there during sign-in. Register it with your provider.">
                 {v(auth.redirectUrl, redirectUrl => onChange({ ...auth, redirectUrl }))}
               </Field>
               <Field label="PKCE (S256)">

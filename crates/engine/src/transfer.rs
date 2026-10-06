@@ -1,11 +1,11 @@
-//! Import/export between the store and other formats (see `irs-convert`), and
+//! Import/export between the store and other formats (see `lsock-convert`), and
 //! "generate code" for a rendered request.
 
 use std::collections::{HashMap, HashSet};
 
-use irs_convert::codegen::{CodeBody, CodeRequest, Part};
-use irs_convert::{Entry, Format, Imported, Item, Meta as CMeta, Node, WorkspaceBundle};
-use irs_core::{
+use lsock_convert::codegen::{CodeBody, CodeRequest, Part};
+use lsock_convert::{Entry, Format, Imported, Item, Meta as CMeta, Node, WorkspaceBundle};
+use lsock_core::{
     Auth, CookieJar, Doc, Environment, Folder, GrpcRequest, LlmRequest, McpServer, Meta, Model,
     ProtoFile, RawDoc, RealtimeRequest, Request, Tx, Workspace, mime, new_id, now_ms,
 };
@@ -13,7 +13,7 @@ use serde::Serialize;
 
 use crate::{Engine, EngineError, Result, vault};
 
-type StoreResult<T> = std::result::Result<T, irs_core::StoreError>;
+type StoreResult<T> = std::result::Result<T, lsock_core::StoreError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ImportMode {
@@ -189,7 +189,7 @@ fn pre_key_mcp(items: &[Item], ids: &mut HashMap<String, String>) {
 impl Engine {
     /// Detect the format of `text` and import it.
     pub fn import_text(&self, text: &str, opts: &ImportOptions) -> Result<ImportSummary> {
-        let imported = irs_convert::import(text).map_err(|e| err(e.to_string()))?;
+        let imported = lsock_convert::import(text).map_err(|e| err(e.to_string()))?;
         self.import_bundles(imported, opts)
     }
 
@@ -532,7 +532,7 @@ impl Engine {
         opts: &ExportOptions,
     ) -> Result<Exported> {
         let b = self.export_bundle(workspace_id, opts)?;
-        let slug = irs_convert::insomnia::file_name_for(&b.workspace.name);
+        let slug = lsock_convert::insomnia::file_name_for(&b.workspace.name);
         let stem = slug
             .trim_start_matches("insomnia.")
             .trim_end_matches(".yaml")
@@ -552,16 +552,16 @@ impl Engine {
         let (file_name, content) = match format {
             ExportFormat::InsomniaV5 => (
                 slug,
-                irs_convert::insomnia::export_v5(&b).map_err(|e| err(e.to_string()))?,
+                lsock_convert::insomnia::export_v5(&b).map_err(|e| err(e.to_string()))?,
             ),
             ExportFormat::Postman => {
-                let (json, skipped) = irs_convert::postman::export_collection(&b);
+                let (json, skipped) = lsock_convert::postman::export_collection(&b);
                 if skipped > 0 {
                     warnings.push(format!("{skipped} item(s) have no Postman equivalent (gRPC, WebSocket/SSE/Socket.IO, MCP, AI) and were skipped"));
                 }
                 (format!("{stem}.postman_collection.json"), json)
             }
-            ExportFormat::Har => (format!("{stem}.har"), irs_convert::har::export(&b)),
+            ExportFormat::Har => (format!("{stem}.har"), lsock_convert::har::export(&b)),
         };
         Ok(Exported {
             file_name,
@@ -605,7 +605,7 @@ impl Engine {
             }
             other => other.clone(),
         };
-        let mut url = irs_http::build_url(&p.request, p.request.settings.encode_url)
+        let mut url = lsock_http::build_url(&p.request, p.request.settings.encode_url)
             .map_err(|e| err(e.to_string()))?;
         let mut headers: Vec<(String, String)> = p
             .request
@@ -615,7 +615,7 @@ impl Engine {
             .map(|h| (h.name.clone(), h.value.clone()))
             .collect();
         let mut cookies = vec![];
-        irs_http::apply_auth(&auth, &mut headers, &mut url, &mut cookies);
+        lsock_http::apply_auth(&auth, &mut headers, &mut url, &mut cookies);
         if !cookies.is_empty() {
             headers.push(("Cookie".into(), cookies.join("; ")));
         }

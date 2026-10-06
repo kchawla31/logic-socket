@@ -1,10 +1,10 @@
-//! `irs run collection` — flags mirror `inso run collection` where possible.
+//! `lsock run collection` — flags mirror `inso run collection` where possible.
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use clap::{Args, Subcommand};
-use irs_core::{Folder, Request, Workspace};
-use irs_engine::Engine;
-use irs_runner::{RunEvent, RunOptions, report};
+use lsock_core::{Folder, Request, Workspace};
+use lsock_engine::Engine;
+use lsock_runner::{RunEvent, RunOptions, report};
 
 use crate::out::*;
 
@@ -93,7 +93,7 @@ pub async fn run(engine: &Engine, cmd: RunCmd) -> Result<()> {
     }
 
     let mut data = match &a.data {
-        Some(p) => irs_runner::load_data_file(p)?,
+        Some(p) => lsock_runner::load_data_file(p)?,
         None => vec![],
     };
     for kv in &a.env_vars {
@@ -122,7 +122,7 @@ pub async fn run(engine: &Engine, cmd: RunCmd) -> Result<()> {
 
     // Stream progress for the human reporters when printing to a terminal.
     let live = a.reporter == "spec" && a.output.is_none();
-    let summary = irs_runner::run(engine, &ids, &opts, |ev| {
+    let summary = lsock_runner::run(engine, &ids, &opts, |ev| {
         if !live {
             return;
         }

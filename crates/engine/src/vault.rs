@@ -10,7 +10,7 @@ use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
-use irs_core::{Doc, Environment, VarMap};
+use lsock_core::{Doc, Environment, VarMap};
 use serde_json::Value;
 
 use crate::{Engine, EngineError, Result};
@@ -48,7 +48,7 @@ pub struct VaultStatus {
 impl Engine {
     fn vault_key_b64(&self) -> Option<String> {
         // CI and scripted runs can supply the key without a keychain
-        std::env::var("IRS_VAULT_KEY")
+        std::env::var("LSOCK_VAULT_KEY")
             .ok()
             .filter(|k| !k.trim().is_empty())
             .or_else(|| self.secrets.get(KEY_ID))
@@ -89,7 +89,7 @@ impl Engine {
             return Ok(sealed.to_string());
         };
         let cipher = self.vault_cipher(false)?.ok_or_else(|| {
-            err("this machine doesn't have the vault key for these secrets — import it (Settings → Vault, or `irs vault import-key`) or re-enter the values")
+            err("this machine doesn't have the vault key for these secrets — import it (Settings → Vault, or `lsock vault import-key`) or re-enter the values")
         })?;
         let bytes = B64.decode(b64).map_err(|_| err("corrupt secret value"))?;
         if bytes.len() < 12 {

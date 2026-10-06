@@ -587,7 +587,7 @@ impl Default for GrpcRequest {
 pub enum KeySource {
     /// Not needed (e.g. local Ollama).
     None,
-    /// OS keychain entry `insomnia-rs` / `<provider id>`.
+    /// OS keychain entry `logic-socket` / `<provider id>`.
     #[default]
     Keychain,
     /// Process environment variable, e.g. `ANTHROPIC_API_KEY`.
