@@ -18,6 +18,7 @@ impl Harness {
         let app = build(mock_builder(), Engine::in_memory())
             .build(mock_context(noop_assets()))
             .unwrap();
+        connect_events(&app);
         let w = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
@@ -772,5 +773,35 @@ fn import_export_secrets_code_and_git_commands() {
             .as_array()
             .unwrap()
             .is_empty()
+    );
+}
+
+#[test]
+fn creating_and_deleting_items_notifies_the_ui() {
+    use tauri::Listener;
+    let h = Harness::new();
+    let got = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let g = got.clone();
+    h.w.listen_any("db-changed", move |ev| {
+        g.lock()
+            .unwrap()
+            .push(serde_json::from_str(ev.payload()).unwrap_or(Value::Null));
+    });
+    let ws = h.ok("workspace_create", json!({"name": "API"}));
+    let f = h.ok(
+        "folder_create",
+        json!({"parentId": ws["id"], "name": "Temp"}),
+    );
+    h.ok("item_delete", json!({"id": f["id"]}));
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let events = got.lock().unwrap().clone();
+    assert!(events.len() >= 3, "one notification per change: {events:?}");
+    assert!(
+        events
+            .last()
+            .unwrap()
+            .to_string()
+            .contains(f["id"].as_str().unwrap()),
+        "{events:?}"
     );
 }

@@ -101,6 +101,7 @@ fn main() {
     let app = lsock_desktop::build(mock_builder(), engine)
         .build(mock_context(noop_assets()))
         .expect("build app");
+    lsock_desktop::connect_events(&app);
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .unwrap();

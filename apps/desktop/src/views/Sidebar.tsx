@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Copy, Download, Folder, FolderPlus, ListChecks, Network, Pencil, Plug, Plus, Radio, Search, Sparkles, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Download, Folder, MoreHorizontal, FolderPlus, ListChecks, Network, Pencil, Plug, Plus, Radio, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { IconButton, useDialog, useToast } from '../components/ui';
@@ -114,6 +114,28 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
     }
   };
 
+  // ⌘⌫ / Ctrl+Backspace deletes the selected item (not while typing in a field or editor)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || (e.key !== 'Backspace' && e.key !== 'Delete') || !activeId) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.closest('input, textarea, select, [contenteditable="true"], .cm-editor'))) return;
+      const find = (list: TreeNode[]): TreeNode | undefined => {
+        for (const n of list) {
+          if (n.id === activeId) return n;
+          const hit = find(n.children);
+          if (hit) return hit;
+        }
+      };
+      const node = find(tree);
+      if (!node) return;
+      e.preventDefault();
+      remove(node);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   // Drop onto folder = move inside (end); onto request/server = place before it.
   const drop = async (dragId: string, target: TreeNode | null, siblings: TreeNode[], parentId: string) => {
     if (!dragId || dragId === target?.id) return;
@@ -158,7 +180,9 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
             onClick={() => (n.kind === 'folder' ? (toggle(n.id), onOpen(n)) : onOpen(n))}
             onDoubleClick={() => setRenaming(n.id)}
             onContextMenu={e => {
+              // stop here, or the tree's own handler replaces this item's menu with the "New…" menu
               e.preventDefault();
+              e.stopPropagation();
               setMenu({ x: e.clientX, y: e.clientY, node: n });
             }}
             style={{ paddingLeft: 8 + depth * 14 }}
@@ -209,6 +233,19 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
                 }}
               >
                 <Plus className="size-3.5" />
+              </IconButton>
+            )}
+            {renaming !== n.id && (
+              <IconButton
+                label={`More actions for ${n.name || 'item'}`}
+                className={cn('size-5 group-hover:visible', menu?.node?.id === n.id ? 'visible' : 'invisible')}
+                onClick={e => {
+                  e.stopPropagation();
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setMenu({ x: r.left, y: r.bottom + 4, node: n });
+                }}
+              >
+                <MoreHorizontal className="size-3.5" />
               </IconButton>
             )}
           </div>
@@ -318,7 +355,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
               >
                 Duplicate
               </MenuItem>
-              <MenuItem icon={<Trash2 className="size-3.5" />} danger onClick={() => remove(menu.node!)}>
+              <MenuItem icon={<Trash2 className="size-3.5" />} danger onClick={() => remove(menu.node!)} hint="⌘⌫">
                 Delete
               </MenuItem>
             </>
@@ -334,11 +371,13 @@ function MenuItem({
   icon,
   onClick,
   danger,
+  hint,
 }: {
   children: React.ReactNode;
   icon: React.ReactNode;
   onClick: () => void;
   danger?: boolean;
+  hint?: string;
 }) {
   return (
     <button
@@ -348,6 +387,7 @@ function MenuItem({
     >
       {icon}
       {children}
+      {hint && <span className="ml-auto pl-4 text-[11px] text-muted">{hint}</span>}
     </button>
   );
 }

@@ -1035,13 +1035,6 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             grpc_schemas: Default::default(),
             grpc_calls: Default::default(),
         })
-        .setup(move |app| {
-            let handle = app.handle().clone();
-            engine.store.subscribe(move |changes| {
-                let _ = handle.emit("db-changed", changes);
-            });
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             tree_get,
             workspace_list,
@@ -1161,13 +1154,27 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Forward database changes to the UI as `db-changed` (keeps every view in sync).
+/// Called right after building, so it doesn't depend on the event loop starting.
+pub fn connect_events<R: tauri::Runtime>(app: &tauri::App<R>) {
+    let handle = app.handle().clone();
+    app.state::<AppState>()
+        .engine
+        .store
+        .subscribe(move |changes| {
+            let _ = handle.emit("db-changed", changes);
+        });
+}
+
 pub fn run() {
     let engine = Engine::open(lsock_engine::default_data_dir())
         .expect("could not open the logic-socket database");
     let _ = seed_if_empty(&engine);
-    build(tauri::Builder::default(), engine)
-        .run(tauri::generate_context!())
-        .expect("error while running logic-socket");
+    let app = build(tauri::Builder::default(), engine)
+        .build(tauri::generate_context!())
+        .expect("error while building logic-socket");
+    connect_events(&app);
+    app.run(|_, _| {});
 }
 
 #[cfg(test)]
