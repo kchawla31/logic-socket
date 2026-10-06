@@ -62,13 +62,7 @@ pub fn default_data_dir() -> PathBuf {
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".local/share"))
     };
-    let dir = base.join("logic-socket");
-    // data from before the rename moves over once
-    let legacy = base.join("insomnia-rs");
-    if !dir.exists() && legacy.is_dir() {
-        let _ = std::fs::rename(&legacy, &dir);
-    }
-    dir
+    base.join("logic-socket")
 }
 
 /// Bodies larger than this are stored as files next to the database.
@@ -120,18 +114,7 @@ impl Engine {
 
     /// Open (or create) the database in `data_dir`.
     pub fn open(data_dir: PathBuf) -> Result<Self> {
-        let db = data_dir.join("logic-socket.db");
-        let legacy = data_dir.join("insomnia.db");
-        if !db.exists() && legacy.exists() {
-            for suffix in ["", "-wal", "-shm"] {
-                let from = data_dir.join(format!("insomnia.db{suffix}"));
-                if from.exists() {
-                    let _ =
-                        std::fs::rename(&from, data_dir.join(format!("logic-socket.db{suffix}")));
-                }
-            }
-        }
-        let store = Store::open(db)?;
+        let store = Store::open(data_dir.join("logic-socket.db"))?;
         Ok(Self::new(store, Some(data_dir)))
     }
 

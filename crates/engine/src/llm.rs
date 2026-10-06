@@ -13,8 +13,6 @@ use serde_json::{Value, json};
 use crate::{Engine, EngineError, Result};
 
 const KEYCHAIN_SERVICE: &str = "logic-socket";
-/// Service name used before the project was renamed (read once, then copied over).
-const LEGACY_KEYCHAIN_SERVICE: &str = "insomnia-rs";
 
 /// Where provider API keys live.
 pub trait SecretStore: Send + Sync {
@@ -28,18 +26,10 @@ pub struct KeychainStore;
 
 impl SecretStore for KeychainStore {
     fn get(&self, id: &str) -> Option<String> {
-        if let Ok(v) = keyring::Entry::new(KEYCHAIN_SERVICE, id)
+        keyring::Entry::new(KEYCHAIN_SERVICE, id)
             .ok()?
             .get_password()
-        {
-            return Some(v);
-        }
-        let old = keyring::Entry::new(LEGACY_KEYCHAIN_SERVICE, id)
-            .ok()?
-            .get_password()
-            .ok()?;
-        let _ = self.set(id, &old);
-        Some(old)
+            .ok()
     }
     fn set(&self, id: &str, secret: &str) -> std::result::Result<(), String> {
         keyring::Entry::new(KEYCHAIN_SERVICE, id)
