@@ -17,7 +17,7 @@ export function methodColor(m?: string | null): string {
       return 'text-amber-600 dark:text-amber-400';
     case 'PUT':
     case 'PATCH':
-      return 'text-sky-600 dark:text-sky-400';
+      return 'text-sky-700 dark:text-sky-300';
     case 'DELETE':
       return 'text-rose-600 dark:text-rose-400';
     default:

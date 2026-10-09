@@ -482,8 +482,29 @@ pub struct McpServer {
     pub authentication: Auth,
     pub ssl_validation: Option<bool>,
     pub sampling: McpSampling,
+    /// AI provider that reads tool descriptions to label each tool Read / Create /
+    /// Update / Delete. `None` (the default) sends nothing to any provider.
+    pub action_provider_id: Option<String>,
 }
 model!(McpServer, "McpServer", "mcp");
+
+/// AI-classified tool actions for one MCP server, stored as its child (local only,
+/// never exported). Keyed by tool name; `digest` detects a changed description.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct McpToolActions {
+    pub provider_id: String,
+    pub actions: std::collections::BTreeMap<String, CachedToolAction>,
+}
+model!(McpToolActions, "McpToolActions", "mta");
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CachedToolAction {
+    /// `read` | `create` | `update` | `delete`
+    pub action: String,
+    pub digest: String,
+}
 
 // ---------------------------------------------------------------- Realtime
 
@@ -636,6 +657,8 @@ pub struct LlmRequest {
     pub max_turns: u32,
     /// `none` | `read-only` | `all`
     pub auto_approve: String,
+    /// Tools the user chose to always allow (`server id::tool name`).
+    pub always_allow: Vec<String>,
 }
 model!(LlmRequest, "LlmRequest", "llm");
 
@@ -656,6 +679,7 @@ impl Default for LlmRequest {
             mcp_server_ids: vec![],
             max_turns: 8,
             auto_approve: "read-only".into(),
+            always_allow: vec![],
         }
     }
 }

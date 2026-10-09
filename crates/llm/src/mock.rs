@@ -78,6 +78,29 @@ fn plan(messages: &[Value], tool_names: &[String]) -> Plan {
     }
     let text = last_user_text(messages);
     let lower = text.to_lowercase();
+    // Tool classification (see lsock_mcp::action::classify_prompt): a stand-in that
+    // reads each description with simple word rules and answers in JSON.
+    if lower.starts_with("classify each mcp tool") {
+        let mut out = serde_json::Map::new();
+        for line in text.lines().filter_map(|l| l.strip_prefix("- ")) {
+            let Some((name, desc)) = line.split_once(": ") else {
+                continue;
+            };
+            let d = desc.to_lowercase();
+            let has = |ws: &[&str]| ws.iter().any(|w| d.contains(w));
+            let action = if has(&["delete", "remove", "cancel"]) {
+                "delete"
+            } else if has(&["update", "change", "edit", "rename"]) {
+                "update"
+            } else if has(&["submit", "place", "buy", "sell", "send", "create", "order"]) {
+                "create"
+            } else {
+                "read"
+            };
+            out.insert(name.to_string(), json!(action));
+        }
+        return Plan::Text(Value::Object(out).to_string());
+    }
     if lower.contains("weather")
         && let Some(t) = tool_names.iter().find(|n| n.ends_with("get_weather"))
     {

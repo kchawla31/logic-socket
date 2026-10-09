@@ -6,7 +6,7 @@ import { Badge, Button, CopyButton, Empty, Input, Kbd, Select, Split, Tabs, useT
 import { api, type AgentEvent, errorText, type LlmMessage, type LlmRequest, type LlmRun, onLlmEvent, type ToolCallInfo, type ToolResultInfo, type TreeNode } from '../lib/api';
 import { cn, formatMs, modKey, timeAgo } from '../lib/utils';
 import { useProviders } from './AiProviders';
-import { HintBadges } from './McpTools';
+import { ActionBadge, actionReason } from './McpTools';
 import { useAutosave } from './RequestView';
 
 type Item =
@@ -50,10 +50,10 @@ function itemsFromRun(run: LlmRun): Item[] {
   return items;
 }
 
-function ToolCard({ item, onDecide }: { item: Extract<Item, { kind: 'tool' }>; onDecide?: (allow: boolean) => void }) {
+function ToolCard({ item, onDecide }: { item: Extract<Item, { kind: 'tool' }>; onDecide?: (allow: boolean, always?: boolean) => void }) {
   const [open, setOpen] = useState(item.state !== 'done' || !!item.result?.isError);
   const r = item.result;
-  const destructive = item.call.hints?.destructive;
+  const destructive = item.call.action?.action === 'delete';
   return (
     <div className={cn('rounded-lg border bg-app', item.state === 'pending' ? (destructive ? 'border-rose-500/60' : 'border-amber-500/60') : 'border-app')}>
       <button className="flex w-full items-center gap-2 px-3 py-2 text-left" onClick={() => setOpen(!open)}>
@@ -63,7 +63,7 @@ function ToolCard({ item, onDecide }: { item: Extract<Item, { kind: 'tool' }>; o
           {item.call.server && <span className="text-muted">{item.call.server}.</span>}
           <span className="font-semibold">{item.call.tool}</span>
         </span>
-        {item.call.hints && <HintBadges hints={item.call.hints} compact />}
+        <ActionBadge action={item.call.action} />
         <div className="flex-1" />
         {item.state === 'pending' && <Badge tone={destructive ? 'red' : 'amber'}>needs approval</Badge>}
         {item.state === 'running' && <Loader2 className="size-3.5 animate-spin text-muted" />}
@@ -72,26 +72,30 @@ function ToolCard({ item, onDecide }: { item: Extract<Item, { kind: 'tool' }>; o
       </button>
       {open && (
         <div className="border-t border-app px-3 py-2">
-          <div className="mb-1 text-[10.5px] font-semibold tracking-wide text-muted uppercase">Arguments</div>
+          <div className="mb-1 text-[13px] font-semibold tracking-tight text-app">Arguments</div>
           <JsonTree value={item.call.input} onPath={() => {}} defaultOpen={3} />
           {item.state === 'pending' && onDecide && (
             <div className="mt-3 flex items-center gap-2 rounded-md bg-subtle p-2.5">
               <ShieldAlert className={cn('size-4', destructive ? 'text-rose-500' : 'text-amber-500')} />
               <span className="flex-1 text-[12.5px]">
-                The model wants to run <b className="font-mono">{item.call.tool}</b>
-                {destructive ? ', which the server marks as destructive.' : ', which may change data.'}
+                The model wants to run <b className="font-mono">{item.call.tool}</b>. {actionReason(item.call.action)}
               </span>
               <Button size="sm" onClick={() => onDecide(false)}>
                 Deny
               </Button>
+              {item.call.allowKey && (
+                <Button size="sm" variant="ghost" onClick={() => onDecide(true, true)} title="Run this tool without asking from now on, in this AI request">
+                  Always allow
+                </Button>
+              )}
               <Button size="sm" variant={destructive ? 'danger' : 'primary'} onClick={() => onDecide(true)}>
-                Approve
+                Allow
               </Button>
             </div>
           )}
           {r && (
             <>
-              <div className="mt-2 mb-1 text-[10.5px] font-semibold tracking-wide text-muted uppercase">Result</div>
+              <div className="mt-2 mb-1 text-[13px] font-semibold tracking-tight text-app">Result</div>
               <pre className={cn('selectable max-h-64 overflow-auto rounded bg-subtle p-2 font-mono text-[12px] whitespace-pre-wrap', r.isError && 'text-rose-700 dark:text-rose-400')}>{r.text}</pre>
             </>
           )}
@@ -246,10 +250,13 @@ export function LlmView({ id, tree, onOpenProviders }: { id: string; tree: TreeN
 
   if (!req) return <Empty title="Loading…" />;
   const update = (p: Partial<LlmRequest>) => setReq({ ...req, ...p });
-  const decide = (callId: string, allow: boolean) => {
+  const decide = (call: ToolCallInfo, allow: boolean, always?: boolean) => {
     if (!runId.current) return;
-    setItems(it => it.map(x => (x.kind === 'tool' && x.call.id === callId ? { ...x, state: 'running' } : x)));
-    api.llmApprove(runId.current, callId, allow).catch(e => toast(errorText(e), 'error'));
+    setItems(it => it.map(x => (x.kind === 'tool' && x.call.id === call.id ? { ...x, state: 'running' } : x)));
+    const remember = allow && always && call.allowKey ? { requestId: id, allowKey: call.allowKey } : undefined;
+    // Keep the open editor's copy in step, so its autosave does not drop the new entry.
+    if (remember && !(req.alwaysAllow ?? []).includes(remember.allowKey)) update({ alwaysAllow: [...(req.alwaysAllow ?? []), remember.allowKey] });
+    api.llmApprove(runId.current, call.id, allow, undefined, remember).catch(e => toast(errorText(e), 'error'));
   };
 
   return (
@@ -354,11 +361,30 @@ export function LlmView({ id, tree, onOpenProviders }: { id: string; tree: TreeN
             <label className="col-span-3 flex flex-col gap-1">
               <span className="text-[11.5px] font-medium text-muted">Run tools without asking</span>
               <Select value={req.autoApprove} onChange={e => update({ autoApprove: e.target.value as LlmRequest['autoApprove'] })}>
-                <option value="read-only">Read-only tools only (recommended)</option>
+                <option value="read-only">Read tools (recommended): ask for Create, Update, Delete, and unknown tools</option>
                 <option value="none">Never — ask for every call</option>
                 <option value="all">Always — trusted servers only</option>
               </Select>
             </label>
+            {(req.alwaysAllow ?? []).length > 0 && (
+              <div className="col-span-3 flex flex-col gap-1">
+                <span className="text-[11.5px] font-medium text-muted">Always allowed</span>
+                <div className="flex flex-wrap gap-1">
+                  {(req.alwaysAllow ?? []).map(k => (
+                    <span key={k} className="inline-flex items-center gap-1 rounded border border-app bg-subtle px-1.5 py-0.5 font-mono text-[11.5px]">
+                      {k.split('::').pop()}
+                      <button
+                        aria-label={`Stop always allowing ${k.split('::').pop()}`}
+                        className="text-muted hover:text-rose-500"
+                        onClick={() => update({ alwaysAllow: (req.alwaysAllow ?? []).filter(x => x !== k) })}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             <label className="flex flex-col gap-1">
               <span className="text-[11.5px] font-medium text-muted">Max turns</span>
               <Input type="number" min={1} value={req.maxTurns} onChange={e => update({ maxTurns: Math.max(1, Number(e.target.value) || 1) })} />
@@ -457,7 +483,7 @@ export function LlmView({ id, tree, onOpenProviders }: { id: string; tree: TreeN
                       )}
                     </div>
                   ) : it.kind === 'tool' ? (
-                    <ToolCard key={it.call.id} item={it} onDecide={running ? allow => decide(it.call.id, allow) : undefined} />
+                    <ToolCard key={it.call.id} item={it} onDecide={running ? (allow, always) => decide(it.call, allow, always) : undefined} />
                   ) : (
                     <div key={i} className="rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2 font-mono text-[12.5px] text-rose-700 dark:text-rose-400">
                       {it.message}

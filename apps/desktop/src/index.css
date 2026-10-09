@@ -2,10 +2,10 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Graphite: calm neutral greys, floating panels with soft depth, indigo accent. */
+/* Graphite Studio: Graphite panels, DM Sans and DM Mono, straight blue accent. */
 @theme inline {
-  --font-sans: 'Manrope Variable', 'Manrope', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-sans: 'DM Sans Variable', 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
@@ -16,13 +16,13 @@
   --shadow-panel: var(--shadow);
 }
 
-/* the earlier violet accent maps onto Graphite's indigo everywhere */
+/* Older violet utilities follow the straight blue accent. */
 @theme {
-  --color-violet-300: #b4bdff;
-  --color-violet-400: #9aa6ff;
-  --color-violet-500: #7c8bff;
-  --color-violet-600: #5b6cff;
-  --color-violet-700: #4a57d9;
+  --color-violet-300: #c5d4ff;
+  --color-violet-400: #8eb0ff;
+  --color-violet-500: #5b8cff;
+  --color-violet-600: #2f6bff;
+  --color-violet-700: #1d4ed8;
 }
 
 :root {
@@ -33,15 +33,15 @@
   --border: #e3e4ea;
   --fg: #16171d;
   --fg-muted: #6b6e7b;
-  --accent: #5b6cff;
-  --accent-hover: #4a5af0;
-  --accent-soft: rgb(91 108 255 / 0.11);
+  --accent: #2f6bff;
+  --accent-hover: #2458e6;
+  --accent-soft: rgb(47 107 255 / 0.12);
   --accent-fg: #ffffff;
   --shadow: 0 1px 2px rgb(16 17 29 / 0.04), 0 8px 24px -12px rgb(16 17 29 / 0.16);
-  --syn-key: #4f46e5;
+  --syn-key: #1d4ed8;
   --syn-string: #15803d;
   --syn-number: #b45309;
-  --syn-keyword: #c026d3;
+  --syn-keyword: #0e7490;
   --syn-comment: #8a8d99;
   --syn-fn: #0e7490;
   color-scheme: light;
@@ -54,15 +54,15 @@
   --border: #2a2b32;
   --fg: #ecedf2;
   --fg-muted: #9497a3;
-  --accent: #7c8bff;
-  --accent-hover: #939fff;
-  --accent-soft: rgb(124 139 255 / 0.14);
-  --accent-fg: #0b0d24;
+  --accent: #8eb0ff;
+  --accent-hover: #a9c4ff;
+  --accent-soft: rgb(142 176 255 / 0.16);
+  --accent-fg: #0b1b4a;
   --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.6);
-  --syn-key: #a5b4fc;
+  --syn-key: #b6ccff;
   --syn-string: #86efac;
   --syn-number: #fcd34d;
-  --syn-keyword: #f0abfc;
+  --syn-keyword: #67e8f9;
   --syn-comment: #6c6f7b;
   --syn-fn: #67e8f9;
   color-scheme: dark;
@@ -84,7 +84,7 @@ body {
   background: var(--canvas);
   color: var(--fg);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 13.5px;
   -webkit-font-smoothing: antialiased;
   user-select: none;
   overflow: hidden;

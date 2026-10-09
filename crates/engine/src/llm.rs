@@ -222,12 +222,35 @@ impl Engine {
             options: AgentOptions {
                 max_turns: r.max_turns.max(1),
                 auto_approve: policy(&r.auto_approve),
+                always_allow: r.always_allow.iter().cloned().collect(),
                 ..Default::default()
             },
             mcp_server_ids: r.mcp_server_ids.clone(),
             provider,
             config,
         })
+    }
+
+    /// Remember "always allow" for a tool on an AI request.
+    pub fn llm_allow_tool(&self, request_id: &str, allow_key: &str) -> Result<()> {
+        let mut r = self.store.get::<LlmRequest>(request_id)?;
+        if !r.always_allow.iter().any(|k| k == allow_key) {
+            r.body.always_allow.push(allow_key.to_string());
+            self.store.update(&r)?;
+        }
+        Ok(())
+    }
+
+    /// Tool actions for an AI run: classify new tools first when the server has an AI
+    /// provider set (a failure falls back to hints and names, it never blocks the run).
+    pub async fn mcp_source_actions(
+        &self,
+        server_id: &str,
+        tools: &[lsock_mcp::Tool],
+    ) -> std::collections::HashMap<String, lsock_mcp::action::Classified> {
+        let _ = self.mcp_classify_tools(server_id, tools).await;
+        self.mcp_tool_actions(server_id, tools)
+            .unwrap_or_else(|_| lsock_mcp::action::classify_all(tools))
     }
 
     /// Connect to MCP servers by id and list their tools (for one-off runs, e.g. the CLI).
@@ -250,8 +273,10 @@ impl Engine {
                 }
             };
             out.push(ToolSource {
+                server_id: id.clone(),
                 server_name: server.name.clone(),
                 client: Arc::new(client),
+                actions: self.mcp_source_actions(id, &tools).await,
                 tools,
             });
         }

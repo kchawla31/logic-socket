@@ -252,7 +252,7 @@ export function GraphQLEditor({ requestId, text, onChange }: { requestId: string
               />
             </div>
             <div className="flex h-full min-h-0 flex-col">
-              <div className="flex shrink-0 items-center gap-2 border-b border-app bg-subtle px-3 py-1 text-[11px] font-semibold tracking-wide text-muted uppercase">
+              <div className="flex shrink-0 items-center gap-2 border-b border-app bg-subtle px-3 py-1 text-[13px] font-semibold tracking-tight text-app">
                 Variables
                 {varsError && <span className="font-normal normal-case text-rose-600">{varsError}</span>}
               </div>

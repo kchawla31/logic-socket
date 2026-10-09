@@ -133,7 +133,7 @@ export function RunnerView({ targetId, workspaceId, workspaceName, tree }: { tar
     <Split direction="row" initial={360} min={300} storageKey="lsock-split-runner">
       <div className="flex h-full min-h-0 flex-col bg-subtle">
         <div className="shrink-0 border-b border-app px-4 py-3">
-          <div className="text-[11px] font-semibold tracking-wide text-muted uppercase">Collection runner</div>
+          <div className="text-[13px] font-semibold tracking-tight text-app">Collection runner</div>
           <div className="mt-0.5 text-[15px] font-semibold">{target ? target.name : workspaceName}</div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-3">
@@ -291,7 +291,7 @@ export function RunnerView({ targetId, workspaceId, workspaceName, tree }: { tar
             const expanded = open.has(i);
             return (
               <div key={i}>
-                {header && <div className="bg-subtle px-4 py-1 text-[11px] font-semibold tracking-wide text-muted uppercase">Iteration {r.iteration}</div>}
+                {header && <div className="bg-subtle px-4 py-1 text-[13px] font-semibold tracking-tight text-app">Iteration {r.iteration}</div>}
                 <button
                   className="flex w-full items-center gap-2 border-b border-app px-4 py-2 text-left hover:bg-muted"
                   onClick={() => {

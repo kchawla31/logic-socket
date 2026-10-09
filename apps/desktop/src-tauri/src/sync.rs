@@ -234,6 +234,32 @@ pub fn code_generate(
     })
 }
 
+/// Code for one MCP message (default `initialize`) to a saved Streamable HTTP server.
+#[tauri::command]
+pub async fn mcp_code_generate(
+    state: State<'_, AppState>,
+    server_id: String,
+    target: Target,
+    message: Option<Value>,
+    session_id: Option<String>,
+    protocol_version: Option<String>,
+) -> CmdResult<CodeSnippet> {
+    let (req, notes) = state
+        .engine
+        .mcp_code_request(
+            &server_id,
+            message,
+            session_id.as_deref(),
+            protocol_version.as_deref(),
+        )
+        .await
+        .map_err(e)?;
+    Ok(CodeSnippet {
+        code: generate(&req, target),
+        notes,
+    })
+}
+
 // ------------------------------------------------------------------ vault
 
 #[tauri::command]

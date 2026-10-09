@@ -500,29 +500,15 @@ fn print_server_header(client: &Client, extra: Option<String>) {
     println!("{}", parts.join(" "));
 }
 
+/// What the tool does (Read / Create / Update / Delete) from its hints or name; empty when unknown.
 pub fn badges(t: &Tool) -> String {
-    let h = t.hints();
-    let mut b = vec![];
-    if h.read_only {
-        b.push(green("read-only"));
-    } else if h.destructive {
-        b.push(red("destructive"));
-    } else {
-        b.push(yellow("writes"));
-    }
-    if h.idempotent {
-        b.push(blue("idempotent"));
-    }
-    b.push(if h.open_world {
-        cyan("open-world")
-    } else {
-        dim("closed-world")
-    });
-    let s = b.join(dim(" · ").as_str());
-    if h.declared {
-        s
-    } else {
-        format!("{s} {}", dim("(unannotated)"))
+    use lsock_mcp::action::{ToolAction, classify};
+    match classify(t, None).map(|c| c.action) {
+        Some(a @ ToolAction::Read) => green(a.label()),
+        Some(a @ ToolAction::Create) => yellow(a.label()),
+        Some(a @ ToolAction::Update) => blue(a.label()),
+        Some(a @ ToolAction::Delete) => red(a.label()),
+        None => String::new(),
     }
 }
 

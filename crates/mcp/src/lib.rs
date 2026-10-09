@@ -1,6 +1,7 @@
 //! MCP client (JSON-RPC 2.0 over stdio or Streamable HTTP) with a full
 //! protocol log. See docs/DECISIONS.md D3 for why this is hand-written.
 
+pub mod action;
 pub mod log;
 pub mod mock;
 pub mod mock_oauth;

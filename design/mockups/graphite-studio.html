@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Logic Socket — Circuit</title>
+<title>Logic Socket — Graphite Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-:root { --sans:'Geist', ui-sans-serif, system-ui, sans-serif; --mono:'Geist Mono', ui-monospace, monospace; --radius:6px; --radius-lg:10px; --radius-btn:6px; --gap:0px; --fs:13px; }
-:root, :root[data-theme="light"] { --bg:#EEF2F7; --panel:#FFFFFF; --panel2:#F6F8FB; --muted:#E8EDF4; --line:#DCE3EC;
---fg:#0F172A; --fg2:#5B6B82; --accent:#0EA5A4; --accent-fg:#FFFFFF; --accent-soft:rgba(14,165,164,.12); --signal:#D97706;
---ok:#059669; --warn:#D97706; --err:#E11D48; --info:#2563EB;
---get:#059669; --post:#D97706; --put:#2563EB; --delete:#E11D48;
---syn-key:#0E7490; --syn-str:#047857; --syn-num:#B45309; --syn-bool:#7C3AED; --shadow:0 1px 2px rgba(15,23,42,.06); color-scheme: light; }
-:root[data-theme="dark"] { --bg:#070C17; --panel:#0B1220; --panel2:#0F1829; --muted:#16213A; --line:#1C2842;
---fg:#E2E8F0; --fg2:#8394AE; --accent:#2DD4BF; --accent-fg:#04201D; --accent-soft:rgba(45,212,191,.13); --signal:#FBBF24;
---ok:#34D399; --warn:#FBBF24; --err:#FB7185; --info:#60A5FA;
---get:#34D399; --post:#FBBF24; --put:#60A5FA; --delete:#FB7185;
---syn-key:#5EEAD4; --syn-str:#86EFAC; --syn-num:#FCD34D; --syn-bool:#C4B5FD; --shadow:0 0 0 1px rgba(45,212,191,.04); color-scheme: dark; }
-@media (prefers-color-scheme: dark) { :root[data-theme="system"] { --bg:#070C17; --panel:#0B1220; --panel2:#0F1829; --muted:#16213A; --line:#1C2842;
---fg:#E2E8F0; --fg2:#8394AE; --accent:#2DD4BF; --accent-fg:#04201D; --accent-soft:rgba(45,212,191,.13); --signal:#FBBF24;
---ok:#34D399; --warn:#FBBF24; --err:#FB7185; --info:#60A5FA;
---get:#34D399; --post:#FBBF24; --put:#60A5FA; --delete:#FB7185;
---syn-key:#5EEAD4; --syn-str:#86EFAC; --syn-num:#FCD34D; --syn-bool:#C4B5FD; --shadow:0 0 0 1px rgba(45,212,191,.04); color-scheme: dark; } }
+:root { --sans:'DM Sans', ui-sans-serif, system-ui, sans-serif; --mono:'DM Mono', ui-monospace, monospace; --radius:10px; --radius-lg:14px; --radius-btn:999px; --gap:10px; --fs:13.5px; }
+:root, :root[data-theme="light"] { --bg:#ECEDF1; --panel:#FFFFFF; --panel2:#F7F7FA; --muted:#EEEFF4; --line:#E3E4EA;
+--fg:#16171D; --fg2:#6B6E7B; --accent:#2F6BFF; --accent-fg:#FFFFFF; --accent-soft:rgba(47,107,255,.12); --signal:#2F6BFF;
+--ok:#16A34A; --warn:#CA8A04; --err:#DC2626; --info:#0369A1;
+--get:#16A34A; --post:#CA8A04; --put:#0369A1; --delete:#DC2626;
+--syn-key:#1D4ED8; --syn-str:#15803D; --syn-num:#B45309; --syn-bool:#0E7490; --shadow:0 1px 2px rgba(16,17,29,.04), 0 8px 24px -12px rgba(16,17,29,.18); color-scheme: light; }
+:root[data-theme="dark"] { --bg:#0E0F12; --panel:#17181C; --panel2:#1C1D22; --muted:#24252B; --line:#2A2B32;
+--fg:#ECEDF2; --fg2:#9497A3; --accent:#8EB0FF; --accent-fg:#0B1B4A; --accent-soft:rgba(142,176,255,.16); --signal:#8EB0FF;
+--ok:#4ADE80; --warn:#FACC15; --err:#F87171; --info:#7DD3FC;
+--get:#4ADE80; --post:#FACC15; --put:#7DD3FC; --delete:#F87171;
+--syn-key:#B6CCFF; --syn-str:#86EFAC; --syn-num:#FCD34D; --syn-bool:#67E8F9; --shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 12px 32px -16px rgba(0,0,0,.6); color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root[data-theme="system"] { --bg:#0E0F12; --panel:#17181C; --panel2:#1C1D22; --muted:#24252B; --line:#2A2B32;
+--fg:#ECEDF2; --fg2:#9497A3; --accent:#8EB0FF; --accent-fg:#0B1B4A; --accent-soft:rgba(142,176,255,.16); --signal:#8EB0FF;
+--ok:#4ADE80; --warn:#FACC15; --err:#F87171; --info:#7DD3FC;
+--get:#4ADE80; --post:#FACC15; --put:#7DD3FC; --delete:#F87171;
+--syn-key:#B6CCFF; --syn-str:#86EFAC; --syn-num:#FCD34D; --syn-bool:#67E8F9; --shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 12px 32px -16px rgba(0,0,0,.6); color-scheme: dark; } }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -158,23 +158,35 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: v
 .tool .req { color: var(--err); }
 .note { color: var(--fg2); font-size: 12.5px; margin-top: 18px; }
 
-        .app { border: 1px solid var(--line); }
-        .sidebar { background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 16px 16px; }
-        .status-dot { box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 25%, transparent), 0 0 12px currentColor; }
-        .btn-primary { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent), 0 6px 18px -6px var(--accent); }
-        .tab.active { box-shadow: inset 0 -2px 0 var(--accent); }
-        .tree .item.active { box-shadow: inset 2px 0 0 var(--accent); }
-        .sec-title { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg2); }
+        .app { background: var(--bg); padding: 0 var(--gap) var(--gap); }
+        .topbar { background: transparent; border-bottom: 0; }
+        .sidebar, .main { border-radius: var(--radius-lg); border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; }
+        .split { gap: 0; }
+        .body { gap: var(--gap); }
+        .statusbar { background: transparent; border-top: 0; padding-top: 6px; }
+        .tabs-bar { background: var(--panel2); }
+        .seg, .subtabs { background: var(--muted); border-radius: 10px; padding: 3px; gap: 2px; border-bottom: 0 !important; margin: 10px 12px 0; width: max-content; }
+        .subtabs .tab { border-radius: 8px; height: 28px; }
+        .subtabs .tab.active { background: var(--panel); box-shadow: var(--shadow); color: var(--fg); }
+        .tree .item.active { background: var(--accent-soft); color: var(--fg); }
+        .select, .search, .filter { border-radius: 999px; }
+        .url { border-radius: 999px; padding-left: 6px; box-shadow: var(--shadow); }
+        .method-select { border-radius: 999px; border-right: 0; margin: 4px; height: calc(100% - 8px); background: var(--panel); }
+        .badge { border-radius: 999px; }
+        .input { border-radius: 999px; padding: 0 14px; }
+        .sec-title { font-weight: 700; font-size: 13px; letter-spacing: -.01em; }
+        .type .display { font-weight: 700; letter-spacing: -.03em; }
+        .type p { font-size: 13.5px; line-height: 1.6; }
         
 </style>
 </head>
 <body>
-<div class="review"><b>Logic Socket · Circuit</b><span>Electric teal on ink navy — signals, wires and live status.</span><span class="spacer"></span><nav><a href="circuit.html" class="on">1. Circuit</a> <a href="graphite.html" class="">2. Graphite</a> <a href="terminal.html" class="">3. Terminal</a> <a href="warm-studio.html" class="">4. Warm Studio</a> <a href="graphite-studio.html" class="">5. Graphite Studio</a><a href="index.html">Compare all</a></nav></div>
+<div class="review"><b>Logic Socket · Graphite Studio</b><span>Graphite panels and colour, with Warm Studio type and pill controls.</span><span class="spacer"></span><nav><a href="circuit.html" class="">1. Circuit</a> <a href="graphite.html" class="">2. Graphite</a> <a href="terminal.html" class="">3. Terminal</a> <a href="warm-studio.html" class="">4. Warm Studio</a> <a href="graphite-studio.html" class="on">5. Graphite Studio</a><a href="index.html">Compare all</a></nav></div>
 <div class="wrap">
 
 <div class="app">
   <header class="topbar">
-    <div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="var(--accent)"/><path d="M11 9v6M21 9v6M9 15h14v3a7 7 0 0 1-14 0z" fill="none" stroke="var(--accent-fg)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="25" r="1.6" fill="var(--signal)"/></svg><span class="name">Logic Socket</span></div>
+    <div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="gs" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8EB0FF"/><stop offset="1" stop-color="#2F6BFF"/></linearGradient></defs><rect x="3" y="3" width="26" height="26" rx="9" fill="url(#gs)"/><circle cx="12.5" cy="16" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="19.5" cy="16" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/></svg><span class="name">Logic Socket</span></div>
     <span class="select"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg> Shop API <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
     <span class="select"><span class="status-dot ok" style="margin:0"></span> Production <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
     <span class="spacer"></span>

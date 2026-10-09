@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Circle, Info, KeyRound, LogIn, Plug, Power, RefreshCw, Trash2, TriangleAlert, Zap } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Circle, FileCode2, Info, KeyRound, LogIn, Plug, Power, RefreshCw, Trash2, TriangleAlert, Zap } from 'lucide-react';
 import { type ClipboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { CodeEditor, JsonTree, KeyValueEditor, Markdown } from '../components/editors';
@@ -22,6 +22,7 @@ import {
 } from '../lib/api';
 import { clockTime, cn, curlToMcp, formatMs, looksLikeCurl } from '../lib/utils';
 import { useProviders } from './AiProviders';
+import { CodeModal } from './ImportExport';
 import { clipboardPlainText, useAutosave } from './RequestView';
 import { ToolsPanel } from './McpTools';
 
@@ -66,6 +67,25 @@ export function McpView({ id }: { id: string }) {
   const [tab, setTab] = useState('tools');
   const [showConfig, setShowConfig] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [codeOpen, setCodeOpen] = useState(false);
+
+  // With AI labels on, have the provider read descriptions of tools it has not seen,
+  // then refresh the badges. Cached tools send nothing, so this settles after one pass.
+  const actionProvider = server?.actionProviderId ?? null;
+  const toolCount = tools?.items.length ?? 0;
+  useEffect(() => {
+    if (!actionProvider || !toolCount || !status.connected) return;
+    let live = true;
+    (async () => {
+      await flush();
+      const sent = await api.mcpClassifyTools(id);
+      if (live && sent > 0) setTools(await api.mcpListTools(id));
+    })().catch(e => live && toast(`AI labels: ${errorText(e)}`, 'error'));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionProvider, toolCount, status.connected, id]);
 
   const loadPrimitives = useCallback(async () => {
     const caps = (await api.mcpStatus(id)).server?.capabilities ?? {};
@@ -201,6 +221,19 @@ export function McpView({ id }: { id: string }) {
             placeholder="npx -y @modelcontextprotocol/server-everything"
           />
         )}
+        {t.kind === 'streamable-http' && (
+          <Button variant="ghost" onClick={() => setCodeOpen(true)} title="This server's initialize request as cURL or code">
+            <FileCode2 className="size-3.5" /> Code
+          </Button>
+        )}
+        <CodeModal
+          open={codeOpen}
+          onClose={() => setCodeOpen(false)}
+          requestId={id}
+          requestName={server.name}
+          intro="The initialize request, the first call every MCP client makes, using this server's URL, headers, and auth with the active environment. Secrets appear in plain text, so share carefully."
+          generate={target => api.mcpCodeGenerate(id, target)}
+        />
         <Button variant="ghost" onClick={() => setShowConfig(!showConfig)} title="Headers, auth, env, roots">
           {showConfig ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />} Settings
         </Button>
@@ -496,6 +529,7 @@ function hostOf(url: string): string {
 
 function ConnectionSettings({ server, update, contextId, beforeSignIn, afterSignIn, connected }: SettingsProps) {
   const [tab, setTab] = useState(server.transport.kind === 'stdio' ? 'env' : 'headers');
+  const [providers] = useProviders();
   const auth = server.authentication;
   return (
     <div className="max-h-[40vh] shrink-0 overflow-auto border-b border-app bg-subtle">
@@ -538,6 +572,19 @@ function ConnectionSettings({ server, update, contextId, beforeSignIn, afterSign
         <div className="flex max-w-xl flex-col gap-2 p-3">
           <label className="text-muted">Name</label>
           <Input value={server.name} onChange={e => update({ name: e.target.value })} />
+          <label className="mt-2 text-muted">AI labels</label>
+          <Select aria-label="AI labels" value={server.actionProviderId ?? ''} onChange={e => update({ actionProviderId: e.target.value || null })} className="w-72">
+            <option value="">Off: use the server&rsquo;s hints and tool names</option>
+            {providers.map(p => (
+              <option key={p.id} value={p.id}>
+                Read descriptions with {p.name}
+              </option>
+            ))}
+          </Select>
+          <p className="text-[12px] text-muted">
+            Labels each tool Read, Create, Update, or Delete. When on, only tool names and descriptions are sent to the provider, once per tool; the answers are
+            kept on this computer.
+          </p>
           {server.transport.kind === 'stdio' && (
             <>
               <label className="text-muted">Working directory</label>
@@ -580,7 +627,7 @@ function ResourcesPanel({
   return (
     <Split direction="row" initial={340} min={220} storageKey="lsock-split-resources">
       <div className="h-full overflow-auto bg-subtle p-2">
-        <div className="px-1 pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">Resources</div>
+        <div className="px-1 pb-1 text-[13px] font-semibold tracking-tight text-app">Resources</div>
         {resources.map(r => (
           <button key={r.uri} onClick={() => read(r.uri)} className={cn('mb-0.5 w-full rounded-md px-2.5 py-1.5 text-left', uri === r.uri ? 'bg-accent-soft' : 'hover:bg-muted')}>
             <div className="text-[13px] font-medium">{r.title || r.name}</div>
@@ -589,7 +636,7 @@ function ResourcesPanel({
           </button>
         ))}
         {resources.length === 0 && <div className="px-2 py-1 text-[12px] text-muted">None</div>}
-        <div className="px-1 pt-3 pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">Templates</div>
+        <div className="px-1 pt-3 pb-1 text-[13px] font-semibold tracking-tight text-app">Templates</div>
         {templates.map(t => (
           <button key={t.uriTemplate} onClick={() => setUri(t.uriTemplate)} className="mb-0.5 w-full rounded-md px-2.5 py-1.5 text-left hover:bg-muted">
             <div className="text-[13px] font-medium">{t.title || t.name}</div>

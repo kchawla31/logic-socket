@@ -306,7 +306,23 @@ export function ExportModal({ open, onClose, workspaceId, workspaceName }: { ope
 
 const LANG_KEY = 'lsock-code-lang';
 
-export function CodeModal({ open, onClose, requestId, requestName }: { open: boolean; onClose: () => void; requestId: string; requestName: string }) {
+export function CodeModal({
+  open,
+  onClose,
+  requestId,
+  requestName,
+  generate,
+  intro = 'Rendered with the active environment, inherited headers and auth — exactly what Send would do. Secrets appear in plain text, so share carefully.',
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Id the code is for; regenerates when it changes. */
+  requestId: string;
+  requestName: string;
+  /** Code for something other than a saved HTTP request (e.g. an MCP message). */
+  generate?: (target: CodeTargetId) => Promise<{ code: string; notes: string[] }>;
+  intro?: string;
+}) {
   const [targets, setTargets] = useState<{ id: CodeTargetId; label: string }[]>([]);
   const [target, setTarget] = useState<CodeTargetId>(() => {
     try {
@@ -329,8 +345,7 @@ export function CodeModal({ open, onClose, requestId, requestName }: { open: boo
     } catch {
       /* ignore */
     }
-    api
-      .codeGenerate(requestId, target)
+    (generate ? generate(target) : api.codeGenerate(requestId, target))
       .then(r => {
         setCode(r.code);
         setNotes(r.notes);
@@ -340,13 +355,15 @@ export function CodeModal({ open, onClose, requestId, requestName }: { open: boo
         setCode('');
         setError(errorText(e));
       });
+    // `generate` is recreated on every render; `requestId` says when to regenerate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, requestId, target]);
 
   return (
     <Modal open={open} onClose={onClose} title={<span className="flex items-center gap-2"><FileCode2 className="size-4" /> Code for “{requestName}”</span>} width="max-w-3xl" footer={<CopyButton text={code} label="Copy code" />}>
       <Tabs tabs={targets.map(t => ({ id: t.id, label: t.label }))} value={target} onChange={v => setTarget(v as CodeTargetId)} />
       <div className="flex flex-col gap-2 p-3">
-        <p className="text-[12px] text-muted">Rendered with the active environment, inherited headers and auth — exactly what Send would do. Secrets appear in plain text, so share carefully.</p>
+        <p className="text-[12px] text-muted">{intro}</p>
         {error && <div className="text-[12.5px] text-rose-600 dark:text-rose-400">{error}</div>}
         {notes.map((n, i) => (
           <div key={i} className="flex gap-1.5 text-[12px] text-amber-700 dark:text-amber-300">

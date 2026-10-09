@@ -60,9 +60,9 @@ export function ResponsePane({
     <div className={cn('flex h-full min-h-0 flex-col', sending && 'opacity-60')}>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-app px-3">
         {response.error ? (
-          <span className={cn('shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-[12px] font-semibold', statusTone(0))}>Error</span>
+          <span className={cn('shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[12px] font-semibold', statusTone(0))}>Error</span>
         ) : (
-          <span className={cn('shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-[12px] font-semibold', statusTone(response.statusCode))}>
+          <span className={cn('shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[12px] font-semibold', statusTone(response.statusCode))}>
             {response.statusCode} {response.statusMessage}
           </span>
         )}
@@ -78,7 +78,7 @@ export function ResponsePane({
           <button
             onClick={() => setTab('tests')}
             className={cn(
-              'shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-[12px] font-medium',
+              'shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[12px] font-medium',
               failedTests ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400' : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
             )}
           >

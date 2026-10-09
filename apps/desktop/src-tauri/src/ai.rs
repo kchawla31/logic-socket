@@ -212,9 +212,12 @@ pub async fn llm_run_start<R: tauri::Runtime>(
                     .get::<lsock_core::McpServer>(id)
                     .map(|s| s.body.name)
                     .unwrap_or_default();
+                let actions = state.engine.mcp_source_actions(id, &tools).await;
                 sources.push(ToolSource {
+                    server_id: id.clone(),
                     server_name: name,
                     client,
+                    actions,
                     tools,
                 });
             }
@@ -270,7 +273,15 @@ pub fn llm_approve(
     call_id: String,
     allow: bool,
     reason: Option<String>,
+    // "Always allow this tool": saved on the AI request so later runs skip the prompt too.
+    always: Option<(String, String)>,
 ) -> CmdResult<()> {
+    if allow && let Some((request_id, allow_key)) = &always {
+        state
+            .engine
+            .llm_allow_tool(request_id, allow_key)
+            .map_err(e)?;
+    }
     let runs = state.ai_runs.lock().unwrap();
     let slot = runs.get(&run_id).ok_or("This run has finished")?;
     let tx = slot
@@ -279,7 +290,9 @@ pub fn llm_approve(
         .unwrap()
         .remove(&call_id)
         .ok_or("No pending approval for this call")?;
-    let _ = tx.send(if allow {
+    let _ = tx.send(if allow && always.is_some() {
+        Approval::AllowAlways
+    } else if allow {
         Approval::Allow
     } else {
         Approval::Deny(reason.unwrap_or_default())

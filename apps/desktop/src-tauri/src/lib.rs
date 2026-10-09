@@ -736,9 +736,24 @@ struct ToolView {
     tool: Tool,
     display_name: String,
     hints: Hints,
+    /// Read / Create / Update / Delete and where it came from; absent when unknown.
+    action: Option<lsock_mcp::action::Classified>,
     params: Vec<ParamRow>,
     output_params: Vec<ParamRow>,
     example: Value,
+}
+
+/// Have the server's AI provider label tools it has not labelled yet. Returns how
+/// many tools were sent (0 when the server has no provider set or all are cached).
+#[tauri::command]
+async fn mcp_classify_tools(state: State<'_, AppState>, server_id: String) -> CmdResult<usize> {
+    let c = client(&state, &server_id).await?;
+    let tools = c.list_tools().await.map_err(e)?.items;
+    state
+        .engine
+        .mcp_classify_tools(&server_id, &tools)
+        .await
+        .map_err(e)
 }
 
 #[tauri::command]
@@ -747,12 +762,17 @@ async fn mcp_list(state: State<'_, AppState>, server_id: String, kind: String) -
     let out = match kind.as_str() {
         "tools" => {
             let l = c.list_tools().await.map_err(e)?;
+            let actions = state
+                .engine
+                .mcp_tool_actions(&server_id, &l.items)
+                .map_err(e)?;
             let items: Vec<ToolView> = l
                 .items
                 .into_iter()
                 .map(|t| ToolView {
                     display_name: t.display_name().to_string(),
                     hints: t.hints(),
+                    action: actions.get(&t.name).copied(),
                     params: schema::param_rows(&t.input_schema),
                     output_params: t
                         .output_schema
@@ -1109,6 +1129,7 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             auth::oauth2_authorize,
             auth::oauth2_clear,
             auth::mcp_oauth_sign_in,
+            mcp_classify_tools,
             grpc::proto_file_list,
             grpc::proto_file_create,
             grpc::proto_file_update,
@@ -1129,6 +1150,7 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             sync::reveal_path,
             sync::code_targets,
             sync::code_generate,
+            sync::mcp_code_generate,
             sync::env_set_var,
             sync::env_reveal,
             sync::vault_status,

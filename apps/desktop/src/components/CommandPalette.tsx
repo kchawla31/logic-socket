@@ -97,7 +97,7 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
             lastGroup = c.group;
             return (
               <div key={c.id}>
-                {header && <div className="px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">{c.group}</div>}
+                {header && <div className="px-3 pt-2 pb-1 text-[12.5px] font-semibold tracking-tight text-app">{c.group}</div>}
                 <button
                   role="option"
                   aria-selected={i === sel}

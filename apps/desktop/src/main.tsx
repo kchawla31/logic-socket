@@ -1,5 +1,6 @@
-import '@fontsource-variable/manrope';
-import '@fontsource-variable/jetbrains-mono';
+import '@fontsource-variable/dm-sans';
+import '@fontsource/dm-mono/400.css';
+import '@fontsource/dm-mono/500.css';
 import './index.css';
 
 import { StrictMode } from 'react';

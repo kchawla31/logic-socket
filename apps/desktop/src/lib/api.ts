@@ -184,6 +184,8 @@ export interface McpServer extends Meta {
   authentication: Auth;
   sslValidation?: boolean | null;
   sampling: McpSampling;
+  /** AI provider that reads tool descriptions to label tools; null sends nothing. */
+  actionProviderId?: string | null;
 }
 
 // ---- Realtime
@@ -290,6 +292,8 @@ export interface LlmRequest extends Meta {
   mcpServerIds: string[];
   maxTurns: number;
   autoApprove: 'none' | 'read-only' | 'all';
+  /** Tools the user chose to always allow (`server id::tool name`). */
+  alwaysAllow?: string[];
 }
 
 export type LlmBlock =
@@ -311,6 +315,8 @@ export interface ToolCallInfo {
   tool: string;
   input: unknown;
   hints?: Hints | null;
+  action?: ToolActionInfo | null;
+  allowKey?: string;
 }
 
 export interface ToolResultInfo {
@@ -457,6 +463,12 @@ export interface ParamRow {
   constraints: string[];
 }
 
+/** Read / Create / Update / Delete, and how it was decided. */
+export interface ToolActionInfo {
+  action: 'read' | 'create' | 'update' | 'delete';
+  source: 'server' | 'ai' | 'name';
+}
+
 export interface Hints {
   readOnly: boolean;
   destructive: boolean;
@@ -466,6 +478,8 @@ export interface Hints {
 }
 
 export interface ToolView {
+  /** What the tool does; null when Logic Socket can't tell. */
+  action?: ToolActionInfo | null;
   name: string;
   title?: string | null;
   description?: string | null;
@@ -730,7 +744,8 @@ export const api = {
   llmRequestUpdate: (doc: LlmRequest) => invoke<LlmRequest>('llm_request_update', { doc }),
   llmRuns: (requestId: string) => invoke<LlmRun[]>('llm_runs', { requestId }),
   llmRunStart: (runId: string, requestId: string) => invoke<void>('llm_run_start', { runId, requestId }),
-  llmApprove: (runId: string, callId: string, allow: boolean, reason?: string) => invoke<void>('llm_approve', { runId, callId, allow, reason: reason ?? null }),
+  llmApprove: (runId: string, callId: string, allow: boolean, reason?: string, always?: { requestId: string; allowKey: string }) =>
+    invoke<void>('llm_approve', { runId, callId, allow, reason: reason ?? null, always: always ? [always.requestId, always.allowKey] : null }),
   llmCancel: (runId: string) => invoke<void>('llm_cancel', { runId }),
   rtCreate: (parentId: string, kind: RtKind) => invoke<RealtimeRequest>('rt_create', { parentId, kind }),
   rtUpdate: (doc: RealtimeRequest) => invoke<RealtimeRequest>('rt_update', { doc }),
@@ -743,6 +758,7 @@ export const api = {
   oauth2Authorize: (ownerId: string) => invoke<TokenStatus>('oauth2_authorize', { ownerId }),
   oauth2Clear: (ownerId: string) => invoke<void>('oauth2_clear', { ownerId }),
   mcpOauthSignIn: (serverId: string) => invoke<TokenStatus>('mcp_oauth_sign_in', { serverId }),
+  mcpClassifyTools: (serverId: string) => invoke<number>('mcp_classify_tools', { serverId }),
   protoFileList: (workspaceId: string) => invoke<ProtoFile[]>('proto_file_list', { workspaceId }),
   protoFileCreate: (workspaceId: string, name: string, contents: string) => invoke<ProtoFile>('proto_file_create', { workspaceId, name, contents }),
   protoFileUpdate: (doc: ProtoFile) => invoke<ProtoFile>('proto_file_update', { doc }),
@@ -765,6 +781,8 @@ export const api = {
   revealPath: (path: string) => invoke<void>('reveal_path', { path }),
   codeTargets: () => invoke<{ id: CodeTargetId; label: string }[]>('code_targets'),
   codeGenerate: (requestId: string, target: CodeTargetId) => invoke<{ code: string; notes: string[] }>('code_generate', { requestId, target }),
+  mcpCodeGenerate: (serverId: string, target: CodeTargetId, message?: unknown, sessionId?: string | null, protocolVersion?: string | null) =>
+    invoke<{ code: string; notes: string[] }>('mcp_code_generate', { serverId, target, message: message ?? null, sessionId: sessionId ?? null, protocolVersion: protocolVersion ?? null }),
   envSetVar: (envId: string, key: string, value: unknown, secret: boolean) => invoke<Environment>('env_set_var', { envId, key, value, secret }),
   envReveal: (envId: string, key: string) => invoke<string>('env_reveal', { envId, key }),
   vaultStatus: () => invoke<VaultStatus>('vault_status'),

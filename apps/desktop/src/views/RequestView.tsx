@@ -221,29 +221,32 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
     <Split direction="row" initial={640} min={360} storageKey="lsock-split-request">
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-2 border-b border-app p-2">
-          <Select
-            aria-label="Method"
-            value={req.method}
-            onChange={e => update({ method: e.target.value })}
-            className={cn('w-[92px] font-mono text-[12.5px] font-bold', methodColor(req.method))}
-          >
-            {METHODS.map(m => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-            {!METHODS.includes(req.method as (typeof METHODS)[number]) && <option value={req.method}>{req.method}</option>}
-          </Select>
-          <VarInput
-            inputRef={urlRef}
-            className="flex-1"
-            value={req.url}
-            contextId={id}
-            onChange={setUrl}
-            onEnter={send}
-            onPaste={onUrlPaste}
-            placeholder="https://api.example.com/users/:id — or paste a cURL command"
-          />
+          <div className="flex h-9 min-w-0 flex-1 items-center rounded-full border border-app bg-subtle pr-1 pl-1 shadow-sm focus-within:border-accent focus-within:ring-3 focus-within:ring-accent-soft">
+            <Select
+              aria-label="Method"
+              value={req.method}
+              onChange={e => update({ method: e.target.value })}
+              className={cn('h-7 w-[92px] border-0 bg-app font-mono text-[12.5px] font-bold shadow-none focus:ring-0', methodColor(req.method))}
+            >
+              {METHODS.map(m => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+              {!METHODS.includes(req.method as (typeof METHODS)[number]) && <option value={req.method}>{req.method}</option>}
+            </Select>
+            <VarInput
+              inputRef={urlRef}
+              bare
+              className="flex-1"
+              value={req.url}
+              contextId={id}
+              onChange={setUrl}
+              onEnter={send}
+              onPaste={onUrlPaste}
+              placeholder="https://api.example.com/users/:id — or paste a cURL command"
+            />
+          </div>
           <Button variant="primary" onClick={send} loading={sending} title={`Send (${modKey()}+Enter)`}>
             {!sending && <Send className="size-3.5" />} Send
           </Button>
@@ -453,7 +456,7 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <div className="bg-subtle px-3 py-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">{children}</div>;
+  return <div className="px-3 pt-3 pb-1 text-[13px] font-semibold tracking-tight text-app">{children}</div>;
 }
 
 function MultipartEditor({ body, onChange, contextId }: { body: Body; onChange: (b: Partial<Body>) => void; contextId: string }) {

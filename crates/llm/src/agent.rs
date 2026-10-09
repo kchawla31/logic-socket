@@ -1,12 +1,13 @@
 //! LLM ↔ MCP bridge: expose MCP tools to a model, execute the calls it makes
 //! (with an approval gate), feed results back, repeat until it answers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use futures::future::BoxFuture;
+use lsock_mcp::action::{Classified, ToolAction};
 use lsock_mcp::{Client, Hints, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -18,9 +19,13 @@ use crate::{
 
 /// MCP tools from one connected server.
 pub struct ToolSource {
+    /// Saved server id; with the tool name it keys "always allow".
+    pub server_id: String,
     pub server_name: String,
     pub client: Arc<Client>,
     pub tools: Vec<Tool>,
+    /// Read / Create / Update / Delete per tool name (see [`lsock_mcp::action`]).
+    pub actions: HashMap<String, Classified>,
 }
 
 /// Which tool calls run without asking.
@@ -29,7 +34,7 @@ pub struct ToolSource {
 pub enum AutoApprove {
     /// Ask for every call.
     None,
-    /// Run read-only tools automatically, ask for anything that may write.
+    /// Run Read tools automatically; ask for Create, Update, Delete, and unknown tools.
     #[default]
     ReadOnly,
     /// Run everything (use only with trusted servers).
@@ -47,6 +52,10 @@ pub struct ToolCallInfo {
     pub tool: String,
     pub input: Value,
     pub hints: Option<Hints>,
+    /// What the tool does and how that was decided; `None` when unknown.
+    pub action: Option<Classified>,
+    /// Key for "always allow this tool" (`server id::tool name`).
+    pub allow_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -64,6 +73,8 @@ pub struct ToolResultInfo {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Approval {
     Allow,
+    /// Allow, and stop asking for this tool (the caller persists it).
+    AllowAlways,
     Deny(String),
 }
 
@@ -86,6 +97,8 @@ pub struct AgentOptions {
     pub cancel: Option<Arc<AtomicBool>>,
     /// Truncate tool output sent to the model.
     pub max_tool_result_chars: usize,
+    /// Tools that run without asking (`server id::tool name`).
+    pub always_allow: HashSet<String>,
 }
 
 impl Default for AgentOptions {
@@ -95,6 +108,7 @@ impl Default for AgentOptions {
             auto_approve: AutoApprove::ReadOnly,
             cancel: None,
             max_tool_result_chars: 100_000,
+            always_allow: HashSet::new(),
         }
     }
 }
@@ -251,11 +265,11 @@ fn result_text(r: &lsock_mcp::CallToolResult, max: usize) -> String {
     text
 }
 
-fn needs_approval(policy: AutoApprove, hints: Option<Hints>) -> bool {
+fn needs_approval(policy: AutoApprove, action: Option<ToolAction>) -> bool {
     match policy {
         AutoApprove::All => false,
         AutoApprove::None => true,
-        AutoApprove::ReadOnly => !hints.is_some_and(|h| h.read_only),
+        AutoApprove::ReadOnly => action != Some(ToolAction::Read),
     }
 }
 
@@ -276,6 +290,8 @@ pub async fn run(
         .collect();
     req.tools = specs;
     let mut out = AgentOutcome::default();
+    // Grows when the user answers "always allow" during this run.
+    let mut allowed = opts.always_allow.clone();
     let cancelled = || {
         opts.cancel
             .as_ref()
@@ -366,8 +382,14 @@ pub async fn run(
                     .unwrap_or_else(|| name.clone()),
                 input: input.clone(),
                 hints: mapped.map(|m| m.tool.hints()),
+                action: mapped.and_then(|m| sources[m.source].actions.get(&m.tool.name).copied()),
+                allow_key: mapped
+                    .map(|m| format!("{}::{}", sources[m.source].server_id, m.tool.name))
+                    .unwrap_or_default(),
             };
-            let ask = mapped.is_some() && needs_approval(opts.auto_approve, info.hints);
+            let ask = mapped.is_some()
+                && !allowed.contains(&info.allow_key)
+                && needs_approval(opts.auto_approve, info.action.map(|a| a.action));
             on_event(AgentEvent::ToolCall {
                 turn,
                 call: info.clone(),
@@ -387,11 +409,15 @@ pub async fn run(
                     latency_ms: 0.0,
                 },
                 Some(m) => {
-                    let approval = if ask {
+                    let mut approval = if ask {
                         approver.approve(info.clone()).await
                     } else {
                         Approval::Allow
                     };
+                    if approval == Approval::AllowAlways {
+                        allowed.insert(info.allow_key.clone());
+                        approval = Approval::Allow;
+                    }
                     match approval {
                         Approval::Deny(reason) => ToolResultInfo {
                             id: id.clone(),
@@ -405,7 +431,7 @@ pub async fn run(
                             structured: None,
                             latency_ms: 0.0,
                         },
-                        Approval::Allow => match sources[m.source]
+                        Approval::Allow | Approval::AllowAlways => match sources[m.source]
                             .client
                             .call_tool(&m.tool.name, input)
                             .await

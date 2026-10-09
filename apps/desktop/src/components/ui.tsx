@@ -29,7 +29,7 @@ export function Button({
       {...rest}
       disabled={rest.disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+        'inline-flex items-center justify-center gap-1.5 rounded-full font-medium whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
         size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-8 px-3 text-[13px]',
         variant === 'primary' && 'bg-accent text-on-accent shadow-sm hover:bg-accent-hover',
         variant === 'secondary' && 'border border-app bg-app hover:bg-muted',
@@ -70,7 +70,7 @@ export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputEleme
     <input
       {...rest}
       className={cn(
-        'h-8 w-full rounded-md border border-app bg-subtle px-2.5 text-[13px] outline-none transition-shadow placeholder:text-muted focus:border-accent focus:bg-app focus:ring-3 focus:ring-accent-soft',
+        'h-8 w-full rounded-full border border-app bg-subtle px-3.5 text-[13px] outline-none transition-shadow placeholder:text-muted focus:border-accent focus:bg-app focus:ring-3 focus:ring-accent-soft',
         className,
       )}
     />
@@ -82,7 +82,7 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
     <select
       {...rest}
       className={cn(
-        'h-8 rounded-md border border-app bg-subtle px-2 text-[13px] outline-none focus:border-accent focus:ring-3 focus:ring-accent-soft',
+        'h-8 rounded-full border border-app bg-subtle px-3 text-[13px] outline-none focus:border-accent focus:ring-3 focus:ring-accent-soft',
         className,
       )}
     >
@@ -175,7 +175,7 @@ export function Badge({ children, tone = 'neutral', title }: { children: ReactNo
     violet: 'bg-accent-soft text-accent',
   };
   return (
-    <span title={title} className={cn('inline-flex h-5 items-center rounded px-1.5 text-[11px] font-medium whitespace-nowrap', tones[tone])}>
+    <span title={title} className={cn('inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium whitespace-nowrap', tones[tone])}>
       {children}
     </span>
   );
@@ -294,6 +294,7 @@ export function Split({
   min = 200,
   storageKey,
   gap,
+  hideFirst,
   children,
 }: {
   direction: 'row' | 'col';
@@ -302,6 +303,8 @@ export function Split({
   storageKey: string;
   /** Floating panels: the handle is the transparent gap between them. */
   gap?: boolean;
+  /** Collapse the first pane (kept mounted, so it keeps its state). */
+  hideFirst?: boolean;
   children: [ReactNode, ReactNode];
 }) {
   const [size, setSize] = useState<number>(() => {
@@ -335,10 +338,11 @@ export function Split({
   };
   return (
     <div ref={box} className={cn('flex min-h-0 min-w-0 flex-1', direction === 'row' ? 'flex-row' : 'flex-col')}>
-      <div style={{ flexBasis: size }} className="flex min-h-0 min-w-0 shrink-0 flex-col">
+      <div style={{ flexBasis: size }} className={cn('flex min-h-0 min-w-0 shrink-0 flex-col', hideFirst && 'hidden')}>
         {children[0]}
       </div>
       <div
+        hidden={hideFirst}
         role="separator"
         aria-orientation={direction === 'row' ? 'vertical' : 'horizontal'}
         onPointerDown={onDown}

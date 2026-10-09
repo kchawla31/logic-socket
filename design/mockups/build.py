@@ -1,4 +1,4 @@
-"""Generate the four Logic Socket look-and-feel mockups + an index page.
+"""Generate the Logic Socket look-and-feel mockups + an index page.
 
     python3 design/mockups/build.py
 
@@ -180,6 +180,47 @@ THEMES = [
         .tab.active { box-shadow: inset 0 -2px 0 var(--accent); }
         .badge { border-radius: 999px; }
         .sec-title { font-weight: 700; font-size: 13px; }
+        """,
+    },
+    {
+        "slug": "graphite-studio",
+        "name": "Graphite Studio",
+        "tagline": "Graphite panels and colour, with Warm Studio type and pill controls.",
+        "fonts": "family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500",
+        "sans": "'DM Sans', ui-sans-serif, system-ui, sans-serif",
+        "mono": "'DM Mono', ui-monospace, monospace",
+        "logo": '<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="gs" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8EB0FF"/><stop offset="1" stop-color="#2F6BFF"/></linearGradient></defs><rect x="3" y="3" width="26" height="26" rx="9" fill="url(#gs)"/><circle cx="12.5" cy="16" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="19.5" cy="16" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/></svg>',
+        "light": dict(bg="#ECEDF1", panel="#FFFFFF", panel2="#F7F7FA", muted="#EEEFF4", line="#E3E4EA", fg="#16171D", fg2="#6B6E7B",
+                      accent="#2F6BFF", accentfg="#FFFFFF", accentsoft="rgba(47,107,255,.12)", signal="#2F6BFF",
+                      ok="#16A34A", warn="#CA8A04", err="#DC2626", info="#0369A1",
+                      get="#16A34A", post="#CA8A04", put="#0369A1", delete="#DC2626",
+                      key="#1D4ED8", str="#15803D", num="#B45309", bool="#0E7490", shadow="0 1px 2px rgba(16,17,29,.04), 0 8px 24px -12px rgba(16,17,29,.18)"),
+        "dark": dict(bg="#0E0F12", panel="#17181C", panel2="#1C1D22", muted="#24252B", line="#2A2B32", fg="#ECEDF2", fg2="#9497A3",
+                     accent="#8EB0FF", accentfg="#0B1B4A", accentsoft="rgba(142,176,255,.16)", signal="#8EB0FF",
+                     ok="#4ADE80", warn="#FACC15", err="#F87171", info="#7DD3FC",
+                     get="#4ADE80", post="#FACC15", put="#7DD3FC", delete="#F87171",
+                     key="#B6CCFF", str="#86EFAC", num="#FCD34D", bool="#67E8F9", shadow="0 1px 0 rgba(255,255,255,.03) inset, 0 12px 32px -16px rgba(0,0,0,.6)"),
+        "radius": "10px", "radius_lg": "14px", "radius_btn": "999px", "gap": "10px", "fs": "13.5px",
+        "extra": """
+        .app { background: var(--bg); padding: 0 var(--gap) var(--gap); }
+        .topbar { background: transparent; border-bottom: 0; }
+        .sidebar, .main { border-radius: var(--radius-lg); border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; }
+        .split { gap: 0; }
+        .body { gap: var(--gap); }
+        .statusbar { background: transparent; border-top: 0; padding-top: 6px; }
+        .tabs-bar { background: var(--panel2); }
+        .seg, .subtabs { background: var(--muted); border-radius: 10px; padding: 3px; gap: 2px; border-bottom: 0 !important; margin: 10px 12px 0; width: max-content; }
+        .subtabs .tab { border-radius: 8px; height: 28px; }
+        .subtabs .tab.active { background: var(--panel); box-shadow: var(--shadow); color: var(--fg); }
+        .tree .item.active { background: var(--accent-soft); color: var(--fg); }
+        .select, .search, .filter { border-radius: 999px; }
+        .url { border-radius: 999px; padding-left: 6px; box-shadow: var(--shadow); }
+        .method-select { border-radius: 999px; border-right: 0; margin: 4px; height: calc(100% - 8px); background: var(--panel); }
+        .badge { border-radius: 999px; }
+        .input { border-radius: 999px; padding: 0 14px; }
+        .sec-title { font-weight: 700; font-size: 13px; letter-spacing: -.01em; }
+        .type .display { font-weight: 700; letter-spacing: -.03em; }
+        .type p { font-size: 13.5px; line-height: 1.6; }
         """,
     },
 ]
@@ -551,7 +592,7 @@ h1 {{ margin:0 0 4px; font-size:22px; }} p {{ margin:0 0 22px; color:var(--fg2);
 .cap span {{ color:var(--fg2); font-size:13px; }}
 </style></head><body><main>
 <h1>Logic Socket — look &amp; feel options</h1>
-<p>Same screen, four directions. Open one to switch Light / Dark / System and see the full design sheet (colour, type, controls, MCP tool card). The theme you pick on one page carries over to the others.</p>
+<p>Same screen, five directions. Graphite Studio keeps the Graphite UI and borrows Warm Studio’s type and pill controls. Open one to switch Light / Dark / System and see the full design sheet (colour, type, controls, MCP tool card). The theme you pick on one page carries over to the others.</p>
 <div class="grid">{cards}</div>
 </main></body></html>"""
 

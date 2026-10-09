@@ -6,6 +6,7 @@ pub mod git;
 pub mod grpc;
 pub mod llm;
 pub mod mcp;
+pub mod mcp_actions;
 pub mod mcp_oauth;
 pub mod oauth2;
 pub mod pipeline;

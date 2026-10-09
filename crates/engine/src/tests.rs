@@ -675,6 +675,68 @@ mod ai {
         );
     }
 
+    /// Actions come from hints and names; an AI reads descriptions only when the
+    /// server has a provider set, and its answers are cached.
+    #[tokio::test]
+    async fn tool_actions_use_hints_names_and_opt_in_ai() {
+        use lsock_mcp::action::{ActionSource, ToolAction};
+        let (e, ws, p, mock) = setup().await;
+        let mcp_url = lsock_mcp::mock::spawn_http(Default::default(), 0)
+            .await
+            .unwrap();
+        let server = e
+            .store
+            .insert(
+                Some(ws.id()),
+                McpServer {
+                    transport: McpTransport::StreamableHttp { url: mcp_url },
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let client = lsock_mcp::Client::connect(e.mcp_connect_options(server.id()).await.unwrap())
+            .await
+            .unwrap();
+        let tools = client.list_tools().await.unwrap().items;
+        let sent = || mock.requests.lock().unwrap().len();
+
+        // No provider: hints and names only, and nothing is sent anywhere.
+        let a = e.mcp_tool_actions(server.id(), &tools).unwrap();
+        assert_eq!(
+            (a["get_weather"].action, a["get_weather"].source),
+            (ToolAction::Read, ActionSource::Server)
+        );
+        assert_eq!(a["delete_repo"].action, ToolAction::Delete);
+        assert_eq!(
+            (a["search"].action, a["search"].source),
+            (ToolAction::Read, ActionSource::Name)
+        );
+        assert!(!a.contains_key("notify"), "no hints and no verb: unknown");
+        assert_eq!(e.mcp_classify_tools(server.id(), &tools).await.unwrap(), 0);
+        assert_eq!(sent(), 0);
+
+        // Opt in: the AI reads the descriptions once.
+        let mut s = e.store.get::<McpServer>(server.id()).unwrap();
+        s.action_provider_id = Some(p.meta.id.clone());
+        e.store.update(&s).unwrap();
+        assert!(e.mcp_classify_tools(server.id(), &tools).await.unwrap() > 0);
+        assert_eq!(sent(), 1);
+        let a = e.mcp_tool_actions(server.id(), &tools).unwrap();
+        assert_eq!(
+            (a["notify"].action, a["notify"].source),
+            (ToolAction::Read, ActionSource::Ai)
+        );
+        assert_eq!(
+            a["get_weather"].source,
+            ActionSource::Server,
+            "server hints still win"
+        );
+
+        // Cached: nothing new to send.
+        assert_eq!(e.mcp_classify_tools(server.id(), &tools).await.unwrap(), 0);
+        assert_eq!(sent(), 1);
+    }
+
     #[tokio::test]
     async fn saved_server_with_sampling_enabled_uses_the_provider() {
         let (e, ws, p, _) = setup().await;

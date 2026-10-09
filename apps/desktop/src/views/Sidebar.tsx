@@ -264,7 +264,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
             onChange={e => setQ(e.target.value)}
             placeholder="Filter"
             aria-label="Filter requests"
-            className="h-7 w-full rounded-md border border-app bg-app pr-2 pl-7 text-[12.5px] outline-none focus:border-accent"
+            className="h-7 w-full rounded-full border border-app bg-app pr-3 pl-7 text-[12.5px] outline-none focus:border-accent"
           />
         </div>
         <IconButton

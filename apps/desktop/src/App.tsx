@@ -1,4 +1,4 @@
-import { Command as CommandIcon, Download, FileCode2, Folder, GitBranch, Layers, Upload, ListChecks, Moon, Network, Plug, Plus, Radio, Send, Settings as SettingsIcon, Sparkles, X } from 'lucide-react';
+import { Command as CommandIcon, Download, FileCode2, Folder, GitBranch, Layers, Upload, ListChecks, Moon, Network, PanelLeftClose, PanelLeftOpen, Plug, Plus, Radio, Send, Settings as SettingsIcon, Sparkles, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Logo, ThemeSwitch } from './components/Brand';
@@ -83,6 +83,13 @@ function Shell() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [wsId, setWsId] = useState<string | null>(() => load('lsock-ws', null));
   const [tree, setTree] = useState<TreeNode[]>([]);
+  const [sidebarHidden, setSidebarHidden] = useState<boolean>(() => load('lsock-sidebar-hidden', false));
+  const toggleSidebar = useCallback(() => {
+    setSidebarHidden(h => {
+      store('lsock-sidebar-hidden', !h);
+      return !h;
+    });
+  }, []);
   const [envs, setEnvs] = useState<EnvList | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -201,15 +208,19 @@ function Shell() {
       } else if (k === 'w' && active) {
         e.preventDefault();
         close(active);
+      } else if (k === 'b') {
+        e.preventDefault();
+        toggleSidebar();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, close, newRequest]);
+  }, [active, close, newRequest, toggleSidebar]);
 
   const commands: Command[] = useMemo(() => {
     const cmds: Command[] = [
       { id: 'new-req', group: 'Actions', label: 'New HTTP request', icon: <Plus className="size-4" />, hint: <Kbd>{modKey()} N</Kbd>, run: newRequest },
+      { id: 'toggle-sidebar', group: 'View', label: 'Toggle sidebar', icon: <PanelLeftClose className="size-4" />, hint: <Kbd>{modKey()} B</Kbd>, run: toggleSidebar },
       {
         id: 'new-mcp',
         group: 'Actions',
@@ -312,6 +323,9 @@ function Shell() {
     <div className="flex h-full flex-col bg-canvas">
       {/* top bar, on the canvas */}
       <header data-tauri-drag-region className="flex h-13 shrink-0 items-center gap-2 px-3.5">
+        <IconButton label={`${sidebarHidden ? 'Show' : 'Hide'} sidebar (${modKey()} B)`} onClick={toggleSidebar}>
+          {sidebarHidden ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+        </IconButton>
         <div className="flex items-center gap-2 pr-2 text-[14px] font-extrabold tracking-tight">
           <Logo />
           Logic Socket
@@ -359,7 +373,7 @@ function Shell() {
         })()}
         <button
           onClick={() => setPalette(true)}
-          className="flex h-8 w-72 items-center gap-2 rounded-lg border border-app bg-app px-3 text-[12.5px] text-muted shadow-sm transition-colors hover:border-accent hover:text-app"
+          className="flex h-8 w-72 items-center gap-2 rounded-full border border-app bg-app px-3.5 text-[12.5px] text-muted shadow-sm transition-colors hover:border-accent hover:text-app"
         >
           <CommandIcon className="size-3.5" /> Search or run a command
           <span className="flex-1" />
@@ -376,7 +390,7 @@ function Shell() {
 
       {wsId ? (
         <div className="flex min-h-0 flex-1 px-2.5 pb-2.5">
-        <Split direction="row" initial={270} min={200} storageKey="lsock-split-sidebar" gap>
+        <Split direction="row" initial={270} min={200} storageKey="lsock-split-sidebar" gap hideFirst={sidebarHidden}>
           <Sidebar
             workspaceId={wsId}
             tree={tree}

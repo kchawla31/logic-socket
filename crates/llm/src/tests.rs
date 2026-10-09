@@ -254,8 +254,10 @@ async fn mcp_source(name: &str) -> ToolSource {
     .unwrap();
     let tools = client.list_tools().await.unwrap().items;
     ToolSource {
+        server_id: name.into(),
         server_name: name.into(),
         client: Arc::new(client),
+        actions: lsock_mcp::action::classify_all(&tools),
         tools,
     }
 }
@@ -504,5 +506,82 @@ async fn mcp_sampling_is_answered_by_the_llm() {
         r.is_error && r.text().contains("Sampling is disabled"),
         "{}",
         r.text()
+    );
+}
+
+/// Answers "always allow" and records what it was asked about, with the action shown.
+struct AlwaysAllow(Mutex<Vec<(String, Option<lsock_mcp::action::ToolAction>)>>);
+impl Approver for AlwaysAllow {
+    fn approve(&self, call: ToolCallInfo) -> futures::future::BoxFuture<'static, Approval> {
+        self.0
+            .lock()
+            .unwrap()
+            .push((call.tool, call.action.map(|a| a.action)));
+        Box::pin(async { Approval::AllowAlways })
+    }
+}
+
+#[tokio::test]
+async fn read_tools_run_and_always_allow_skips_later_prompts() {
+    use lsock_mcp::action::ToolAction;
+    let (cfg, _) = provider(ProviderKind::Anthropic).await;
+    let sources = vec![mcp_source("github").await];
+    let approver = AlwaysAllow(Mutex::default());
+
+    // Read: runs without asking.
+    agent::run(
+        &cfg,
+        req("weather in Paris"),
+        &sources,
+        &AgentOptions::default(),
+        &approver,
+        &mut |_| {},
+    )
+    .await;
+    assert!(
+        approver.0.lock().unwrap().is_empty(),
+        "{:?}",
+        approver.0.lock().unwrap()
+    );
+
+    // Delete: asks, says why, and "always allow" lets it run.
+    let mut keys = vec![];
+    let out = agent::run(
+        &cfg,
+        req("please delete the old repo"),
+        &sources,
+        &AgentOptions::default(),
+        &approver,
+        &mut |ev| {
+            if let agent::AgentEvent::ToolCall { call, .. } = ev {
+                keys.push(call.allow_key);
+            }
+        },
+    )
+    .await;
+    assert_eq!(
+        *approver.0.lock().unwrap(),
+        [("delete_repo".to_string(), Some(ToolAction::Delete))]
+    );
+    assert!(!out.messages.last().unwrap().text().contains("declined"));
+
+    // Saved as always allowed: the next run does not ask.
+    let opts = AgentOptions {
+        always_allow: keys.into_iter().collect(),
+        ..Default::default()
+    };
+    agent::run(
+        &cfg,
+        req("please delete the old repo"),
+        &sources,
+        &opts,
+        &approver,
+        &mut |_| {},
+    )
+    .await;
+    assert_eq!(
+        approver.0.lock().unwrap().len(),
+        1,
+        "asked again despite always allow"
     );
 }

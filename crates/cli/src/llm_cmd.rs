@@ -396,8 +396,10 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
                 .with_context(|| format!("connecting to {url}"))?;
                 let tools = c.list_tools().await.map(|l| l.items).unwrap_or_default();
                 sources.push(ToolSource {
+                    server_id: url.clone(),
                     server_name: format!("mcp{}", i + 1),
                     client: std::sync::Arc::new(c),
+                    actions: lsock_mcp::action::classify_all(&tools),
                     tools,
                 });
             }
@@ -419,8 +421,10 @@ pub async fn run(engine: &Engine, cmd: LlmCmd) -> Result<()> {
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or(command);
                 sources.push(ToolSource {
+                    server_id: cmd.clone(),
                     server_name: name,
                     client: std::sync::Arc::new(c),
+                    actions: lsock_mcp::action::classify_all(&tools),
                     tools,
                 });
             }

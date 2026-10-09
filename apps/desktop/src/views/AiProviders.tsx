@@ -102,7 +102,7 @@ export function AiProvidersModal({ open, onClose }: { open: boolean; onClose: ()
               <span className="truncate text-[11.5px] text-muted">{p.defaultModel || p.kind}</span>
             </button>
           ))}
-          <div className="mt-2 border-t border-app pt-2 text-[11px] font-semibold tracking-wide text-muted uppercase">Add</div>
+          <div className="mt-2 border-t border-app pt-2 text-[13px] font-semibold tracking-tight text-app">Add</div>
           {KINDS.map(k => (
             <button key={k.id} onClick={() => add(k.id)} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left text-[12.5px] hover:bg-muted">
               <Plus className="size-3.5 text-muted" /> {k.label}
