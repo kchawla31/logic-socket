@@ -403,6 +403,8 @@ fn operation(ctx: &mut Ctx, path: &str, method: &str, path_item: &Value, op: &Va
         url: format!("{{{{ _.base_url }}}}{url_path}"),
         ..Default::default()
     };
+    // (required, optional) `name=value` pairs, each sent as one Cookie header.
+    let mut cookies: (Vec<String>, Vec<String>) = Default::default();
     for p in params_of(ctx, path_item, op) {
         let n = str_of(&p, "name");
         let required = p.get("required").and_then(Value::as_bool).unwrap_or(false);
@@ -423,6 +425,15 @@ fn operation(ctx: &mut Ctx, path: &str, method: &str, path_item: &Value, op: &Va
                 disabled: !required,
                 ..Default::default()
             }),
+            "cookie" => {
+                let pair = format!("{n}={}", param_value(ctx, &p));
+                if required {
+                    &mut cookies.0
+                } else {
+                    &mut cookies.1
+                }
+                .push(pair);
+            }
             "body" if ctx.v2 => {
                 let ct = op
                     .get("consumes")
@@ -463,6 +474,16 @@ fn operation(ctx: &mut Ctx, path: &str, method: &str, path_item: &Value, op: &Va
                 });
             }
             _ => {}
+        }
+    }
+    for (pairs, disabled) in [(cookies.0, false), (cookies.1, true)] {
+        if !pairs.is_empty() {
+            r.headers.push(KeyValue {
+                name: "Cookie".into(),
+                value: pairs.join("; "),
+                disabled,
+                ..Default::default()
+            });
         }
     }
     if !ctx.v2

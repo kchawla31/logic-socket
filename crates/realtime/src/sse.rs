@@ -19,18 +19,36 @@ pub(crate) struct SseFrame {
 
 #[derive(Default)]
 pub(crate) struct Parser {
-    buf: String,
+    buf: Vec<u8>,
+    after_cr: bool,
 }
 
 impl Parser {
-    pub fn feed(&mut self, bytes: &[u8]) -> Vec<SseFrame> {
-        self.buf.push_str(&String::from_utf8_lossy(bytes));
-        if self.buf.contains('\r') {
-            self.buf = self.buf.replace("\r\n", "\n").replace('\r', "\n");
+    /// Append `bytes` with CR, LF, and CRLF all normalized to LF. A trailing CR
+    /// is remembered so a CRLF split across chunks stays one line ending.
+    fn push_normalized(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            match b {
+                b'\r' => self.buf.push(b'\n'),
+                b'\n' if self.after_cr => {}
+                _ => self.buf.push(b),
+            }
+            self.after_cr = b == b'\r';
         }
+    }
+
+    /// The next complete event block, decoded once whole so multibyte
+    /// characters split across chunks survive.
+    fn next_block(&mut self) -> Option<String> {
+        let i = self.buf.windows(2).position(|w| w == b"\n\n")?;
+        let raw: Vec<u8> = self.buf.drain(..i + 2).collect();
+        Some(String::from_utf8_lossy(&raw).into_owned())
+    }
+
+    pub fn feed(&mut self, bytes: &[u8]) -> Vec<SseFrame> {
+        self.push_normalized(bytes);
         let mut out = vec![];
-        while let Some(i) = self.buf.find("\n\n") {
-            let raw: String = self.buf.drain(..i + 2).collect();
+        while let Some(raw) = self.next_block() {
             let mut f = SseFrame::default();
             let mut data = vec![];
             let mut any = false;
@@ -185,7 +203,6 @@ mod tests {
     /// WHATWG SSE treats CR, LF, and CRLF as one line ending. A chunk that
     /// ends on the CR of a CRLF must not become a blank line.
     #[test]
-    #[ignore = "BUG-008"]
     fn crlf_split_after_the_carriage_return_stays_one_event() {
         let mut p = Parser::default();
         let first = p.feed(b"data: hello\r");

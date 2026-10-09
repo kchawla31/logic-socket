@@ -114,6 +114,15 @@ fn chunks(s: &str) -> Vec<String> {
     chars.chunks(7).map(|c| c.iter().collect()).collect()
 }
 
+/// Split near the middle on a char boundary.
+fn halves(s: &str) -> (&str, &str) {
+    let mut mid = s.len() / 2;
+    while !s.is_char_boundary(mid) {
+        mid += 1;
+    }
+    s.split_at(mid)
+}
+
 fn sse(events: Vec<(Option<&str>, Value)>, done: bool) -> Response {
     let mut body = String::new();
     for (name, data) in events {
@@ -182,7 +191,7 @@ async fn anthropic(
             ));
             ev.push((Some("content_block_start"), json!({"type": "content_block_start", "index": 2, "content_block": {"type": "tool_use", "id": "toolu_mock1", "name": name, "input": {}}})));
             let s = input.to_string();
-            let (a, b) = s.split_at(s.len() / 2);
+            let (a, b) = halves(&s);
             for part in [a, b] {
                 ev.push((Some("content_block_delta"), json!({"type": "content_block_delta", "index": 2, "delta": {"type": "input_json_delta", "partial_json": part}})));
             }
@@ -226,7 +235,7 @@ async fn openai(State(st): State<MockLlm>, headers: HeaderMap, Json(req): Json<V
         Plan::Tool { name, input } => {
             ev.push((None, chunk(json!({"tool_calls": [{"index": 0, "id": "call_mock1", "type": "function", "function": {"name": name, "arguments": ""}}]}), Value::Null)));
             let s = input.to_string();
-            let (a, b) = s.split_at(s.len() / 2);
+            let (a, b) = halves(&s);
             for part in [a, b] {
                 ev.push((
                     None,

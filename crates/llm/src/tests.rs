@@ -201,7 +201,6 @@ async fn tool_use_round_trip_wire_format() {
 
 /// Tool-call JSON is split in bytes. A multibyte city must still stream.
 #[tokio::test]
-#[ignore = "BUG-009"]
 async fn tool_arguments_with_multibyte_characters_stream() {
     for kind in [ProviderKind::Anthropic, ProviderKind::OpenaiCompatible] {
         let (cfg, _) = provider(kind).await;

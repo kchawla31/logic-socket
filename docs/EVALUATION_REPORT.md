@@ -1,5 +1,7 @@
 # Logic Socket evaluation
 
+> **Status (2026-10-08):** all 17 bugs below are fixed. Their regression tests are no longer ignored and pass in `cargo test --workspace` and `npm test`. The report is kept as written at evaluation time.
+
 Confirmed defects only. Each bug below has a command, a file location, and the output that command printed. Product code was not changed.
 
 ## 1. Environment

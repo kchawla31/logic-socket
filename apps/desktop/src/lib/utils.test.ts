@@ -12,12 +12,6 @@ import {
   tokenizeTemplate,
 } from './utils';
 
-// Ignored unless RUN_IGNORED=1, so `npm test` stays green. Same idea as Rust `#[ignore]`.
-const runIgnored =
-  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
-    ?.RUN_IGNORED === '1';
-const bug = runIgnored ? it : it.skip;
-
 describe('tokenizeTemplate', () => {
   it('splits variables and tags', () => {
     expect(tokenizeTemplate("{{ _.base }}/users/{{id}}?x={% uuid 'v4' %}")).toEqual([
@@ -106,14 +100,14 @@ describe('url edge cases', () => {
     expect(splitQuery('http://x/a?q=a+b').params).toEqual([{ name: 'q', value: 'a b' }]);
   });
 
-  bug('BUG-005 fragment stays on the URL and out of the query value', () => {
+  it('keeps the fragment on the URL and out of the query value on the URL and out of the query value', () => {
     expect(splitQuery('http://x/a?q=1#section')).toEqual({
       base: 'http://x/a#section',
       params: [{ name: 'q', value: '1' }],
     });
   });
 
-  bug('BUG-006 path params come from the path only', () => {
+  it('takes path params from the path only from the path only', () => {
     expect(pathParamsInUrl('http://x/users/:id?next=/:home#/:frag')).toEqual(['id']);
   });
 });

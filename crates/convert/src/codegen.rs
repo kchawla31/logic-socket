@@ -124,7 +124,8 @@ fn curl(r: &CodeRequest) -> String {
     }
     match &r.body {
         CodeBody::None => {}
-        CodeBody::Text { text } => parts.push(format!("  --data {}", sh(text))),
+        // --data-raw: plain --data would read a body starting with '@' as a file.
+        CodeBody::Text { text } => parts.push(format!("  --data-raw {}", sh(text))),
         CodeBody::Form { fields } => {
             for (k, v) in fields {
                 parts.push(format!("  --data-urlencode {}", sh(&format!("{k}={v}"))));
@@ -411,7 +412,6 @@ mod tests {
 
     /// curl reads `--data @file`. A body that starts with `@` is still body text.
     #[test]
-    #[ignore = "BUG-011"]
     fn curl_text_body_starting_with_at_is_not_a_file() {
         let s = generate(
             &CodeRequest {

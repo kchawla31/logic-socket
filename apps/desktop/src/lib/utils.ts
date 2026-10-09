@@ -131,7 +131,8 @@ function curlTokenAtStart(s: string): boolean {
 /** Path params (`/:id`) present in a URL, in order, unique. */
 export function pathParamsInUrl(url: string): string[] {
   const out: string[] = [];
-  for (const m of url.matchAll(/\/:([^/?#:]+)/g)) {
+  const path = url.split(/[?#]/, 1)[0];
+  for (const m of path.matchAll(/\/:([^/?#:]+)/g)) {
     if (!out.includes(m[1])) out.push(m[1]);
   }
   return out;
@@ -139,10 +140,14 @@ export function pathParamsInUrl(url: string): string[] {
 
 /** Split `?a=1&b=2` off a URL into params (for paste-a-full-URL UX). */
 export function splitQuery(url: string): { base: string; params: { name: string; value: string }[] } {
-  const i = url.indexOf('?');
-  if (i < 0 || url.includes('{{', i)) return { base: url, params: [] };
-  const base = url.slice(0, i);
-  const params = url
+  // The fragment is not part of the query; it stays on the base URL.
+  const h = url.indexOf('#');
+  const hash = h < 0 ? '' : url.slice(h);
+  const noHash = h < 0 ? url : url.slice(0, h);
+  const i = noHash.indexOf('?');
+  if (i < 0 || noHash.includes('{{', i)) return { base: url, params: [] };
+  const base = noHash.slice(0, i) + hash;
+  const params = noHash
     .slice(i + 1)
     .split('&')
     .filter(Boolean)

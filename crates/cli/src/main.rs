@@ -176,7 +176,8 @@ enum EnvCmd {
         value: String,
         #[arg(long, short)]
         env: Option<String>,
-        /// Store as an encrypted secret (use `-` as the value to read it from stdin)
+        /// Store as an encrypted secret, always as a string: a quoted JSON string
+        /// is unquoted, other text is kept as-is (use `-` to read it verbatim from stdin)
         #[arg(long)]
         secret: bool,
     },
@@ -649,17 +650,25 @@ fn env_cmd(engine: &Engine, c: EnvCmd) -> Result<()> {
         } => {
             let ws = find::<Workspace>(engine, &workspace)?;
             let target = pick_env(engine, ws.id(), env)?;
-            let value = if value == "-" {
+            let from_stdin = value == "-";
+            let value = if from_stdin {
                 let mut line = String::new();
                 std::io::stdin().read_line(&mut line)?;
                 line.trim_end_matches(['\r', '\n']).to_string()
             } else {
                 value
             };
-            let v: Value = if secret {
+            let v: Value = if !secret {
+                serde_json::from_str(&value).unwrap_or(Value::String(value))
+            } else if from_stdin {
                 Value::String(value)
             } else {
-                serde_json::from_str(&value).unwrap_or(Value::String(value))
+                // A JSON string literal unquotes like a plain value; anything
+                // else (`12345`, `true`) stays the literal secret text.
+                match serde_json::from_str(&value) {
+                    Ok(Value::String(s)) => Value::String(s),
+                    _ => Value::String(value),
+                }
             };
             let secret = secret || target.secret_keys.contains(&key);
             engine.set_env_var(target.id(), &key, v, secret)?;

@@ -17,3 +17,4 @@ thiserror.workspace = true
 futures.workspace = true
 chrono.workspace = true
 axum.workspace = true
+regex = "1"

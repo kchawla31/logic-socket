@@ -1,6 +1,5 @@
-//! `lsock env set` documents the value as "parsed as JSON when possible".
-//! `--secret` currently stores the raw argument, so the JSON-string form used
-//! for ordinary variables keeps its quote characters.
+//! `lsock env set --secret` unquotes a JSON string argument the same way
+//! plain values are parsed, and keeps any other text as the literal secret.
 
 use std::process::Command;
 
@@ -19,14 +18,22 @@ fn lsock(data: &std::path::Path, args: &[&str]) -> std::process::Output {
 }
 
 #[test]
-#[ignore = "BUG-007"]
 fn secret_values_follow_the_same_json_parsing_as_plain_values() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path();
     for args in [
         ["workspace", "create", "Eval"].as_slice(),
         ["env", "set", "Eval", "plain", "\"quoted-value\""].as_slice(),
-        ["env", "set", "Eval", "secret", "\"quoted-value\"", "--secret"].as_slice(),
+        [
+            "env",
+            "set",
+            "Eval",
+            "secret",
+            "\"quoted-value\"",
+            "--secret",
+        ]
+        .as_slice(),
+        ["env", "set", "Eval", "pin", "012345", "--secret"].as_slice(),
     ] {
         let o = lsock(data, args);
         assert!(
@@ -35,11 +42,14 @@ fn secret_values_follow_the_same_json_parsing_as_plain_values() {
             String::from_utf8_lossy(&o.stderr)
         );
     }
-    let o = lsock(data, &["render", "Eval", "{{ _.plain }}|{{ _.secret }}"]);
+    let o = lsock(
+        data,
+        &["render", "Eval", "{{ _.plain }}|{{ _.secret }}|{{ _.pin }}"],
+    );
     let out = String::from_utf8_lossy(&o.stdout);
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(
-        o.status.success() && out.contains("quoted-value|quoted-value"),
+        o.status.success() && out.contains("quoted-value|quoted-value|012345"),
         "secret JSON string was not parsed like a plain value\nstdout:\n{out}\nstderr:\n{err}"
     );
     assert!(

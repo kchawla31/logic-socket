@@ -141,7 +141,7 @@ async fn variables_follow_scope_precedence() {
     ];
     let o = exec(i).await;
     ok(&o);
-    assert_eq!(o.environment["r1"], json!("folderLevel2-value"));
+    assert_eq!(o.environment["r1"], json!("iterationData-value"));
     assert_eq!(o.environment["r2"], json!("local-value"));
     assert_eq!(o.environment["r3"], json!("example.com"));
     assert_eq!(o.environment["r4"], json!("example.com/local-value"));
@@ -150,7 +150,6 @@ async fn variables_follow_scope_precedence() {
 
 /// FEATURES.md: local → iterationData → folder → environment → base → globals.
 #[tokio::test]
-#[ignore = "BUG-015"]
 async fn iteration_data_outranks_folder_variables() {
     let mut i = input(
         r#"
@@ -172,7 +171,6 @@ async fn iteration_data_outranks_folder_variables() {
 }
 
 #[tokio::test]
-#[ignore = "BUG-013"]
 async fn query_edits_apply_to_a_query_string_already_on_the_url() {
     let mut i = input(
         r#"
@@ -198,7 +196,6 @@ async fn query_edits_apply_to_a_query_string_already_on_the_url() {
 }
 
 #[tokio::test]
-#[ignore = "BUG-014"]
 async fn auth_update_accepts_a_flat_parameter_object() {
     let o = exec(input(
         r#"
@@ -898,5 +895,25 @@ async fn oauth2_auth_is_preserved_through_scripts() {
     assert_eq!(
         o.request.unwrap().auth,
         json!({"type": "oauth2", "grantType": "client_credentials", "clientId": "app"})
+    );
+}
+
+#[tokio::test]
+async fn untouched_url_query_and_fragment_survive() {
+    let mut i = input(
+        r#"
+        if (ls.request.url.toString() !== 'https://ex.test/a?x=1&page=1#top') {
+            throw new Error('tostring ' + ls.request.url.toString());
+        }
+        "#,
+    );
+    i.request.url = "https://ex.test/a?x=1#top".into();
+    let o = exec(i).await;
+    ok(&o);
+    let r = o.request.unwrap();
+    assert_eq!(r.url, "https://ex.test/a#top");
+    assert_eq!(
+        r.query.iter().map(|q| q.key.as_str()).collect::<Vec<_>>(),
+        ["x", "page"]
     );
 }

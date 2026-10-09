@@ -210,13 +210,13 @@ fn enum_values(v: &Value) -> Vec<Value> {
 fn constraints(v: &Value) -> Vec<String> {
     let num = |k: &str| v.get(k).filter(|x| x.is_number()).map(|x| x.to_string());
     let mut out = vec![];
-    match (
-        num("minimum").or(num("exclusiveMinimum")),
-        num("maximum").or(num("exclusiveMaximum")),
-    ) {
-        (Some(a), Some(b)) => out.push(format!("{a} ≤ value ≤ {b}")),
-        (Some(a), None) => out.push(format!("≥ {a}")),
-        (None, Some(b)) => out.push(format!("≤ {b}")),
+    let lo = bound(v, "minimum", "exclusiveMinimum").map(|(n, x)| (fmt_num(n), x));
+    let hi = bound(v, "maximum", "exclusiveMaximum").map(|(n, x)| (fmt_num(n), x));
+    let op = |exclusive: bool| if exclusive { "<" } else { "≤" };
+    match (lo, hi) {
+        (Some((a, xa)), Some((b, xb))) => out.push(format!("{a} {} value {} {b}", op(xa), op(xb))),
+        (Some((a, xa)), None) => out.push(format!("{} {a}", if xa { ">" } else { "≥" })),
+        (None, Some((b, xb))) => out.push(format!("{} {b}", op(xb))),
         _ => {}
     }
     match (num("minLength"), num("maxLength")) {
@@ -251,6 +251,26 @@ fn constraints(v: &Value) -> Vec<String> {
         }
     }
     out
+}
+
+/// A numeric bound and whether it is exclusive. Handles the draft-6+ form
+/// (`exclusiveMinimum: 0`) and the draft-4 form (`minimum: 0, exclusiveMinimum: true`).
+fn bound(v: &Value, inclusive: &str, exclusive: &str) -> Option<(f64, bool)> {
+    match (v.get(inclusive).and_then(Value::as_f64), v.get(exclusive)) {
+        (_, Some(Value::Number(n))) => n.as_f64().map(|n| (n, true)),
+        (Some(n), Some(Value::Bool(x))) => Some((n, *x)),
+        (Some(n), _) => Some((n, false)),
+        _ => None,
+    }
+}
+
+/// `10` rather than `10.0` for whole bounds.
+fn fmt_num(n: f64) -> String {
+    if n.fract() == 0.0 && n.abs() < 1e15 {
+        (n as i64).to_string()
+    } else {
+        n.to_string()
+    }
 }
 
 /// Lightweight validation of tool arguments against an input schema.
@@ -296,20 +316,28 @@ fn check(
         format!("'{path}'")
     };
 
+    // Alternatives are checked alongside the other keywords, not instead of them.
     for key in ["anyOf", "oneOf"] {
         if let Some(alts) = schema.get(key).and_then(Value::as_array) {
-            let ok = alts.iter().any(|a| {
-                let mut e = vec![];
-                check(root, a, v, path, &mut e, depth + 1);
-                e.is_empty()
-            });
-            if !ok {
+            let matches = alts
+                .iter()
+                .filter(|a| {
+                    let mut e = vec![];
+                    check(root, a, v, path, &mut e, depth + 1);
+                    e.is_empty()
+                })
+                .count();
+            if matches == 0 {
                 errs.push(format!(
                     "{at} does not match any allowed shape ({})",
                     type_label(root, &schema, &mut HashSet::new())
                 ));
+            } else if key == "oneOf" && matches > 1 {
+                errs.push(format!(
+                    "{at} matches {matches} shapes but must match exactly one ({})",
+                    type_label(root, &schema, &mut HashSet::new())
+                ));
             }
-            return;
         }
     }
     let types: Vec<&str> = match schema.get("type") {
@@ -333,15 +361,15 @@ fn check(
         errs.push(format!("{at} must be one of {}", opts.join(", ")));
     }
     if let Some(n) = v.as_f64() {
-        if let Some(min) = schema.get("minimum").and_then(Value::as_f64)
-            && n < min
-        {
-            errs.push(format!("{at} must be ≥ {min}"));
+        match bound(&schema, "minimum", "exclusiveMinimum") {
+            Some((min, true)) if n <= min => errs.push(format!("{at} must be > {}", fmt_num(min))),
+            Some((min, false)) if n < min => errs.push(format!("{at} must be ≥ {}", fmt_num(min))),
+            _ => {}
         }
-        if let Some(max) = schema.get("maximum").and_then(Value::as_f64)
-            && n > max
-        {
-            errs.push(format!("{at} must be ≤ {max}"));
+        match bound(&schema, "maximum", "exclusiveMaximum") {
+            Some((max, true)) if n >= max => errs.push(format!("{at} must be < {}", fmt_num(max))),
+            Some((max, false)) if n > max => errs.push(format!("{at} must be ≤ {}", fmt_num(max))),
+            _ => {}
         }
     }
     if let Some(s) = v.as_str() {
@@ -355,6 +383,31 @@ fn check(
             && len > max
         {
             errs.push(format!("{at} must be at most {max} characters"));
+        }
+        // An unparseable pattern is skipped rather than blocking the call.
+        if let Some(p) = schema.get("pattern").and_then(Value::as_str)
+            && let Ok(re) = regex::Regex::new(p)
+            && !re.is_match(s)
+        {
+            errs.push(format!("{at} must match pattern {p}"));
+        }
+    }
+    if let Some(arr) = v.as_array() {
+        let n = arr.len() as u64;
+        if let Some(min) = schema.get("minItems").and_then(Value::as_u64)
+            && n < min
+        {
+            errs.push(format!("{at} must have at least {min} items"));
+        }
+        if let Some(max) = schema.get("maxItems").and_then(Value::as_u64)
+            && n > max
+        {
+            errs.push(format!("{at} must have at most {max} items"));
+        }
+        if schema.get("uniqueItems") == Some(&Value::Bool(true))
+            && arr.iter().enumerate().any(|(i, x)| arr[..i].contains(x))
+        {
+            errs.push(format!("{at} must not contain duplicate items"));
         }
     }
     if let (Some(obj), Some(props)) = (
@@ -582,7 +635,8 @@ mod tests {
         });
         let errs = validate(&s, &json!({"a": "ok", "b": 1}));
         assert!(
-            errs.iter().any(|e| e.contains("'b'") && e.contains("not an allowed")),
+            errs.iter()
+                .any(|e| e.contains("'b'") && e.contains("not an allowed")),
             "{errs:?}"
         );
         assert!(validate(&s, &json!({"a": "ok"})).is_empty());
@@ -592,7 +646,6 @@ mod tests {
     /// are endpoints the value must not equal. The inspector prints them with
     /// `≤`, and `validate` only reads `minimum` / `maximum`.
     #[test]
-    #[ignore = "BUG-003"]
     fn exclusive_numeric_bounds_are_exclusive() {
         let s = json!({
             "type": "object",
@@ -619,7 +672,6 @@ mod tests {
 
     /// `oneOf` is exactly one match. `anyOf` / `oneOf` do not skip `required`.
     #[test]
-    #[ignore = "BUG-012"]
     fn one_of_is_exclusive_and_sibling_keywords_still_apply() {
         let both = validate(
             &json!({"oneOf":[{"type":"string"},{"minLength":1}]}),
@@ -643,7 +695,6 @@ mod tests {
     /// enforces. `pattern`, `minItems`, and `uniqueItems` are displayed and then
     /// accepted.
     #[test]
-    #[ignore = "BUG-004"]
     fn displayed_pattern_items_and_uniqueness_are_enforced() {
         let s = json!({
             "type": "object",
@@ -658,15 +709,27 @@ mod tests {
             }
         });
         let rows = param_rows(&s);
-        let repo_c = rows.iter().find(|r| r.path == "repo").map(|r| r.constraints.clone());
-        let labels_c = rows.iter().find(|r| r.path == "labels").map(|r| r.constraints.clone());
+        let repo_c = rows
+            .iter()
+            .find(|r| r.path == "repo")
+            .map(|r| r.constraints.clone());
+        let labels_c = rows
+            .iter()
+            .find(|r| r.path == "labels")
+            .map(|r| r.constraints.clone());
         let bad_pattern = validate(&s, &json!({"repo": "not a repo", "labels": ["a", "b"]}));
         let dupes = validate(&s, &json!({"repo": "acme/api", "labels": ["a", "a"]}));
         let too_few = validate(&s, &json!({"repo": "acme/api", "labels": ["a"]}));
         assert!(
-            repo_c.as_ref().is_some_and(|c| c.iter().any(|x| x.contains("pattern")))
-                && labels_c.as_ref().is_some_and(|c| c.iter().any(|x| x.contains("unique")))
-                && labels_c.as_ref().is_some_and(|c| c.iter().any(|x| x.contains("items")))
+            repo_c
+                .as_ref()
+                .is_some_and(|c| c.iter().any(|x| x.contains("pattern")))
+                && labels_c
+                    .as_ref()
+                    .is_some_and(|c| c.iter().any(|x| x.contains("unique")))
+                && labels_c
+                    .as_ref()
+                    .is_some_and(|c| c.iter().any(|x| x.contains("items")))
                 && bad_pattern.iter().any(|e| e.contains("repo"))
                 && dupes.iter().any(|e| e.contains("labels"))
                 && too_few.iter().any(|e| e.contains("labels")),

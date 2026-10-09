@@ -1503,7 +1503,10 @@ mod phase5 {
             curl.contains("--header 'Authorization: Bearer folder-token'"),
             "{curl}"
         );
-        assert!(curl.contains(r#"--data '{"u":"staging-user"}'"#), "{curl}");
+        assert!(
+            curl.contains(r#"--data-raw '{"u":"staging-user"}'"#),
+            "{curl}"
+        );
     }
 }
 

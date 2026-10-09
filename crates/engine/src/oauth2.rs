@@ -374,8 +374,33 @@ pub fn netrc_lookup(host: &str) -> Option<(String, String)> {
     parse_netrc(&std::fs::read_to_string(path).ok()?, host)
 }
 
+/// netrc tokens with comments and `macdef` bodies removed. A token starting
+/// with `#` comments out the rest of its line; a macro body runs from the line
+/// after `macdef <name>` to the next blank line.
+fn netrc_tokens(content: &str) -> Vec<&str> {
+    let mut toks = vec![];
+    let mut in_macro = false;
+    for line in content.lines() {
+        if in_macro {
+            in_macro = !line.trim().is_empty();
+            continue;
+        }
+        for tok in line.split_whitespace() {
+            if tok.starts_with('#') {
+                break;
+            }
+            toks.push(tok);
+            if toks.len() >= 2 && toks[toks.len() - 2] == "macdef" {
+                in_macro = true;
+                break;
+            }
+        }
+    }
+    toks
+}
+
 pub fn parse_netrc(content: &str, host: &str) -> Option<(String, String)> {
-    let toks: Vec<&str> = content.split_whitespace().collect();
+    let toks = netrc_tokens(content);
     let mut i = 0;
     let mut default: Option<(String, String)> = None;
     while i < toks.len() {
@@ -449,7 +474,6 @@ mod tests {
     /// netrc(5): a `#` starts a comment through end of line, and `macdef`
     /// consumes the following lines until a blank line. Neither is credentials.
     #[test]
-    #[ignore = "BUG-002"]
     fn netrc_ignores_comments_and_macdef_bodies() {
         let commented =
             "# machine evil.com login bad password worse\nmachine good.com login u password p\n";

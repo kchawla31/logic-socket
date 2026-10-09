@@ -36,6 +36,14 @@ pub fn parse_set_cookie(header: &str, url: &Url) -> Option<Cookie> {
                 if !domain_match(&host, &d) {
                     return None; // a server may not set cookies for unrelated domains
                 }
+                // RFC 6265 §5.3 step 5: a public suffix is only allowed as the
+                // request host itself, and then the cookie stays host-only.
+                if is_public_suffix(&d) {
+                    if d != host {
+                        return None;
+                    }
+                    continue;
+                }
                 c.domain = d;
                 c.host_only = false;
             }
@@ -67,6 +75,10 @@ fn default_path(url: &Url) -> String {
 
 fn domain_match(host: &str, domain: &str) -> bool {
     host == domain || (host.ends_with(domain) && host[..host.len() - domain.len()].ends_with('.'))
+}
+
+fn is_public_suffix(domain: &str) -> bool {
+    psl::suffix_str(domain) == Some(domain)
 }
 
 fn path_match(req: &str, cookie: &str) -> bool {
@@ -169,7 +181,6 @@ mod tests {
     /// says a public suffix must be rejected. The jar comment says a server
     /// may not set cookies for unrelated domains.
     #[test]
-    #[ignore = "BUG-001"]
     fn public_suffix_domain_is_not_stored_or_sent() {
         let evil = u("https://evil.com/");
         let set = parse_set_cookie("sid=secret; Domain=com; Path=/", &evil);
@@ -184,6 +195,19 @@ mod tests {
         assert!(
             set.is_none(),
             "Domain=com was accepted and can be replayed to other hosts: {detail}"
+        );
+        let shop = u("https://shop.co.uk/");
+        assert!(parse_set_cookie("sid=x; Domain=co.uk", &shop).is_none());
+        let ok = parse_set_cookie(
+            "sid=x; Domain=example.co.uk",
+            &u("https://www.example.co.uk/"),
+        )
+        .unwrap();
+        assert!(!ok.host_only);
+        let local = parse_set_cookie("sid=x; Domain=localhost", &u("http://localhost/")).unwrap();
+        assert!(
+            local.host_only,
+            "a suffix equal to the host stays host-only"
         );
     }
 

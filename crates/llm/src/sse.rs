@@ -8,18 +8,36 @@ pub struct SseEvent {
 
 #[derive(Default)]
 pub struct SseParser {
-    buf: String,
+    buf: Vec<u8>,
+    after_cr: bool,
 }
 
 impl SseParser {
-    pub fn feed(&mut self, bytes: &[u8]) -> Vec<SseEvent> {
-        self.buf.push_str(&String::from_utf8_lossy(bytes));
-        if self.buf.contains('\r') {
-            self.buf = self.buf.replace("\r\n", "\n");
+    /// Append `bytes` with CR, LF, and CRLF all normalized to LF. A trailing CR
+    /// is remembered so a CRLF split across chunks stays one line ending.
+    fn push_normalized(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            match b {
+                b'\r' => self.buf.push(b'\n'),
+                b'\n' if self.after_cr => {}
+                _ => self.buf.push(b),
+            }
+            self.after_cr = b == b'\r';
         }
+    }
+
+    /// The next complete event block, decoded once whole so multibyte
+    /// characters split across chunks survive.
+    fn next_block(&mut self) -> Option<String> {
+        let i = self.buf.windows(2).position(|w| w == b"\n\n")?;
+        let raw: Vec<u8> = self.buf.drain(..i + 2).collect();
+        Some(String::from_utf8_lossy(&raw).into_owned())
+    }
+
+    pub fn feed(&mut self, bytes: &[u8]) -> Vec<SseEvent> {
+        self.push_normalized(bytes);
         let mut out = vec![];
-        while let Some(i) = self.buf.find("\n\n") {
-            let raw: String = self.buf.drain(..i + 2).collect();
+        while let Some(raw) = self.next_block() {
             if let Some(e) = parse(&raw) {
                 out.push(e);
             }
@@ -72,7 +90,6 @@ mod tests {
 
     /// A bare CR is a line ending. `CR CR` dispatchs one event.
     #[test]
-    #[ignore = "BUG-017"]
     fn bare_cr_ends_an_event() {
         let mut p = SseParser::default();
         let e = p.feed(b"event: ping\rdata: hello\r\r");
@@ -80,5 +97,14 @@ mod tests {
             e.len() == 1 && e[0].event == "ping" && e[0].data == "hello",
             "{e:?}"
         );
+    }
+
+    #[test]
+    fn multibyte_character_split_across_chunks() {
+        let mut p = SseParser::default();
+        let bytes = "data: 東京\n\n".as_bytes();
+        assert!(p.feed(&bytes[..7]).is_empty());
+        let e = p.feed(&bytes[7..]);
+        assert_eq!(e[0].data, "東京");
     }
 }

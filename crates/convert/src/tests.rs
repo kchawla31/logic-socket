@@ -405,7 +405,6 @@ fn postman_export_round_trips() {
 // ------------------------------------------------------------------ OpenAPI / Swagger
 
 #[test]
-#[ignore = "BUG-016"]
 fn openapi_cookie_parameter_is_imported() {
     let spec = r#"{"openapi":"3.0.0","info":{"title":"t","version":"1"},"paths":{"/a":{"get":{"operationId":"getA","parameters":[{"name":"sid","in":"cookie","required":true,"schema":{"type":"string","example":"abc"}}]}}}}"#;
     let imported = import(spec).unwrap_or_else(|e| panic!("{e}"));
@@ -422,6 +421,8 @@ fn openapi_cookie_parameter_is_imported() {
         "cookie parameter dropped\nheaders={:?}\nparams={:?}",
         r.headers, r.parameters
     );
+    let cookie = r.headers.iter().find(|h| h.name == "Cookie").unwrap();
+    assert_eq!((cookie.value.as_str(), cookie.disabled), ("sid=abc", false));
 }
 
 #[test]
@@ -1044,7 +1045,7 @@ fn code_snippets() {
     let curl = generate(&r, Target::Curl);
     assert_eq!(
         curl,
-        "curl --request POST \\\n  --url 'https://api.x.io/items?q=a b' \\\n  --header 'Content-Type: application/json' \\\n  --header 'X-Quote: it'\\''s' \\\n  --data '{\"a\":\"b\"}'"
+        "curl --request POST \\\n  --url 'https://api.x.io/items?q=a b' \\\n  --header 'Content-Type: application/json' \\\n  --header 'X-Quote: it'\\''s' \\\n  --data-raw '{\"a\":\"b\"}'"
     );
     // the generated curl parses back to the same request
     let back = crate::curl::parse(&curl).unwrap();

@@ -246,12 +246,12 @@
       this._s = scopes; // { globals, base, env, folders: [{name, environment}], iteration, locals }
     }
     _merged() {
-      // Precedence: local > folders (inner wins)
-      // > iterationData > environment > base (collection) > globals.
+      // Precedence, same as `{{ }}` rendering: local > iterationData
+      // > folders (inner wins) > environment > base (collection) > globals.
       const m = {};
-      Object.assign(m, this._s.globals._data, this._s.base._data, this._s.env._data, this._s.iteration._data);
+      Object.assign(m, this._s.globals._data, this._s.base._data, this._s.env._data);
       for (const f of this._s.folders) Object.assign(m, f.environment || {});
-      Object.assign(m, this._s.locals);
+      Object.assign(m, this._s.iteration._data, this._s.locals);
       return m;
     }
     has(k) {
@@ -287,8 +287,9 @@
     const s = String(str);
     const hash = s.indexOf('#');
     const noHash = hash >= 0 ? s.slice(0, hash) : s;
+    const frag = hash >= 0 ? s.slice(hash) : '';
     const q = noHash.indexOf('?');
-    if (q < 0) return { base: noHash, query: [] };
+    if (q < 0) return { base: noHash, query: [], hash: frag };
     const dec = x => {
       try {
         return decodeURIComponent(x.replace(/\+/g, ' '));
@@ -304,7 +305,7 @@
         const i = p.indexOf('=');
         return i < 0 ? { key: dec(p), value: '' } : { key: dec(p.slice(0, i)), value: dec(p.slice(i + 1)) };
       });
-    return { base: noHash.slice(0, q), query };
+    return { base: noHash.slice(0, q), query, hash: frag };
   }
   const enc = s => encodeURIComponent(String(s)).replace(/%7B/g, '{').replace(/%7D/g, '}').replace(/%20/g, '%20');
 
@@ -324,7 +325,7 @@
     }
     toString() {
       const qs = this.getQueryString();
-      return qs ? `${this._req._url}${this._req._url.includes('?') ? '&' : '?'}${qs}` : this._req._url;
+      return `${this._req._url}${qs ? `?${qs}` : ''}${this._req._hash || ''}`;
     }
     _parts() {
       const m = /^([a-z][a-z0-9+.-]*):\/\/([^/?#:]*)(?::(\d+))?([^?#]*)/i.exec(this._req._url);
@@ -419,6 +420,13 @@
       // accept `{type:'bearer', bearer:{token:'x'}}` as well as the list form
       for (const k of ['basic', 'bearer', 'apikey'])
         if (next[k] && !Array.isArray(next[k])) next[k] = Object.entries(next[k]).map(([key, value]) => ({ key, value }));
+      // and the flat form: `update({ username, password }, 'basic')`
+      const t = next.type;
+      if (['basic', 'bearer', 'apikey'].includes(t) && !next[t]) {
+        const flat = Object.entries(next).filter(([key]) => !['type', 'disabled'].includes(key));
+        next[t] = flat.map(([key, value]) => ({ key, value }));
+        for (const [key] of flat) delete next[key];
+      }
       Object.assign(this, next);
     }
     parameters() {
@@ -434,8 +442,12 @@
       this.id = raw.id;
       this.name = raw.name;
       this.method = raw.method;
-      this._url = raw.url;
-      this._query = new PropertyList(raw.query);
+      // A query string typed into the URL is part of the parameter list, so
+      // query edits see it and toString() does not repeat it.
+      const { base, query, hash } = splitUrl(raw.url);
+      this._url = base;
+      this._hash = hash;
+      this._query = new PropertyList(query.concat(raw.query || []));
       this.headers = new PropertyList(raw.headers);
       this.body = Object.assign(Object.create({ update(b) {
         for (const k of Object.keys(this)) delete this[k];
@@ -451,8 +463,9 @@
     }
     set url(v) {
       const s = typeof v === 'string' ? v : String(v);
-      const { base, query } = splitUrl(s);
+      const { base, query, hash } = splitUrl(s);
       this._url = base;
+      this._hash = hash;
       this._query = new PropertyList(query);
     }
     addHeader(h) {
@@ -485,7 +498,7 @@
         id: this.id,
         name: this.name,
         method: String(this.method || 'GET').toUpperCase(),
-        url: this._url,
+        url: this._url + (this._hash || ''),
         query: this._query.all(),
         headers: this.headers.all(),
         body,
