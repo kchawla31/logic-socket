@@ -7,32 +7,63 @@ import { Badge, Button, CopyButton, Empty, Kbd, Modal, Split, Tabs, useToast } f
 import { api, type CallToolResult, errorText, type Hints, type ParamRow, type ToolView } from '../lib/api';
 import { cn, formatMs, modKey } from '../lib/utils';
 
+/** What each behavior label means, shared by the badges' tooltips and the legend. */
+const HINTS = {
+  'read-only': { tone: 'green', meaning: 'Only reads. It does not change anything.' },
+  writes: { tone: 'amber', meaning: 'Changes data, but only by adding. It does not delete or overwrite.' },
+  destructive: { tone: 'red', meaning: 'May delete or overwrite data. Logic Socket asks before running it.' },
+  idempotent: { tone: 'blue', meaning: 'Safe to repeat: calling it again with the same arguments has no extra effect.' },
+  'open-world': { tone: 'violet', meaning: 'Reaches outside systems, such as the web or a third-party API.' },
+  'closed-world': { tone: 'neutral', meaning: 'Stays within its own data or service.' },
+  unannotated: {
+    tone: 'neutral',
+    meaning:
+      'The server did not describe this tool. The MCP spec says to assume it may change or delete data and reach outside systems, so Logic Socket asks before running it.',
+  },
+} as const;
+type HintLabel = keyof typeof HINTS;
+
 export function HintBadges({ hints, compact }: { hints: Hints; compact?: boolean }) {
-  const items: { label: string; tone: string; title: string }[] = [];
-  if (hints.readOnly) items.push({ label: 'read-only', tone: 'green', title: 'Does not modify its environment (readOnlyHint)' });
-  else if (hints.destructive)
-    items.push({ label: 'destructive', tone: 'red', title: 'May perform destructive updates (destructiveHint — default when not read-only)' });
-  else items.push({ label: 'writes', tone: 'amber', title: 'Modifies state but only additively (destructiveHint: false)' });
-  if (hints.idempotent) items.push({ label: 'idempotent', tone: 'blue', title: 'Repeated calls with the same arguments have no extra effect' });
-  if (!compact || !hints.openWorld)
-    items.push(
-      hints.openWorld
-        ? { label: 'open-world', tone: 'violet', title: 'Interacts with external entities (e.g. the web)' }
-        : { label: 'closed-world', tone: 'neutral', title: 'Only touches a closed domain (openWorldHint: false)' },
-    );
+  const labels: HintLabel[] = [];
+  if (!hints.declared) labels.push('unannotated');
+  else {
+    labels.push(hints.readOnly ? 'read-only' : hints.destructive ? 'destructive' : 'writes');
+    if (hints.idempotent) labels.push('idempotent');
+    if (!compact || !hints.openWorld) labels.push(hints.openWorld ? 'open-world' : 'closed-world');
+  }
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
-      {items.map(i => (
-        <Badge key={i.label} tone={i.tone} title={i.title}>
-          {i.label}
+      {labels.map(l => (
+        <Badge key={l} tone={HINTS[l].tone} title={HINTS[l].meaning}>
+          {l}
         </Badge>
       ))}
-      {!hints.declared && !compact && (
-        <span className="text-[11px] text-muted" title="The server sent no annotations; these are the spec defaults">
-          (unannotated)
-        </span>
-      )}
     </span>
+  );
+}
+
+/** "What do the labels mean?" link and the legend it opens. */
+export function HintLegend() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="text-[11.5px] text-muted underline-offset-2 hover:text-app hover:underline" onClick={() => setOpen(true)}>
+        What do the labels mean?
+      </button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Tool labels" width="max-w-lg">
+        <div className="flex flex-col gap-2.5 p-5">
+          <p className="mb-1 text-[12.5px] text-muted">MCP servers can describe how each tool behaves. These are hints from the server, not guarantees.</p>
+          {(Object.keys(HINTS) as HintLabel[]).map(l => (
+            <div key={l} className="grid grid-cols-[104px_1fr] items-start gap-3">
+              <span>
+                <Badge tone={HINTS[l].tone}>{l}</Badge>
+              </span>
+              <span className="text-[12.5px]">{HINTS[l].meaning}</span>
+            </div>
+          ))}
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -422,6 +453,9 @@ export function ToolsPanel({ serverId, tools }: { serverId: string; tools: ToolV
             aria-label="Search tools"
             className="h-8 w-full rounded-md border border-app bg-app pr-2 pl-7 text-[12.5px] outline-none focus:border-accent"
           />
+          <div className="mt-1 px-0.5">
+            <HintLegend />
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-1.5 pb-3">
           {filtered.map(t => (

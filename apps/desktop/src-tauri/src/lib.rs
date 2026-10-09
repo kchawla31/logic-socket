@@ -671,7 +671,11 @@ async fn mcp_connect<R: tauri::Runtime>(
     if let Some(old) = state.mcp.lock().await.remove(&server_id) {
         old.close().await;
     }
-    let opts = state.engine.mcp_connect_options(&server_id).map_err(e)?;
+    let opts = state
+        .engine
+        .mcp_connect_options(&server_id)
+        .await
+        .map_err(e)?;
     let log = state.log_for(&server_id);
     let mut rx = log.subscribe();
     let sid = server_id.clone();
@@ -1104,6 +1108,7 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             auth::oauth2_status,
             auth::oauth2_authorize,
             auth::oauth2_clear,
+            auth::mcp_oauth_sign_in,
             grpc::proto_file_list,
             grpc::proto_file_create,
             grpc::proto_file_update,

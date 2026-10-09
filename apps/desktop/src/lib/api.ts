@@ -742,6 +742,7 @@ export const api = {
   oauth2Status: (ownerId: string) => invoke<TokenStatus>('oauth2_status', { ownerId }),
   oauth2Authorize: (ownerId: string) => invoke<TokenStatus>('oauth2_authorize', { ownerId }),
   oauth2Clear: (ownerId: string) => invoke<void>('oauth2_clear', { ownerId }),
+  mcpOauthSignIn: (serverId: string) => invoke<TokenStatus>('mcp_oauth_sign_in', { serverId }),
   protoFileList: (workspaceId: string) => invoke<ProtoFile[]>('proto_file_list', { workspaceId }),
   protoFileCreate: (workspaceId: string, name: string, contents: string) => invoke<ProtoFile>('proto_file_create', { workspaceId, name, contents }),
   protoFileUpdate: (doc: ProtoFile) => invoke<ProtoFile>('proto_file_update', { doc }),

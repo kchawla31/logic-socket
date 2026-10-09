@@ -235,7 +235,7 @@ impl Engine {
         let mut out = vec![];
         for id in server_ids {
             let server: Doc<McpServer> = self.store.get(id)?;
-            let opts = self.mcp_connect_options(id)?;
+            let opts = self.mcp_connect_options(id).await?;
             let client = lsock_mcp::Client::connect(opts)
                 .await
                 .map_err(|e| EngineError::Llm(format!("MCP server '{}': {e}", server.name)))?;

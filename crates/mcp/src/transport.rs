@@ -289,8 +289,18 @@ impl HttpTransport {
             .to_ascii_lowercase();
 
         if !status.is_success() {
+            // An OAuth-protected server points at its metadata (MCP authorization spec).
+            let oauth = resp
+                .headers()
+                .get_all(reqwest::header::WWW_AUTHENTICATE)
+                .iter()
+                .filter_map(|v| v.to_str().ok())
+                .any(|v| v.contains("resource_metadata"));
             let body = resp.text().await.unwrap_or_default();
             let hint = match status.as_u16() {
+                401 | 403 if oauth => {
+                    " (server requires OAuth sign-in — in Settings › Auth choose OAuth and click Sign in)"
+                }
                 401 | 403 => " (server requires authentication — add an Authorization header)",
                 404 if self.session_id.lock().unwrap().is_some() => {
                     " (session expired — reconnect)"

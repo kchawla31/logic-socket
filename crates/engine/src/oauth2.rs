@@ -235,6 +235,10 @@ impl Engine {
                 if !cfg.scope.is_empty() {
                     pairs.push(("scope", cfg.scope.clone()));
                 }
+                // RFC 8707: name the protected resource on refresh too (the MCP spec requires it).
+                if !cfg.resource.is_empty() {
+                    pairs.push(("resource", cfg.resource.clone()));
+                }
                 if let Ok(mut nt) = self.token_request(cfg, pairs).await {
                     nt.refresh_token = nt.refresh_token.or(Some(rt));
                     let at = nt.access_token.clone();
@@ -360,6 +364,9 @@ impl Engine {
         ];
         if cfg.use_pkce {
             pairs.push(("code_verifier", verifier));
+        }
+        if !cfg.resource.is_empty() {
+            pairs.push(("resource", cfg.resource.clone()));
         }
         let token = self.token_request(cfg, pairs).await?;
         self.oauth2_save(owner_id, token)

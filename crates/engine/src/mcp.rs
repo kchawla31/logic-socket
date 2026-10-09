@@ -10,7 +10,18 @@ use lsock_templating::Mode;
 use crate::{Engine, EngineError, Result};
 
 impl Engine {
-    pub fn mcp_connect_options(&self, server_id: &str) -> Result<ConnectOptions> {
+    /// Connect options for a saved server. A server using OAuth gets its cached token,
+    /// refreshed first when it is about to expire.
+    pub async fn mcp_connect_options(&self, server_id: &str) -> Result<ConnectOptions> {
+        let oauth = self.mcp_oauth_header(server_id).await?;
+        self.connect_options_with(server_id, oauth)
+    }
+
+    fn connect_options_with(
+        &self,
+        server_id: &str,
+        oauth: Option<String>,
+    ) -> Result<ConnectOptions> {
         let server = self.store.get::<McpServer>(server_id)?;
         let ctx = self.context(server_id)?;
         let r = |field: &str, s: &str| {
@@ -56,6 +67,9 @@ impl Engine {
                 headers.push((r("API key name", key)?, r("API key value", value)?));
             }
             _ => {}
+        }
+        if let Some(h) = oauth {
+            headers.push(("Authorization".into(), h));
         }
         let mut env = HashMap::new();
         for e in server
@@ -120,8 +134,8 @@ mod tests {
     use super::*;
     use lsock_core::{KeyValue, Workspace};
 
-    #[test]
-    fn renders_saved_server_config() {
+    #[tokio::test]
+    async fn renders_saved_server_config() {
         let e = Engine::in_memory();
         let ws = e.store.insert(None, Workspace::default()).unwrap();
         let mut base = e.base_environment(ws.id()).unwrap();
@@ -146,7 +160,7 @@ mod tests {
                 },
             )
             .unwrap();
-        let o = e.mcp_connect_options(s.id()).unwrap();
+        let o = e.mcp_connect_options(s.id()).await.unwrap();
         match o.transport {
             TransportConfig::Http { url, headers, .. } => {
                 assert_eq!(url, "http://localhost:9/mcp");

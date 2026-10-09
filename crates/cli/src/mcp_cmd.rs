@@ -105,7 +105,7 @@ fn parse_header(h: &str) -> Result<(String, String)> {
     Ok((k.trim().to_string(), v.trim().to_string()))
 }
 
-fn connect_options(engine: &Engine, a: &ServerArgs) -> Result<(String, ConnectOptions)> {
+async fn connect_options(engine: &Engine, a: &ServerArgs) -> Result<(String, ConnectOptions)> {
     let headers: Vec<(String, String)> = a
         .headers
         .iter()
@@ -142,7 +142,7 @@ fn connect_options(engine: &Engine, a: &ServerArgs) -> Result<(String, ConnectOp
         bail!("give a saved server name/id, --url or --stdio")
     };
     let server = crate::find::<McpServer>(engine, target)?;
-    let mut opts = engine.mcp_connect_options(server.id())?;
+    let mut opts = engine.mcp_connect_options(server.id()).await?;
     // Command-line headers/env add to the saved configuration.
     match &mut opts.transport {
         TransportConfig::Http { headers: h, .. } => h.extend(headers),
@@ -152,7 +152,7 @@ fn connect_options(engine: &Engine, a: &ServerArgs) -> Result<(String, ConnectOp
 }
 
 async fn connect(engine: &Engine, a: &ServerArgs) -> Result<(String, Client)> {
-    let (label, mut opts) = connect_options(engine, a)?;
+    let (label, mut opts) = connect_options(engine, a).await?;
     opts.request_timeout = std::time::Duration::from_secs(a.timeout);
     let log = lsock_mcp::ProtocolLog::default();
     match Client::connect_with_log(opts, log.clone()).await {

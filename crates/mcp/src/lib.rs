@@ -3,6 +3,7 @@
 
 pub mod log;
 pub mod mock;
+pub mod mock_oauth;
 pub mod schema;
 pub mod transport;
 pub mod types;

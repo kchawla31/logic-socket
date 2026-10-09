@@ -698,7 +698,7 @@ mod ai {
                 },
             )
             .unwrap();
-        let client = lsock_mcp::Client::connect(e.mcp_connect_options(server.id()).unwrap())
+        let client = lsock_mcp::Client::connect(e.mcp_connect_options(server.id()).await.unwrap())
             .await
             .unwrap();
         let r = client

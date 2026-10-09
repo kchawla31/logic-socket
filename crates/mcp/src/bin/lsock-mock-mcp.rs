@@ -1,6 +1,7 @@
 //! Demo MCP server. `lsock-mock-mcp` speaks stdio; `lsock-mock-mcp --http 3333`
 //! serves Streamable HTTP at http://127.0.0.1:3333/mcp
-//! (add `--token secret` to require `Authorization: Bearer secret`).
+//! (add `--token secret` to require `Authorization: Bearer secret`, or `--oauth`
+//! to require sign-in through its built-in MCP-spec OAuth server).
 
 use lsock_mcp::mock::{HttpState, handle, spawn_http};
 use serde_json::{Value, json};
@@ -16,9 +17,13 @@ async fn main() -> std::io::Result<()> {
             .cloned()
     };
     if let Some(port) = flag("--http") {
-        let state = flag("--token")
-            .map(HttpState::with_token)
-            .unwrap_or_default();
+        let state = if args.iter().any(|a| a == "--oauth") {
+            HttpState::with_oauth()
+        } else {
+            flag("--token")
+                .map(HttpState::with_token)
+                .unwrap_or_default()
+        };
         let url = spawn_http(state, port.parse().unwrap_or(3333)).await?;
         eprintln!("lsock-mock-mcp listening on {url}");
         tokio::signal::ctrl_c().await?;

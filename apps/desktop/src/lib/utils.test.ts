@@ -9,6 +9,7 @@ import {
   prettyJson,
   authFromText,
   authToText,
+  curlToMcp,
   kvFromText,
   kvToText,
   splitQuery,
@@ -178,5 +179,49 @@ describe('bulk edit', () => {
     const r = authFromText('type: kerberos\npassword: c', cur, defaults, TYPES);
     expect(r.auth).toEqual({ type: 'basic', username: 'a', password: 'c' });
     expect(r.ignored).toEqual(['type']);
+  });
+});
+
+describe('curlToMcp', () => {
+  const req = (over: object) =>
+    ({
+      name: '',
+      description: '',
+      method: 'POST',
+      url: 'https://mcp.example.com/mcp',
+      parameters: [],
+      pathParameters: [],
+      headers: [],
+      body: {},
+      authentication: { type: 'inherit' },
+      ...over,
+    }) as never;
+
+  it('keeps URL, query, and custom headers; skips headers the MCP client sets', () => {
+    const c = curlToMcp(
+      req({
+        parameters: [
+          { name: 'tenant', value: '{{ _.tenant }}' },
+          { name: 'q', value: 'a b&c' },
+        ],
+        headers: [
+          { name: 'Content-Type', value: 'application/json' },
+          { name: 'Accept', value: 'application/json, text/event-stream' },
+          { name: 'X-Api-Version', value: '2' },
+        ],
+        authentication: { type: 'bearer', token: '$TOKEN', prefix: null },
+        body: { mimeType: 'application/json', text: '{"jsonrpc":"2.0"}' },
+      }),
+    );
+    expect(c.url).toBe('https://mcp.example.com/mcp?tenant={{ _.tenant }}&q=a%20b%26c');
+    expect(c.headers).toEqual([{ name: 'X-Api-Version', value: '2' }]);
+    expect(c.authentication).toEqual({ type: 'bearer', token: '$TOKEN', prefix: null });
+    expect(c.dropped).toEqual(['Content-Type', 'Accept', 'request body']);
+  });
+
+  it('turns Basic auth into an Authorization header, since MCP auth is bearer only', () => {
+    const c = curlToMcp(req({ authentication: { type: 'basic', username: 'ada', password: 'pä' } }));
+    expect(c.authentication).toEqual({ type: 'none' });
+    expect(c.headers).toEqual([{ name: 'Authorization', value: `Basic ${btoa('ada:p\u00c3\u00a4')}` }]);
   });
 });

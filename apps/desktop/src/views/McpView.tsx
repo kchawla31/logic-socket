@@ -1,11 +1,12 @@
-import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Circle, Info, Plug, Power, RefreshCw, Trash2, TriangleAlert, Zap } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Circle, Info, KeyRound, LogIn, Plug, Power, RefreshCw, Trash2, TriangleAlert, Zap } from 'lucide-react';
+import { type ClipboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { CodeEditor, JsonTree, KeyValueEditor, Markdown } from '../components/editors';
 import { Badge, Button, CopyButton, Empty, Input, Select, Split, Tabs, useToast } from '../components/ui';
 import { VarInput } from '../components/VarInput';
 import {
   api,
+  type Auth,
   errorText,
   type Listed,
   type LogEntry,
@@ -16,11 +17,12 @@ import {
   type Prompt,
   type Resource,
   type ResourceTemplate,
+  type TokenStatus,
   type ToolView,
 } from '../lib/api';
-import { clockTime, cn, formatMs } from '../lib/utils';
+import { clockTime, cn, curlToMcp, formatMs, looksLikeCurl } from '../lib/utils';
 import { useProviders } from './AiProviders';
-import { useAutosave } from './RequestView';
+import { clipboardPlainText, useAutosave } from './RequestView';
 import { ToolsPanel } from './McpTools';
 
 /** Shell-like split honoring quotes, for the stdio command line. */
@@ -52,7 +54,7 @@ function joinArgs(a: string[]): string {
 
 export function McpView({ id }: { id: string }) {
   const toast = useToast();
-  const [server, setServer] = useAutosave<McpServer>(id, api.mcpServerUpdate);
+  const [server, setServer, flush] = useAutosave<McpServer>(id, api.mcpServerUpdate);
   const [status, setStatus] = useState<McpStatus>({ connected: false });
   const [connecting, setConnecting] = useState(false);
   const [tools, setTools] = useState<Listed<ToolView> | null>(null);
@@ -129,6 +131,29 @@ export function McpView({ id }: { id: string }) {
   if (!server) return <Empty title="Loading…" />;
   const t = server.transport;
   const update = (patch: Partial<McpServer>) => setServer({ ...server, ...patch });
+
+  // A pasted curl command fills in the Streamable HTTP URL, headers, and auth.
+  const importCurl = async (text: string) => {
+    try {
+      const c = curlToMcp(await api.curlParse(text));
+      update({ transport: { kind: 'streamable-http', url: c.url }, headers: c.headers, authentication: c.authentication });
+      const parts = [`${c.headers.length} header${c.headers.length === 1 ? '' : 's'}`, c.authentication.type === 'bearer' ? 'bearer auth' : ''];
+      const skipped = c.dropped.length ? ` · skipped ${c.dropped.join(', ')} (the MCP client sends its own)` : '';
+      toast(`Imported from cURL: URL, ${parts.filter(Boolean).join(', ')}${skipped}`, 'success');
+    } catch (err) {
+      toast(`Could not parse cURL: ${errorText(err)}`, 'error');
+    }
+  };
+  const onConnectionPaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const text = clipboardPlainText(e.clipboardData);
+    if (text && looksLikeCurl(text)) {
+      e.preventDefault();
+      void importCurl(text);
+    }
+  };
+  // WKWebView can insert a paste without exposing the clipboard text; catch a multi-character
+  // insertion that looks like curl. Typing one character at a time never imports.
+  const pastedCurl = (prev: string, next: string) => next.length - prev.length > 1 && looksLikeCurl(next);
   const info = status.server;
 
   return (
@@ -156,9 +181,10 @@ export function McpView({ id }: { id: string }) {
             className="flex-1"
             value={t.url}
             contextId={id}
-            onChange={url => update({ transport: { ...t, url } })}
+            onChange={url => (pastedCurl(t.url, url) ? void importCurl(url) : update({ transport: { ...t, url } }))}
+            onPaste={onConnectionPaste}
             onEnter={connect}
-            placeholder="http://localhost:3333/mcp"
+            placeholder="http://localhost:3333/mcp, or paste a curl command"
           />
         ) : (
           <VarInput
@@ -166,9 +192,11 @@ export function McpView({ id }: { id: string }) {
             value={[t.command, joinArgs(t.args)].filter(Boolean).join(' ')}
             contextId={id}
             onChange={v => {
+              if (pastedCurl([t.command, joinArgs(t.args)].filter(Boolean).join(' '), v)) return void importCurl(v);
               const [command = '', ...args] = splitArgs(v);
               update({ transport: { ...t, command, args } });
             }}
+            onPaste={onConnectionPaste}
             onEnter={connect}
             placeholder="npx -y @modelcontextprotocol/server-everything"
           />
@@ -187,7 +215,20 @@ export function McpView({ id }: { id: string }) {
         )}
       </div>
 
-      {showConfig && <ConnectionSettings server={server} update={update} contextId={id} />}
+      {showConfig && (
+        <ConnectionSettings
+          server={server}
+          update={update}
+          contextId={id}
+          // Sign-in reads the saved server and writes back what it discovers.
+          beforeSignIn={flush}
+          afterSignIn={async () => {
+            setLastError(null);
+            setServer(await api.docGet<McpServer>(id));
+          }}
+          connected={status.connected}
+        />
+      )}
 
       {lastError && (
         <div className="m-3 rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-[12.5px]">
@@ -225,7 +266,8 @@ export function McpView({ id }: { id: string }) {
           ) : undefined
         }
       />
-      <div className="min-h-0 flex-1">
+      {/* A flex column, so the panels inside get a bounded height and scroll instead of overflowing. */}
+      <div className="flex min-h-0 flex-1 flex-col">
         {tab === 'tools' &&
           (tools ? (
             <ToolsPanel serverId={id} tools={tools.items} />
@@ -294,7 +336,165 @@ function ServerCard({ status, onRefresh, serverId }: { status: McpStatus; onRefr
   );
 }
 
-function ConnectionSettings({ server, update, contextId }: { server: McpServer; update: (p: Partial<McpServer>) => void; contextId: string }) {
+type SettingsProps = {
+  server: McpServer;
+  update: (p: Partial<McpServer>) => void;
+  contextId: string;
+  beforeSignIn: () => Promise<void>;
+  afterSignIn: () => Promise<unknown>;
+  connected: boolean;
+};
+
+const MCP_OAUTH: Auth = {
+  type: 'oauth2',
+  grantType: 'authorization_code',
+  accessTokenUrl: '',
+  authorizationUrl: '',
+  clientId: '',
+  clientSecret: '',
+  scope: '',
+  audience: '',
+  resource: '',
+  username: '',
+  password: '',
+  redirectUrl: 'http://127.0.0.1:8970/callback',
+  usePkce: true,
+  credentialsInBody: false,
+  tokenPrefix: '',
+};
+
+/** MCP auth: none, bearer token, API key header, or OAuth sign-in per the MCP spec. */
+function McpAuth({ server, update, contextId, beforeSignIn, afterSignIn, connected }: SettingsProps) {
+  const toast = useToast();
+  const auth = server.authentication;
+  const kind = auth.type === 'bearer' || auth.type === 'apikey' || auth.type === 'oauth2' ? auth.type : 'none';
+  const [token, setToken] = useState<TokenStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const isHttp = server.transport.kind === 'streamable-http';
+  useEffect(() => {
+    if (kind === 'oauth2') api.oauth2Status(server.id).then(setToken).catch(() => setToken(null));
+  }, [kind, server.id]);
+  const setAuth = (authentication: Auth) => update({ authentication });
+  const signIn = async () => {
+    setBusy(true);
+    try {
+      await beforeSignIn();
+      setToken(await api.mcpOauthSignIn(server.id));
+      await afterSignIn();
+      toast(connected ? 'Signed in — reconnect to use the new token' : 'Signed in — click Connect', 'success');
+    } catch (e) {
+      toast(`Sign-in failed: ${errorText(e)}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const field = (label: string, value: string, set: (v: string) => void, placeholder?: string) => (
+    <label className="grid grid-cols-[130px_1fr] items-center gap-2">
+      <span className="text-muted">{label}</span>
+      <VarInput contextId={contextId} value={value} onChange={set} placeholder={placeholder} />
+    </label>
+  );
+  const expired = token?.expiresAt != null && token.expiresAt < Date.now();
+  return (
+    <div className="flex max-w-xl flex-col gap-2.5 p-3">
+      <Select
+        aria-label="MCP auth type"
+        value={kind}
+        onChange={e => {
+          const t = e.target.value;
+          setAuth(
+            t === 'bearer'
+              ? { type: 'bearer', token: '' }
+              : t === 'apikey'
+                ? { type: 'apikey', key: '', value: '', addTo: null }
+                : t === 'oauth2'
+                  ? MCP_OAUTH
+                  : { type: 'none' },
+          );
+        }}
+        className="w-56"
+      >
+        <option value="none">No auth</option>
+        <option value="bearer">Bearer token</option>
+        <option value="apikey">API key</option>
+        <option value="oauth2">OAuth (sign in)</option>
+      </Select>
+      {auth.type === 'bearer' && (
+        <>
+          <VarInput contextId={contextId} value={auth.token} onChange={t => setAuth({ ...auth, token: t })} placeholder="{{ _.mcp_token }}" />
+          <p className="text-[12px] text-muted">Sent as an Authorization header on every Streamable HTTP request. Use environment variables to keep tokens out of the config.</p>
+        </>
+      )}
+      {auth.type === 'apikey' && (
+        <>
+          {field('Header name', auth.key, key => setAuth({ ...auth, key }), 'X-API-Key')}
+          {field('Value', auth.value, value => setAuth({ ...auth, value }), '{{ _.mcp_api_key }}')}
+          <p className="text-[12px] text-muted">Sent as this header on every Streamable HTTP request.</p>
+        </>
+      )}
+      {auth.type === 'oauth2' && (
+        <>
+          {!isHttp && <p className="text-[12px] text-amber-600">OAuth sign-in is for Streamable HTTP servers. stdio servers authenticate through their environment.</p>}
+          <div className="flex items-center gap-2 rounded-lg border border-app bg-app p-2.5">
+            <KeyRound className="size-4 text-muted" />
+            {token?.hasToken ? (
+              <>
+                <span className="font-medium">Signed in</span>
+                {token.expiresAt != null && (
+                  <Badge tone={expired ? 'amber' : 'green'}>
+                    {expired ? (token.hasRefreshToken ? 'expired · refreshes on connect' : 'expired') : `expires ${new Date(token.expiresAt).toLocaleTimeString()}`}
+                  </Badge>
+                )}
+                {token.hasRefreshToken && !expired && <Badge>refreshable</Badge>}
+              </>
+            ) : (
+              <span className="text-[12.5px] text-muted">Not signed in</span>
+            )}
+            <div className="flex-1" />
+            <Button size="sm" variant="primary" onClick={signIn} loading={busy} disabled={!isHttp}>
+              {!busy && <LogIn className="size-3.5" />} {token?.hasToken ? 'Sign in again' : 'Sign in'}
+            </Button>
+            {token?.hasToken && (
+              <Button size="sm" variant="ghost" onClick={() => api.oauth2Clear(server.id).then(() => api.oauth2Status(server.id).then(setToken))}>
+                Sign out
+              </Button>
+            )}
+          </div>
+          <p className="text-[12px] text-muted">
+            Sign in opens your browser. Logic Socket finds the server&rsquo;s sign-in page from the server URL, registers itself if needed, and refreshes the token
+            when it expires.
+            {auth.authorizationUrl && (
+              <>
+                {' '}
+                Signs in at <span className="font-mono">{hostOf(auth.authorizationUrl)}</span>.
+              </>
+            )}
+          </p>
+          <details className="text-[12.5px]">
+            <summary className="cursor-pointer text-muted select-none">Advanced: client ID, scope, redirect URL</summary>
+            <div className="mt-2 flex flex-col gap-2">
+              <p className="text-[12px] text-muted">Leave empty to use what the server publishes. Fill in a client ID only if the server&rsquo;s owner gave you one.</p>
+              {field('Client ID', auth.clientId, clientId => setAuth({ ...auth, clientId }), 'registered automatically')}
+              {field('Client secret', auth.clientSecret, clientSecret => setAuth({ ...auth, clientSecret }), 'usually not needed')}
+              {field('Scope', auth.scope, scope => setAuth({ ...auth, scope }), 'from the server')}
+              {field('Redirect URL', auth.redirectUrl, redirectUrl => setAuth({ ...auth, redirectUrl }))}
+            </div>
+          </details>
+        </>
+      )}
+    </div>
+  );
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+function ConnectionSettings({ server, update, contextId, beforeSignIn, afterSignIn, connected }: SettingsProps) {
   const [tab, setTab] = useState(server.transport.kind === 'stdio' ? 'env' : 'headers');
   const auth = server.authentication;
   return (
@@ -304,7 +504,7 @@ function ConnectionSettings({ server, update, contextId }: { server: McpServer; 
         onChange={setTab}
         tabs={[
           { id: 'headers', label: 'Headers', count: server.headers.length },
-          { id: 'auth', label: 'Auth', dot: auth.type === 'bearer' || auth.type === 'apikey' },
+          { id: 'auth', label: 'Auth', dot: auth.type === 'bearer' || auth.type === 'apikey' || auth.type === 'oauth2' },
           { id: 'env', label: 'Env (stdio)', count: server.env.length },
           { id: 'roots', label: 'Roots', count: server.roots.length },
           { id: 'sampling', label: 'Sampling', dot: !!server.sampling?.enabled },
@@ -313,20 +513,14 @@ function ConnectionSettings({ server, update, contextId }: { server: McpServer; 
       />
       {tab === 'headers' && <KeyValueEditor items={server.headers} onChange={headers => update({ headers })} contextId={contextId} namePlaceholder="Header" />}
       {tab === 'auth' && (
-        <div className="flex max-w-xl flex-col gap-2 p-3">
-          <Select
-            value={auth.type === 'bearer' ? 'bearer' : 'none'}
-            onChange={e => update({ authentication: e.target.value === 'bearer' ? { type: 'bearer', token: '' } : { type: 'none' } })}
-            className="w-48"
-          >
-            <option value="none">No auth</option>
-            <option value="bearer">Bearer token</option>
-          </Select>
-          {auth.type === 'bearer' && (
-            <VarInput contextId={contextId} value={auth.token} onChange={token => update({ authentication: { ...auth, token } })} placeholder="{{ _.mcp_token }}" />
-          )}
-          <p className="text-[12px] text-muted">Sent as an Authorization header on every Streamable HTTP request. Use environment variables to keep tokens out of the config.</p>
-        </div>
+        <McpAuth
+          server={server}
+          update={update}
+          contextId={contextId}
+          beforeSignIn={beforeSignIn}
+          afterSignIn={afterSignIn}
+          connected={connected}
+        />
       )}
       {tab === 'env' && (
         <KeyValueEditor items={server.env} onChange={env => update({ env })} contextId={contextId} namePlaceholder="VARIABLE" />

@@ -216,6 +216,8 @@ pub async fn handle(msg: &Value) -> Reply {
 pub struct HttpState {
     sessions: Arc<Mutex<HashMap<String, ()>>>,
     required_token: Option<String>,
+    /// MCP-spec OAuth instead of a fixed token (see [`crate::mock_oauth`]).
+    pub oauth: Option<Arc<crate::mock_oauth::OAuthMock>>,
     /// Server→client requests awaiting the client's POSTed response, by id.
     waiting: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<Value>>>>,
 }
@@ -230,16 +232,34 @@ impl HttpState {
     }
 }
 
+impl HttpState {
+    /// Require an OAuth access token issued by the built-in authorization server.
+    pub fn with_oauth() -> Self {
+        Self {
+            oauth: Some(Arc::default()),
+            ..Default::default()
+        }
+    }
+}
+
 pub fn http_router(state: HttpState) -> Router {
-    Router::new()
+    let oauth = state.oauth.clone();
+    let r = Router::new()
         .route("/mcp", post(http_post).delete(http_delete))
-        .with_state(state)
+        .with_state(state);
+    match oauth {
+        Some(o) => r.merge(crate::mock_oauth::router(o)),
+        None => r,
+    }
 }
 
 /// Bind on 127.0.0.1:`port` (0 = random) and serve in the background.
 pub async fn spawn_http(state: HttpState, port: u16) -> std::io::Result<String> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     let addr = listener.local_addr()?;
+    if let Some(o) = &state.oauth {
+        *o.base.lock().unwrap() = format!("http://{addr}");
+    }
     tokio::spawn(async move {
         let _ = axum::serve(listener, http_router(state)).await;
     });
@@ -247,6 +267,9 @@ pub async fn spawn_http(state: HttpState, port: u16) -> std::io::Result<String> 
 }
 
 async fn http_post(State(st): State<HttpState>, headers: HeaderMap, body: String) -> Response {
+    if let Some(denied) = st.oauth.as_ref().and_then(|o| o.check(&headers)) {
+        return denied;
+    }
     if let Some(tok) = &st.required_token {
         let ok = headers
             .get(header::AUTHORIZATION)

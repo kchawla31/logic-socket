@@ -68,6 +68,21 @@ pub async fn oauth2_authorize(
     status(&state, &owner_id)
 }
 
+/// MCP sign-in: discover the server's authorization server, register if needed, sign in.
+#[tauri::command]
+pub async fn mcp_oauth_sign_in(
+    state: State<'_, AppState>,
+    server_id: String,
+) -> CmdResult<TokenStatus> {
+    let opener = |url: &str| open_in_browser(url);
+    state
+        .engine
+        .mcp_oauth_sign_in(&server_id, &opener)
+        .await
+        .map_err(e)?;
+    status(&state, &server_id)
+}
+
 #[tauri::command]
 pub fn oauth2_clear(state: State<'_, AppState>, owner_id: String) -> CmdResult<()> {
     state.engine.oauth2_clear(&owner_id).map_err(e)

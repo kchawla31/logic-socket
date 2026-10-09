@@ -80,7 +80,7 @@ function applyCurlImport(req: Request, parsed: Request): Request {
   };
 }
 
-function clipboardPlainText(cd: DataTransfer): string {
+export function clipboardPlainText(cd: DataTransfer): string {
   for (const kind of ['text/plain', 'text', 'Text']) {
     try {
       const value = cd.getData(kind);

@@ -1,7 +1,7 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-import type { Auth, KeyValue } from './api';
+import type { Auth, KeyValue, Request } from './api';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -272,4 +272,51 @@ export function authFromText(
     else next[k] = v;
   }
   return { auth: next as Auth, ignored };
+}
+
+// ---- cURL → MCP server
+
+/** Headers the MCP client sets itself; an imported copy would be sent twice. */
+const MCP_OWN_HEADERS = ['accept', 'content-type', 'content-length', 'host', 'mcp-session-id', 'mcp-protocol-version'];
+
+function base64Utf8(s: string): string {
+  let bin = '';
+  for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+/**
+ * The parts of a parsed curl command an MCP Streamable HTTP connection uses: the URL (query
+ * included), headers, and auth. MCP auth is bearer only, so Basic auth becomes a header. The
+ * body and method are dropped, since the client sends its own JSON-RPC POSTs.
+ */
+export function curlToMcp(parsed: Request): {
+  url: string;
+  headers: KeyValue[];
+  authentication: Auth;
+  dropped: string[];
+} {
+  // Encode the text, but leave `{{ var }}` / `{% tag %}` blocks as written so they still render.
+  const enc = (v: string) =>
+    v
+      .split(/(\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\})/)
+      .map((part, i) => (i % 2 ? part : encodeURIComponent(part)))
+      .join('');
+  const qs = parsed.parameters
+    .filter(p => !p.disabled && p.name)
+    .map(p => `${enc(p.name)}=${enc(p.value)}`)
+    .join('&');
+  const url = qs ? `${parsed.url}${parsed.url.includes('?') ? '&' : '?'}${qs}` : parsed.url;
+  const dropped: string[] = [];
+  const headers = parsed.headers.filter(h => {
+    const own = MCP_OWN_HEADERS.includes(h.name.trim().toLowerCase());
+    if (own) dropped.push(h.name);
+    return !own;
+  });
+  const a = parsed.authentication;
+  let authentication: Auth = { type: 'none' };
+  if (a.type === 'bearer') authentication = { type: 'bearer', token: a.token, prefix: a.prefix ?? null };
+  else if (a.type === 'basic') headers.push({ name: 'Authorization', value: `Basic ${base64Utf8(`${a.username}:${a.password}`)}` });
+  if (parsed.body.text || parsed.body.params?.length) dropped.push('request body');
+  return { url, headers, authentication, dropped };
 }
