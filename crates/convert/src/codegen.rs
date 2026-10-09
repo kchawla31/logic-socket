@@ -404,3 +404,30 @@ fn rust(r: &CodeRequest) -> String {
     );
     s
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// curl reads `--data @file`. A body that starts with `@` is still body text.
+    #[test]
+    #[ignore = "BUG-011"]
+    fn curl_text_body_starting_with_at_is_not_a_file() {
+        let s = generate(
+            &CodeRequest {
+                method: "POST".into(),
+                url: "https://ex.test/a".into(),
+                body: CodeBody::Text {
+                    text: "@not-a-file".into(),
+                },
+                ..Default::default()
+            },
+            Target::Curl,
+        );
+        assert!(
+            s.contains("--data-raw @not-a-file") || s.contains("--data-raw '@not-a-file'"),
+            "{s}"
+        );
+        assert!(!s.contains("--data @not-a-file"), "{s}");
+    }
+}

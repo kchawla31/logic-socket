@@ -14,9 +14,11 @@ use futures::future::BoxFuture;
 use lsock_core::{Cookie, VarMap};
 use lsock_templating::{Context, Layer, Mode, Renderer};
 use rquickjs::context::EvalOptions;
+use rquickjs::loader::{ImportAttributes, Loader, Resolver};
 use rquickjs::prelude::{Async, Func};
 use rquickjs::{
-    AsyncContext, AsyncRuntime, CatchResultExt, CaughtError, Ctx, Function, Object, Promise, Value,
+    AsyncContext, AsyncRuntime, CatchResultExt, CaughtError, Ctx, Function, Module, Object,
+    Promise, Value,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -245,6 +247,63 @@ struct RawError {
 
 const SCRIPT_FILE: &str = "script.js";
 
+/// `import('curl')` and the other request clients. Anything else is rejected,
+/// including files, Node built-ins, and QuickJS `std` / `os`.
+fn request_module_source(name: &str) -> Option<String> {
+    match name {
+        "curl" => Some(
+            "const m = globalThis.__requestClients.curl;\nexport default m;\nexport const Curl = m.Curl;\nexport const option = m.option;\n"
+                .to_string(),
+        ),
+        "axios" | "got" | "request" | "postman-request" | "superagent" | "node-fetch"
+        | "cross-fetch" | "undici" => {
+            Some(format!("export default globalThis.__requestClients[{name:?}];\n"))
+        }
+        _ => None,
+    }
+}
+
+struct ClientResolver;
+
+impl Resolver for ClientResolver {
+    fn resolve<'js>(
+        &mut self,
+        _ctx: &Ctx<'js>,
+        base: &str,
+        name: &str,
+        _attributes: Option<ImportAttributes<'js>>,
+    ) -> rquickjs::Result<String> {
+        if request_module_source(name).is_some() {
+            Ok(name.to_string())
+        } else {
+            Err(rquickjs::Error::new_resolving_message(
+                base,
+                name,
+                "module is not available in the logic-socket sandbox",
+            ))
+        }
+    }
+}
+
+struct ClientLoader;
+
+impl Loader for ClientLoader {
+    fn load<'js>(
+        &mut self,
+        ctx: &Ctx<'js>,
+        name: &str,
+        _attributes: Option<ImportAttributes<'js>>,
+    ) -> rquickjs::Result<Module<'js>> {
+        match request_module_source(name) {
+            Some(source) => Module::declare(ctx.clone(), name, source),
+            None => Err(rquickjs::Error::new_loading_message(
+                name,
+                "module is not available in the logic-socket sandbox",
+            )),
+        }
+    }
+}
+
 /// Find `script.js:LINE:COL` in a QuickJS stack trace.
 fn location(stack: &str) -> (Option<u32>, Option<u32>) {
     let Some(i) = stack.find(SCRIPT_FILE) else {
@@ -415,6 +474,7 @@ async fn execute(
     let deadline = Instant::now() + limits.timeout;
     rt.set_interrupt_handler(Some(Box::new(move || Instant::now() > deadline)))
         .await;
+    rt.set_loader(ClientResolver, ClientLoader).await;
     let ctx = AsyncContext::full(&rt)
         .await
         .map_err(|e| fail(e.to_string()))?;

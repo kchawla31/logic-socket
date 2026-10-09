@@ -88,6 +88,46 @@ export function tokenizeTemplate(text: string): Segment[] {
   return out;
 }
 
+/**
+ * A pasted shell command, not a URL. Accepts `curl` / `curl.exe` in any case, a leading
+ * prompt (`$`, `%`, `❯`, `user@host $`, `#`), a markdown fence, and a BOM. Requires a
+ * space or quote after the token so typing "curl" or a `curl:` YAML key is left alone.
+ */
+export function looksLikeCurl(text: string): boolean {
+  let t = text.replace(/^\uFEFF/, '').trim();
+  const fenced = t.match(/^```[^\n]*\r?\n([\s\S]*?)\r?\n?```\s*$/);
+  if (fenced) t = fenced[1].trim();
+  return curlTokenAtStart(stripCurlPrompt(t));
+}
+
+function stripCurlPrompt(t: string): string {
+  if (curlTokenAtStart(t)) return t;
+  const lineEnd = t.search(/\r?\n/);
+  const first = lineEnd < 0 ? t : t.slice(0, lineEnd);
+  const idx = findCurlToken(first);
+  if (idx >= 0) {
+    const prefix = first.slice(0, idx);
+    const hashed = /^#\s*$/.test(prefix);
+    const prompted =
+      prefix.trim().length > 0 &&
+      prefix.trim().length <= 120 &&
+      !prefix.includes('://') &&
+      /[$%>❯➜λ»]/.test(prefix);
+    if (hashed || prompted) return t.slice(idx).trimStart();
+  }
+  return t;
+}
+
+function findCurlToken(s: string): number {
+  const match = /(^|[^A-Za-z0-9_./-])(curl(?:\.exe)?(?=[\s'"]))/i.exec(s);
+  if (!match) return -1;
+  return match.index + match[1].length;
+}
+
+function curlTokenAtStart(s: string): boolean {
+  return /^\s*curl(?:\.exe)?(?=[\s'"])/i.test(s);
+}
+
 /** Path params (`/:id`) present in a URL, in order, unique. */
 export function pathParamsInUrl(url: string): string[] {
   const out: string[] = [];

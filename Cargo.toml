@@ -53,7 +53,7 @@ futures = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 tempfile = "3"
 axum = "0.8"
-rquickjs = { version = "0.14", features = ["futures", "parallel"] }
+rquickjs = { version = "0.14", features = ["futures", "parallel", "loader"] }
 csv = "1"
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 keyring = { version = "3", features = ["apple-native", "windows-native"] }

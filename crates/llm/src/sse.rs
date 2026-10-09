@@ -69,4 +69,16 @@ mod tests {
             }
         );
     }
+
+    /// A bare CR is a line ending. `CR CR` dispatchs one event.
+    #[test]
+    #[ignore = "BUG-017"]
+    fn bare_cr_ends_an_event() {
+        let mut p = SseParser::default();
+        let e = p.feed(b"event: ping\rdata: hello\r\r");
+        assert!(
+            e.len() == 1 && e[0].event == "ping" && e[0].data == "hello",
+            "{e:?}"
+        );
+    }
 }

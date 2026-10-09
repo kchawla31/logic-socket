@@ -46,6 +46,18 @@ const EXAMPLES: { label: string; phase: Phase | 'both'; code: string }[] = [
     code:
       "const res = await ls.sendRequest({\n  url: ls.environment.get('base_url') + '/oauth/token',\n  method: 'POST',\n  header: [{ key: 'Content-Type', value: 'application/json' }],\n  body: { mode: 'raw', raw: JSON.stringify({ client_id: ls.environment.get('client_id') }) },\n});\nls.variables.set('access_token', res.json().access_token);\n",
   },
+  {
+    label: 'Fetch a token first (axios)',
+    phase: 'pre',
+    code:
+      "const axios = require('axios');\nconst res = await axios.post(ls.environment.get('base_url') + '/oauth/token', {\n  client_id: ls.environment.get('client_id'),\n});\nls.variables.set('access_token', res.data.access_token);\n",
+  },
+  {
+    label: 'Fetch a token first (curl)',
+    phase: 'pre',
+    code:
+      "const curl = require('curl');\nconst res = await curl.post(ls.environment.get('base_url') + '/oauth/token', {\n  client_id: ls.environment.get('client_id'),\n});\nls.variables.set('access_token', JSON.parse(res.body).access_token);\n",
+  },
   { label: 'Skip this request', phase: 'pre', code: 'ls.execution.skipRequest();\n' },
   {
     label: 'Poll until ready (runner)',
@@ -144,7 +156,7 @@ export function ScriptEditor({ value, onChange, phase }: { value: string; onChan
         />
       </div>
       <div className="shrink-0 border-t border-app px-3 py-1 text-[11px] text-muted">
-        Type <code className="font-mono">ls.</code> for completions · <code className="font-mono">require()</code>: chai, lodash, uuid, crypto-js, moment, tv4, ajv
+        Type <code className="font-mono">ls.</code> for completions · <code className="font-mono">require()</code>: chai, lodash, uuid, crypto-js, moment, tv4, ajv, curl, axios, node-fetch, got, request, superagent
       </div>
     </div>
   );

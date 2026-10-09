@@ -148,6 +148,71 @@ async fn variables_follow_scope_precedence() {
     assert_eq!(o.local_variables["value"], json!("local-value"));
 }
 
+/// FEATURES.md: local → iterationData → folder → environment → base → globals.
+#[tokio::test]
+#[ignore = "BUG-015"]
+async fn iteration_data_outranks_folder_variables() {
+    let mut i = input(
+        r#"
+        ls.environment.set('seen', ls.variables.get('city'));
+        "#,
+    );
+    i.iteration_data = vars(json!({ "city": "Tokyo" }));
+    i.folders = vec![FolderVars {
+        name: "f".into(),
+        environment: vars(json!({ "city": "HQ" })),
+    }];
+    let o = exec(i).await;
+    ok(&o);
+    assert_eq!(
+        o.environment["seen"],
+        json!("Tokyo"),
+        "folder hid the iteration row"
+    );
+}
+
+#[tokio::test]
+#[ignore = "BUG-013"]
+async fn query_edits_apply_to_a_query_string_already_on_the_url() {
+    let mut i = input(
+        r#"
+        ls.request.url.query.upsert({ key: 'q', value: 'blue' });
+        if (ls.request.url.toString() !== 'https://ex.test/search?q=blue') {
+            throw new Error('tostring ' + ls.request.url.toString());
+        }
+        "#,
+    );
+    i.request.url = "https://ex.test/search?q=red".into();
+    i.request.query.clear();
+    let o = exec(i).await;
+    ok(&o);
+    let r = o.request.unwrap();
+    assert_eq!(r.url, "https://ex.test/search", "url {}", r.url);
+    assert_eq!(
+        r.query
+            .iter()
+            .map(|q| (q.key.as_str(), q.value.as_str()))
+            .collect::<Vec<_>>(),
+        [("q", "blue")]
+    );
+}
+
+#[tokio::test]
+#[ignore = "BUG-014"]
+async fn auth_update_accepts_a_flat_parameter_object() {
+    let o = exec(input(
+        r#"
+        ls.request.auth.update({ username: 'a', password: 'b' }, 'basic');
+        "#,
+    ))
+    .await;
+    ok(&o);
+    assert_eq!(
+        o.request.unwrap().auth,
+        json!({ "type": "basic", "username": "a", "password": "b", "disabled": false })
+    );
+}
+
 #[tokio::test]
 async fn request_url_query_headers_method_mutations() {
     let o = exec(input(
@@ -567,6 +632,204 @@ async fn send_request_callback_and_promise() {
     assert_eq!(o.environment["hdr"], json!("POST"));
     assert_eq!(o.environment["err"], json!("connection refused"));
     assert_eq!(o.environment["rejected"], json!("connection refused"));
+}
+
+struct ClientEcho;
+impl Host for ClientEcho {
+    fn send(&self, req: HostRequest) -> BoxFuture<'static, Result<ScriptResponseData, String>> {
+        Box::pin(async move {
+            if req.url.contains("down") {
+                return Err("connection refused".into());
+            }
+            let code = if req.url.contains("/missing") {
+                404
+            } else {
+                200
+            };
+            Ok(ScriptResponseData {
+                code,
+                status: if code == 404 {
+                    "Not Found".into()
+                } else {
+                    "OK".into()
+                },
+                headers: vec![ScriptKv {
+                    key: "Content-Type".into(),
+                    value: "application/json".into(),
+                    disabled: false,
+                }],
+                body: serde_json::json!({
+                    "url": req.url,
+                    "method": req.method,
+                    "body": req.body,
+                    "headers": req.headers,
+                })
+                .to_string(),
+                response_time: 3.0,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn request_clients_send_through_the_host() {
+    let script = r#"
+        const curl = require('curl');
+        const { Curl } = curl;
+        const axios = require('axios');
+        const fetch = require('node-fetch');
+        const request = require('request');
+        const got = require('got');
+        const superagent = require('superagent');
+        const undici = require('undici');
+
+        const c = new Curl();
+        c.setOpt(Curl.option.URL, 'https://x.io/items');
+        c.setOpt('CUSTOMREQUEST', 'POST');
+        c.setOpt(Curl.option.HTTPHEADER, ['X-A: 1', 'Content-Type: application/json']);
+        c.setOpt(Curl.option.POSTFIELDS, JSON.stringify({ n: 1 }));
+        let ended = 0;
+        c.on('end', status => { ended = status; });
+        const performed = await c.perform();
+        const sent = performed.json();
+        ls.environment.set('curlStatus', performed.status);
+        ls.environment.set('curlEnded', ended);
+        ls.environment.set('curlMethod', sent.method);
+        ls.environment.set('curlBody', sent.body);
+        ls.environment.set('curlHeader', sent.headers.find(h => h[0] === 'X-A')[1]);
+
+        const simple = await curl.post('https://x.io/simple', { a: 2 });
+        ls.environment.set('simple', simple.json().body);
+
+        const ax = await axios.get('https://x.io/q', { params: { page: 2 }, headers: { 'X-B': 'y' } });
+        ls.environment.set('axUrl', ax.data.url);
+        ls.environment.set('axStatus', ax.status);
+        ls.environment.set('axHeader', ax.data.headers.find(h => h[0] === 'X-B')[1]);
+        try {
+            await axios.get('https://x.io/missing');
+            ls.environment.set('axErr', 'no');
+        } catch (e) {
+            ls.environment.set('axErr', e.response.status);
+        }
+        try {
+            await axios.get('https://x.io/down');
+            ls.environment.set('axDown', 'no');
+        } catch (e) {
+            ls.environment.set('axDown', e.message);
+        }
+
+        const fr = await fetch('https://x.io/fetch', { method: 'PUT', body: 'raw' });
+        ls.environment.set('fetchStatus', fr.status);
+        ls.environment.set('fetchOk', fr.ok);
+        ls.environment.set('fetchBody', (await fr.json()).body);
+
+        await new Promise((resolve, reject) => {
+            request.post('https://x.io/req', { json: { k: 3 } }, (err, res, body) => {
+                if (err) return reject(err);
+                ls.environment.set('reqCode', res.statusCode);
+                ls.environment.set('reqBody', body.body);
+                resolve();
+            });
+        });
+
+        const g = await got.post('https://x.io/got', { json: { k: 4 }, searchParams: { q: 'a b' } });
+        ls.environment.set('gotBody', g.body.body);
+        ls.environment.set('gotUrl', g.body.url);
+        try {
+            await got.get('https://x.io/missing');
+            ls.environment.set('gotErr', 'no');
+        } catch (e) {
+            ls.environment.set('gotErr', e.statusCode);
+        }
+
+        const s = await superagent.post('https://x.io/sa').set('X-E', 'e').query({ p: 1 }).send({ k: 5 });
+        ls.environment.set('sa', s.body.body);
+        ls.environment.set('saStatus', s.status);
+        ls.environment.set('saHeader', s.body.headers.find(h => h[0] === 'X-E')[1]);
+
+        const u = await undici.request('https://x.io/undici');
+        ls.environment.set('undici', u.statusCode);
+
+        const imported = await import('curl');
+        const c2 = new imported.Curl();
+        c2.setOpt(imported.option.URL, 'https://x.io/imp');
+        ls.environment.set('imp', (await c2.perform()).json().method);
+
+        const ax2 = (await import('axios')).default;
+        ls.environment.set('imp2', (await ax2.get('https://x.io/imp2')).data.url);
+
+        const fetchMod = await import('node-fetch');
+        ls.environment.set('impFetch', (await fetchMod.default('https://x.io/imp3')).status);
+
+        if (typeof require('cross-fetch') !== 'function') throw new Error('cross-fetch');
+        if (typeof require('postman-request') !== 'function') throw new Error('postman-request');
+
+        const blocked = {};
+        for (const name of ['fs', 'os', 'http', 'node:http', 'std', '/usr/bin/curl', './curl.js']) {
+            try { await import(name); blocked[name] = 'LOADED'; }
+            catch (e) { blocked[name] = e.message; }
+        }
+        try { require('https'); blocked.https = 'LOADED'; }
+        catch (e) { blocked.https = e.message; }
+        try { require('leftpad'); blocked.leftpad = 'LOADED'; }
+        catch (e) { blocked.leftpad = e.message; }
+        try {
+            new (require('curl').Curl)().setOpt('PROXY', 'http://127.0.0.1:9');
+            blocked.proxy = 'LOADED';
+        } catch (e) { blocked.proxy = e.message; }
+        ls.environment.set('blocked', JSON.stringify(blocked));
+    "#;
+    let o = run(
+        input(script),
+        Limits::default(),
+        Arc::new(ClientEcho),
+        Arc::new(Renderer::new()),
+    )
+    .await;
+    ok(&o);
+    let e = &o.environment;
+    assert_eq!(e["curlStatus"], json!(200));
+    assert_eq!(e["curlEnded"], json!(200));
+    assert_eq!(e["curlMethod"], json!("POST"));
+    assert_eq!(e["curlBody"], json!(r#"{"n":1}"#));
+    assert_eq!(e["curlHeader"], json!("1"));
+    assert_eq!(e["simple"], json!(r#"{"a":2}"#));
+    assert_eq!(e["axUrl"], json!("https://x.io/q?page=2"));
+    assert_eq!(e["axStatus"], json!(200));
+    assert_eq!(e["axHeader"], json!("y"));
+    assert_eq!(e["axErr"], json!(404));
+    assert_eq!(e["axDown"], json!("connection refused"));
+    assert_eq!(e["fetchStatus"], json!(200));
+    assert_eq!(e["fetchOk"], json!(true));
+    assert_eq!(e["fetchBody"], json!("raw"));
+    assert_eq!(e["reqCode"], json!(200));
+    assert_eq!(e["reqBody"], json!(r#"{"k":3}"#));
+    assert_eq!(e["gotBody"], json!(r#"{"k":4}"#));
+    assert_eq!(e["gotUrl"], json!("https://x.io/got?q=a%20b"));
+    assert_eq!(e["gotErr"], json!(404));
+    assert_eq!(e["sa"], json!(r#"{"k":5}"#));
+    assert_eq!(e["saStatus"], json!(200));
+    assert_eq!(e["saHeader"], json!("e"));
+    assert_eq!(e["undici"], json!(200));
+    assert_eq!(e["imp"], json!("GET"));
+    assert_eq!(e["imp2"], json!("https://x.io/imp2"));
+    assert_eq!(e["impFetch"], json!(200));
+    let blocked = e["blocked"].as_str().unwrap();
+    assert!(!blocked.contains("LOADED"), "{blocked}");
+    assert!(blocked.contains("not available"), "{blocked}");
+    assert!(
+        blocked.contains("NotSupported: require('https')"),
+        "{blocked}"
+    );
+    assert!(
+        blocked.contains("Cannot find module 'leftpad'"),
+        "{blocked}"
+    );
+    assert!(blocked.contains("curl, axios"), "{blocked}");
+    assert!(
+        blocked.contains("NotSupported: curl option PROXY"),
+        "{blocked}"
+    );
 }
 
 #[tokio::test]

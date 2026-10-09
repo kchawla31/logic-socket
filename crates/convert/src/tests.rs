@@ -405,6 +405,26 @@ fn postman_export_round_trips() {
 // ------------------------------------------------------------------ OpenAPI / Swagger
 
 #[test]
+#[ignore = "BUG-016"]
+fn openapi_cookie_parameter_is_imported() {
+    let spec = r#"{"openapi":"3.0.0","info":{"title":"t","version":"1"},"paths":{"/a":{"get":{"operationId":"getA","parameters":[{"name":"sid","in":"cookie","required":true,"schema":{"type":"string","example":"abc"}}]}}}}"#;
+    let imported = import(spec).unwrap_or_else(|e| panic!("{e}"));
+    let reqs = requests(&imported.workspaces[0]);
+    let r = reqs[0];
+    let kept = r
+        .headers
+        .iter()
+        .any(|h| h.name.eq_ignore_ascii_case("cookie") && h.value.contains("sid"))
+        || r.parameters.iter().any(|p| p.name == "sid")
+        || r.headers.iter().any(|h| h.name == "sid");
+    assert!(
+        kept,
+        "cookie parameter dropped\nheaders={:?}\nparams={:?}",
+        r.headers, r.parameters
+    );
+}
+
+#[test]
 fn openapi3_bookstore() {
     let (b, w) = one("openapi/bookstore-v3.yaml");
     assert_eq!(b.workspace.name, "Bookstore 2.1");

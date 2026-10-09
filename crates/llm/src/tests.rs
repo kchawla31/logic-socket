@@ -199,6 +199,34 @@ async fn tool_use_round_trip_wire_format() {
     }
 }
 
+/// Tool-call JSON is split in bytes. A multibyte city must still stream.
+#[tokio::test]
+#[ignore = "BUG-009"]
+async fn tool_arguments_with_multibyte_characters_stream() {
+    for kind in [ProviderKind::Anthropic, ProviderKind::OpenaiCompatible] {
+        let (cfg, _) = provider(kind).await;
+        let mut r = req("weather in 東京都");
+        r.tools = vec![ToolSpec {
+            name: "get_weather".into(),
+            description: "Weather".into(),
+            input_schema: json!({"type": "object"}),
+        }];
+        let resp = stream_chat(&cfg, &r, &mut |_| {}).await;
+        let resp = match resp {
+            Ok(v) => v,
+            Err(e) => panic!("{kind:?} failed while streaming multibyte tool arguments: {e}"),
+        };
+        let input = resp.content.iter().find_map(|b| {
+            if let Block::ToolUse { input, .. } = b {
+                Some(input.clone())
+            } else {
+                None
+            }
+        });
+        assert_eq!(input, Some(json!({"city": "東京都"})), "{kind:?} {resp:?}");
+    }
+}
+
 #[tokio::test]
 async fn lists_models() {
     let (cfg, _) = provider(ProviderKind::OpenaiCompatible).await;

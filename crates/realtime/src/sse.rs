@@ -181,4 +181,18 @@ mod tests {
             }]
         );
     }
+
+    /// WHATWG SSE treats CR, LF, and CRLF as one line ending. A chunk that
+    /// ends on the CR of a CRLF must not become a blank line.
+    #[test]
+    #[ignore = "BUG-008"]
+    fn crlf_split_after_the_carriage_return_stays_one_event() {
+        let mut p = Parser::default();
+        let first = p.feed(b"data: hello\r");
+        let second = p.feed(b"\ndata: world\r\n\r\n");
+        assert!(
+            first.is_empty() && second.len() == 1 && second[0].data == "hello\nworld",
+            "first={first:?} second={second:?}"
+        );
+    }
 }

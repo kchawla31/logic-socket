@@ -153,6 +153,41 @@ mod tests {
     }
 
     #[test]
+    fn domain_suffix_requires_a_dot_boundary_and_path_does_not_prefix_match() {
+        let url = u("https://example.com/foo/bar");
+        let c = parse_set_cookie("sid=abc; Domain=example.com; Path=/foo", &url).unwrap();
+        let jar = vec![c];
+        assert!(header_for(&jar, &u("https://notexample.com/foo")).is_none());
+        assert!(header_for(&jar, &u("https://example.com/foobar")).is_none());
+        assert_eq!(
+            header_for(&jar, &u("https://www.example.com/foo/x")).unwrap(),
+            "sid=abc"
+        );
+    }
+
+    /// `Domain=com` from `evil.com` matches every `*.com` host. RFC 6265 §5.3
+    /// says a public suffix must be rejected. The jar comment says a server
+    /// may not set cookies for unrelated domains.
+    #[test]
+    #[ignore = "BUG-001"]
+    fn public_suffix_domain_is_not_stored_or_sent() {
+        let evil = u("https://evil.com/");
+        let set = parse_set_cookie("sid=secret; Domain=com; Path=/", &evil);
+        let mut detail = format!("parse={set:?}");
+        if let Some(c) = set.clone() {
+            let jar = vec![c];
+            detail.push_str(&format!(
+                " bank.com={:?}",
+                header_for(&jar, &u("https://bank.com/account"))
+            ));
+        }
+        assert!(
+            set.is_none(),
+            "Domain=com was accepted and can be replayed to other hosts: {detail}"
+        );
+    }
+
+    #[test]
     fn foreign_domain_rejected_and_expiry_deletes() {
         let url = u("https://a.com/");
         assert!(parse_set_cookie("x=1; Domain=b.com", &url).is_none());

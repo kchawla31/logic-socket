@@ -7,7 +7,7 @@ import { ScriptEditor } from '../components/ScriptEditor';
 import { Button, Empty, IconButton, Input, Kbd, Select, Split, Tabs, Toggle, useToast } from '../components/ui';
 import { VarInput } from '../components/VarInput';
 import { api, type Body, errorText, type KeyValue, type Preview, type Request, type ResponseView } from '../lib/api';
-import { cn, METHODS, methodColor, modKey, pathParamsInUrl, prettyJson, splitQuery } from '../lib/utils';
+import { cn, looksLikeCurl, METHODS, methodColor, modKey, pathParamsInUrl, prettyJson, splitQuery } from '../lib/utils';
 import { AuthEditor } from './AuthEditor';
 import { CodeModal } from './ImportExport';
 import { ResponsePane } from './ResponsePane';
@@ -62,6 +62,36 @@ function useAutosave<T extends { id: string }>(id: string, save: (d: T) => Promi
 
 export { useAutosave };
 
+/** Copy the HTTP call from a parsed curl command. Scripts, settings, and docs stay. */
+function applyCurlImport(req: Request, parsed: Request): Request {
+  const keepName = req.name.trim() !== '' && req.name !== 'New Request';
+  const names = pathParamsInUrl(parsed.url);
+  const pathParameters = names.map(n => req.pathParameters.find(p => p.name === n) ?? { name: n, value: '' });
+  return {
+    ...req,
+    name: keepName ? req.name : parsed.name,
+    method: parsed.method,
+    url: parsed.url,
+    parameters: parsed.parameters,
+    pathParameters,
+    headers: parsed.headers,
+    body: parsed.body,
+    authentication: parsed.authentication,
+  };
+}
+
+function clipboardPlainText(cd: DataTransfer): string {
+  for (const kind of ['text/plain', 'text', 'Text']) {
+    try {
+      const value = cd.getData(kind);
+      if (value) return value;
+    } catch {
+      // WKWebView can throw when asked for a type it did not put on the clipboard.
+    }
+  }
+  return '';
+}
+
 export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => void }) {
   const toast = useToast();
   const [req, setReq, flush] = useAutosave<Request>(id, api.requestUpdate);
@@ -72,6 +102,7 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
   const [response, setResponse] = useState<ResponseView | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const urlRef = useRef<HTMLInputElement>(null);
+  const curlImporting = useRef(false);
 
   // Latest stored response on open.
   useEffect(() => {
@@ -90,8 +121,34 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
 
   const update = (patch: Partial<Request>) => req && setReq({ ...req, ...patch });
 
+  const importCurlText = (text: string) => {
+    if (!req || curlImporting.current) return;
+    curlImporting.current = true;
+    void (async () => {
+      try {
+        const parsed = await api.curlParse(text);
+        const keepName = req.name.trim() !== '' && req.name !== 'New Request';
+        setReq(applyCurlImport(req, parsed));
+        if (!keepName) setTimeout(onRenamed, 500);
+        toast('Imported from cURL', 'success');
+      } catch (err) {
+        toast(`Could not parse cURL: ${errorText(err)}`, 'error');
+        // The controlled input snaps back if the command already landed in the field.
+        setReq({ ...req });
+      } finally {
+        requestAnimationFrame(() => {
+          curlImporting.current = false;
+        });
+      }
+    })();
+  };
+
   const setUrl = (url: string) => {
-    if (!req) return;
+    if (!req || curlImporting.current) return;
+    if (looksLikeCurl(url)) {
+      importCurlText(url);
+      return;
+    }
     const names = pathParamsInUrl(url);
     const pathParameters = names.map(n => req.pathParameters.find(p => p.name === n) ?? { name: n, value: '' });
     setReq({ ...req, url, pathParameters });
@@ -127,20 +184,21 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
     return () => window.removeEventListener('keydown', onKey);
   }, [send]);
 
-  const onUrlPaste = async (e: ClipboardEvent<HTMLInputElement>) => {
+  const onUrlPaste = (e: ClipboardEvent<HTMLInputElement>) => {
     if (!req) return;
-    const text = e.clipboardData.getData('text');
-    if (/^\s*curl\s/.test(text)) {
+    const text = clipboardPlainText(e.clipboardData);
+    if (text && looksLikeCurl(text)) {
       e.preventDefault();
-      try {
-        const parsed = await api.curlParse(text);
-        const keepName = req.name && req.name !== 'New Request';
-        setReq({ ...req, ...parsed, id: req.id, parentId: req.parentId, name: keepName ? req.name : parsed.name } as Request);
-        if (!keepName) setTimeout(onRenamed, 500);
-        toast('Imported from cURL', 'success');
-      } catch (err) {
-        toast(`Could not parse cURL: ${errorText(err)}`, 'error');
-      }
+      importCurlText(text);
+      return;
+    }
+    // WKWebView sometimes inserts the paste while getData returns nothing.
+    // A single-line command still round-trips through the input; multiline needs the clipboard text above.
+    if (!text) {
+      const input = e.currentTarget;
+      requestAnimationFrame(() => {
+        if (looksLikeCurl(input.value)) importCurlText(input.value);
+      });
       return;
     }
     const { base, params } = splitQuery(text.trim());

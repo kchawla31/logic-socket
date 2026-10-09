@@ -34,7 +34,10 @@
 
   // ---------------------------------------------------------------- modules
   const moduleCache = {};
+  // Filled at the end of this file, once `sendRequest` exists.
+  let requestClients;
   const VENDORED = ['chai', 'lodash', 'crypto-js', 'moment', 'tv4', 'ajv'];
+  const AVAILABLE = 'chai, lodash, uuid, crypto-js, moment, tv4, ajv, atob, btoa, curl, axios, node-fetch, cross-fetch, got, undici, request, postman-request, superagent';
   const NODE_BUILTINS = [
     'fs', 'path', 'url', 'querystring', 'util', 'buffer', 'events', 'stream', 'assert', 'timers', 'punycode',
     'string_decoder', 'os', 'child_process', 'net', 'http', 'https', 'crypto', 'zlib',
@@ -66,7 +69,8 @@
       throw new Error(`NotSupported: require('${name}') — Node built-in modules are not available in the logic-socket sandbox`);
     else if (name === 'cheerio' || name === 'xml2js')
       throw new Error(`NotSupported: require('${name}') — needs a Node runtime; not available in the logic-socket sandbox`);
-    else throw new Error(`Cannot find module '${name}'. Available: chai, lodash, uuid, crypto-js, moment, tv4, ajv, atob, btoa`);
+    else if (requestClients && hasOwn(requestClients, name)) mod = requestClients[name];
+    else throw new Error(`Cannot find module '${name}'. Available: ${AVAILABLE}`);
     moduleCache[name] = mod;
     return mod;
   }
@@ -725,6 +729,558 @@
     return e && e.message ? e.message : String(e);
   }
 
+  // ---------------------------------------------------------------- request clients
+  // require('curl' | 'axios' | 'node-fetch' | 'got' | 'request' | 'superagent' | …)
+  // and the matching dynamic import(). Every call goes through host.send.
+  // Node's http, https, net, and child_process stay unavailable.
+
+  function pairsFromHeaders(headers) {
+    if (!headers) return [];
+    if (Array.isArray(headers)) {
+      return headers.filter(h => h && !h.disabled).map(h => {
+        if (Array.isArray(h)) return [String(h[0]), String(h[1] ?? '')];
+        if (typeof h === 'string') {
+          const i = h.indexOf(':');
+          return i < 0 ? [h.trim(), ''] : [h.slice(0, i).trim(), h.slice(i + 1).trim()];
+        }
+        return [String(h.key ?? h.name), String(h.value ?? '')];
+      });
+    }
+    if (typeof headers.entries === 'function') {
+      const out = [];
+      for (const pair of headers.entries()) out.push([String(pair[0]), String(pair[1] ?? '')]);
+      return out;
+    }
+    if (typeof headers === 'object') {
+      return Object.entries(headers).flatMap(([k, v]) =>
+        v == null ? [] : Array.isArray(v) ? v.map(x => [k, String(x)]) : [[k, String(v)]]);
+    }
+    return [];
+  }
+
+  function upsertHeader(headers, name, value) {
+    const i = headers.findIndex(([k]) => k.toLowerCase() === name.toLowerCase());
+    if (i >= 0) headers[i] = [headers[i][0], value];
+    else headers.push([name, value]);
+  }
+
+  function withQuery(url, params) {
+    if (!params || typeof params !== 'object') return String(url);
+    const qs = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
+    if (!qs) return String(url);
+    const s = String(url);
+    return s + (s.includes('?') ? '&' : '?') + qs;
+  }
+
+  function joinBase(base, url) {
+    const u = url == null ? '' : String(url);
+    if (!base || /^[a-z][a-z0-9+.-]*:/i.test(u)) return u;
+    return String(base).replace(/\/+$/, '') + '/' + u.replace(/^\/+/, '');
+  }
+
+  function responseHeaderMap(raw) {
+    const headers = {};
+    const list = raw.headers && typeof raw.headers.all === 'function' ? raw.headers.all() : [];
+    for (const h of list) {
+      if (!h || h.disabled) continue;
+      headers[String(h.key).toLowerCase()] = String(h.value);
+    }
+    return headers;
+  }
+
+  function clientSend(spec) {
+    if (!spec.url) return Promise.reject(new Error('request: missing url'));
+    const req = {
+      method: String(spec.method || 'GET').toUpperCase(),
+      url: String(spec.url),
+      header: (spec.headers || []).map(([key, value]) => ({ key, value })),
+    };
+    if (spec.body != null) req.body = { mode: 'raw', raw: String(spec.body) };
+    return sendRequest(req);
+  }
+
+  // Strings are sent as-is. Objects are JSON, and a JSON content type is added.
+  function encodeBody(data) {
+    if (data == null) return null;
+    if (typeof data === 'string') return { body: data, json: false };
+    return { body: JSON.stringify(data), json: true };
+  }
+
+  function jsonResult(raw) {
+    const headers = responseHeaderMap(raw);
+    return {
+      status: raw.code,
+      statusCode: raw.code,
+      statusText: raw.status,
+      body: raw.body ?? '',
+      headers,
+      responseTime: raw.responseTime,
+      json() {
+        return JSON.parse(raw.body);
+      },
+    };
+  }
+
+  // libcurl option numbers scripts already use via node-libcurl.
+  const CURL_OPTIONS = {
+    URL: 10002,
+    USERPWD: 10005,
+    POSTFIELDS: 10015,
+    REFERER: 10016,
+    USERAGENT: 10018,
+    COOKIE: 10022,
+    HTTPHEADER: 10023,
+    CUSTOMREQUEST: 10036,
+    NOBODY: 44,
+    FAILONERROR: 45,
+    POST: 47,
+    FOLLOWLOCATION: 52,
+    HTTPGET: 80,
+    USERNAME: 10173,
+    PASSWORD: 10174,
+    XOAUTH2_BEARER: 10220,
+  };
+
+  function curlOptName(opt) {
+    if (typeof opt === 'number') {
+      for (const [k, v] of Object.entries(CURL_OPTIONS)) if (v === opt) return k;
+      return `#${opt}`;
+    }
+    return String(opt).replace(/^CURLOPT_/i, '').toUpperCase();
+  }
+
+  class CurlHandle {
+    constructor() {
+      this._url = '';
+      this._method = '';
+      this._body = null;
+      this._headers = [];
+      this._user = '';
+      this._pass = '';
+      this._bearer = '';
+      this._fail = false;
+      this._closed = false;
+      this._on = { end: [], error: [] };
+    }
+    setOpt(opt, value) {
+      if (this._closed) throw new Error('curl handle is closed');
+      switch (curlOptName(opt)) {
+        case 'URL': this._url = String(value ?? ''); break;
+        case 'CUSTOMREQUEST': this._method = String(value || 'GET').toUpperCase(); break;
+        case 'POSTFIELDS': {
+          const enc = encodeBody(value);
+          this._body = enc ? enc.body : null;
+          if (enc && enc.json) upsertHeader(this._headers, 'Content-Type', 'application/json');
+          if (!this._method) this._method = 'POST';
+          break;
+        }
+        case 'HTTPHEADER': this._headers = pairsFromHeaders(value); break;
+        case 'POST': if (value) this._method = this._method || 'POST'; break;
+        case 'HTTPGET': if (value) { this._method = 'GET'; this._body = null; } break;
+        case 'NOBODY': if (value) { this._method = 'HEAD'; this._body = null; } break;
+        case 'USERAGENT': upsertHeader(this._headers, 'User-Agent', String(value ?? '')); break;
+        case 'REFERER': upsertHeader(this._headers, 'Referer', String(value ?? '')); break;
+        case 'COOKIE': upsertHeader(this._headers, 'Cookie', String(value ?? '')); break;
+        case 'USERPWD': {
+          const s = String(value ?? '');
+          const i = s.indexOf(':');
+          this._user = i < 0 ? s : s.slice(0, i);
+          this._pass = i < 0 ? '' : s.slice(i + 1);
+          break;
+        }
+        case 'USERNAME': this._user = String(value ?? ''); break;
+        case 'PASSWORD': this._pass = String(value ?? ''); break;
+        case 'XOAUTH2_BEARER': this._bearer = String(value ?? ''); break;
+        case 'FAILONERROR': this._fail = !!value; break;
+        case 'FOLLOWLOCATION':
+          if (!value) throw new Error('NotSupported: curl option FOLLOWLOCATION cannot be turned off');
+          break;
+        default:
+          throw new Error(`NotSupported: curl option ${curlOptName(opt)}`);
+      }
+      return this;
+    }
+    on(event, fn) {
+      if (this._on[event]) this._on[event].push(fn);
+      return this;
+    }
+    close() { this._closed = true; }
+    perform() {
+      if (this._closed) return Promise.reject(new Error('curl handle is closed'));
+      if (!this._url) return Promise.reject(new Error('curl: missing URL'));
+      const headers = this._headers.map(h => h.slice());
+      if (this._bearer) upsertHeader(headers, 'Authorization', `Bearer ${this._bearer}`);
+      else if (this._user || this._pass) upsertHeader(headers, 'Authorization', 'Basic ' + globalThis.btoa(`${this._user}:${this._pass}`));
+      return clientSend({ method: this._method || 'GET', url: this._url, headers, body: this._body }).then(raw => {
+        if (this._fail && raw.code >= 400) {
+          const err = new Error(`curl: HTTP error ${raw.code}`);
+          this._on.error.forEach(fn => fn(err));
+          throw err;
+        }
+        const lines = raw.headers.all().filter(h => !h.disabled).map(h => `${h.key}: ${h.value}`);
+        const result = jsonResult(raw);
+        result.headerLines = lines;
+        this._on.end.forEach(fn => fn(raw.code, result.body, lines));
+        return result;
+      }, err => {
+        this._on.error.forEach(fn => fn(err));
+        throw err;
+      });
+    }
+  }
+  CurlHandle.option = CURL_OPTIONS;
+
+  function makeCurl() {
+    function curl(opts, cb) { return curl.request(opts, cb); }
+    function run(opts) {
+      const headers = pairsFromHeaders(opts.headers || opts.httpHeader);
+      const enc = encodeBody(opts.data ?? opts.body ?? opts.postFields);
+      if (enc && enc.json) upsertHeader(headers, 'Content-Type', 'application/json');
+      if (opts.user || opts.username) {
+        upsertHeader(headers, 'Authorization', 'Basic ' + globalThis.btoa(`${opts.user || opts.username}:${opts.password || opts.pass || ''}`));
+      }
+      return clientSend({
+        method: opts.method || (enc ? 'POST' : 'GET'),
+        url: opts.url,
+        headers,
+        body: enc && enc.body,
+      }).then(jsonResult);
+    }
+    curl.request = function (opts, cb) {
+      const p = run(typeof opts === 'string' ? { url: opts } : (opts || {}));
+      if (typeof cb === 'function') {
+        p.then(res => cb(null, res), err => cb(err));
+        return undefined;
+      }
+      return p;
+    };
+    curl.get = (url, opts) => curl.request({ ...(opts || {}), url, method: 'GET' });
+    curl.post = (url, data, opts) => curl.request({ ...(opts || {}), url, data, method: 'POST' });
+    curl.put = (url, data, opts) => curl.request({ ...(opts || {}), url, data, method: 'PUT' });
+    curl.patch = (url, data, opts) => curl.request({ ...(opts || {}), url, data, method: 'PATCH' });
+    curl.delete = (url, opts) => curl.request({ ...(opts || {}), url, method: 'DELETE' });
+    curl.Curl = CurlHandle;
+    curl.option = CURL_OPTIONS;
+    return curl;
+  }
+
+  function axiosResponse(raw, config) {
+    const headers = responseHeaderMap(raw);
+    let data = raw.body ?? '';
+    if ((headers['content-type'] || '').includes('json')) {
+      try { data = JSON.parse(raw.body); } catch (_) { /* keep the text */ }
+    }
+    return { data, status: raw.code, statusText: raw.status, headers, config };
+  }
+
+  function makeAxios() {
+    function axios(config) { return axios.request(config); }
+    axios.defaults = { validateStatus: status => status >= 200 && status < 300 };
+    function request(config) {
+      config = config || {};
+      const headers = pairsFromHeaders(config.headers);
+      const enc = encodeBody(config.data);
+      if (enc && enc.json) upsertHeader(headers, 'Content-Type', 'application/json');
+      if (config.auth) {
+        upsertHeader(headers, 'Authorization', 'Basic ' + globalThis.btoa(`${config.auth.username || ''}:${config.auth.password || ''}`));
+      }
+      const validate = config.validateStatus || axios.defaults.validateStatus;
+      return clientSend({
+        method: config.method || 'GET',
+        url: withQuery(joinBase(config.baseURL, config.url), config.params),
+        headers,
+        body: enc && enc.body,
+      }).then(raw => {
+        const response = axiosResponse(raw, config);
+        if (!validate(raw.code)) {
+          const err = new Error(`Request failed with status code ${raw.code}`);
+          err.response = response;
+          err.isAxiosError = true;
+          throw err;
+        }
+        return response;
+      });
+    }
+    axios.request = request;
+    axios.get = (url, config) => request({ ...(config || {}), url, method: 'GET' });
+    axios.delete = (url, config) => request({ ...(config || {}), url, method: 'DELETE' });
+    axios.head = (url, config) => request({ ...(config || {}), url, method: 'HEAD' });
+    axios.options = (url, config) => request({ ...(config || {}), url, method: 'OPTIONS' });
+    axios.post = (url, data, config) => request({ ...(config || {}), url, data, method: 'POST' });
+    axios.put = (url, data, config) => request({ ...(config || {}), url, data, method: 'PUT' });
+    axios.patch = (url, data, config) => request({ ...(config || {}), url, data, method: 'PATCH' });
+    axios.create = defaults => {
+      const inst = config => inst.request(config);
+      inst.request = config => {
+        const d = defaults || {};
+        const c = config || {};
+        return request({
+          ...d,
+          ...c,
+          headers: { ...(d.headers || {}), ...(c.headers || {}) },
+          params: { ...(d.params || {}), ...(c.params || {}) },
+        });
+      };
+      inst.get = (url, config) => inst.request({ ...(config || {}), url, method: 'GET' });
+      inst.post = (url, data, config) => inst.request({ ...(config || {}), url, data, method: 'POST' });
+      inst.put = (url, data, config) => inst.request({ ...(config || {}), url, data, method: 'PUT' });
+      inst.patch = (url, data, config) => inst.request({ ...(config || {}), url, data, method: 'PATCH' });
+      inst.delete = (url, config) => inst.request({ ...(config || {}), url, method: 'DELETE' });
+      return inst;
+    };
+    return axios;
+  }
+
+  class FetchHeaders {
+    constructor(init) {
+      this._m = {};
+      for (const [k, v] of pairsFromHeaders(init)) this._m[k.toLowerCase()] = v;
+    }
+    get(name) { return this._m[String(name).toLowerCase()]; }
+    has(name) { return this.get(name) !== undefined; }
+    entries() { return Object.entries(this._m); }
+    forEach(fn) { for (const [k, v] of Object.entries(this._m)) fn(v, k); }
+  }
+
+  function fetchResponse(raw) {
+    const headers = new FetchHeaders(responseHeaderMap(raw));
+    const text = raw.body ?? '';
+    return {
+      ok: raw.code >= 200 && raw.code < 300,
+      status: raw.code,
+      statusText: raw.status,
+      headers,
+      text: async () => text,
+      json: async () => JSON.parse(text),
+    };
+  }
+
+  function makeFetch() {
+    function fetch(url, init) {
+      init = init || {};
+      const headers = pairsFromHeaders(init.headers);
+      const enc = encodeBody(init.body);
+      if (enc && enc.json) upsertHeader(headers, 'Content-Type', 'application/json');
+      return clientSend({ method: init.method || 'GET', url, headers, body: enc && enc.body }).then(fetchResponse);
+    }
+    fetch.Headers = FetchHeaders;
+    return fetch;
+  }
+
+  function splitRequestArgs(a, b, c) {
+    if (typeof a === 'string') {
+      if (typeof b === 'function') return { opts: { url: a }, cb: b };
+      return { opts: { ...(b || {}), url: (b && b.url) || a }, cb: c };
+    }
+    return { opts: { ...(a || {}) }, cb: typeof b === 'function' ? b : undefined };
+  }
+
+  function makeRequest() {
+    function core(opts) {
+      const headers = pairsFromHeaders(opts.headers);
+      let data = opts.body;
+      let jsonMode = false;
+      if (opts.json && typeof opts.json === 'object') {
+        data = opts.json;
+        jsonMode = true;
+      } else if (opts.json) jsonMode = true;
+      const enc = data == null ? null : (jsonMode && typeof data !== 'string'
+        ? { body: JSON.stringify(data), json: true }
+        : encodeBody(data));
+      if (enc && (enc.json || jsonMode) && typeof data !== 'string') upsertHeader(headers, 'Content-Type', 'application/json');
+      if (opts.auth && opts.auth.user != null) {
+        upsertHeader(headers, 'Authorization', 'Basic ' + globalThis.btoa(`${opts.auth.user}:${opts.auth.pass || ''}`));
+      }
+      return clientSend({
+        method: opts.method || 'GET',
+        url: withQuery(opts.url || opts.uri, opts.qs),
+        headers,
+        body: enc && enc.body,
+      }).then(raw => {
+        let body = raw.body ?? '';
+        if (jsonMode) {
+          try { body = JSON.parse(raw.body); } catch (_) { /* keep the text */ }
+        }
+        return { statusCode: raw.code, statusMessage: raw.status, headers: responseHeaderMap(raw), body };
+      });
+    }
+    function request(a, b, c) {
+      const { opts, cb } = splitRequestArgs(a, b, c);
+      const p = core(opts);
+      if (typeof cb === 'function') {
+        p.then(res => cb(null, res, res.body), err => cb(err));
+        return undefined;
+      }
+      return p;
+    }
+    for (const [name, method] of [['get', 'GET'], ['post', 'POST'], ['put', 'PUT'], ['patch', 'PATCH'], ['head', 'HEAD'], ['del', 'DELETE'], ['delete', 'DELETE']]) {
+      request[name] = (a, b, c) => {
+        const parsed = splitRequestArgs(a, b, c);
+        parsed.opts.method = method;
+        return request(parsed.opts, parsed.cb);
+      };
+    }
+    return request;
+  }
+
+  function makeGot() {
+    function got(url, options) {
+      options = options || {};
+      if (url && typeof url === 'object') {
+        options = url;
+        url = options.url;
+      }
+      const headers = pairsFromHeaders(options.headers);
+      let body = options.body;
+      let parse = false;
+      if (options.json != null && typeof options.json !== 'boolean') {
+        const enc = encodeBody(options.json);
+        body = enc && enc.body;
+        parse = true;
+        upsertHeader(headers, 'Content-Type', 'application/json');
+        upsertHeader(headers, 'Accept', 'application/json');
+      } else if (options.json === true) parse = true;
+      else if (body != null) {
+        const enc = encodeBody(body);
+        body = enc && enc.body;
+        if (enc && enc.json) upsertHeader(headers, 'Content-Type', 'application/json');
+      }
+      const throwHttpErrors = options.throwHttpErrors !== false;
+      return clientSend({
+        method: options.method || 'GET',
+        url: withQuery(url, options.searchParams),
+        headers,
+        body,
+      }).then(raw => {
+        const res = {
+          statusCode: raw.code,
+          statusMessage: raw.status,
+          headers: responseHeaderMap(raw),
+          body: raw.body ?? '',
+        };
+        if (parse) {
+          try { res.body = JSON.parse(raw.body); } catch (_) { /* keep the text */ }
+        }
+        if (throwHttpErrors && (raw.code < 200 || raw.code >= 300)) {
+          const err = new Error(`Response code ${raw.code} (${raw.status})`);
+          err.response = res;
+          err.statusCode = raw.code;
+          throw err;
+        }
+        return res;
+      });
+    }
+    got.get = (url, opts) => got(url, { ...(opts || {}), method: 'GET' });
+    got.post = (url, opts) => got(url, { ...(opts || {}), method: 'POST' });
+    got.put = (url, opts) => got(url, { ...(opts || {}), method: 'PUT' });
+    got.patch = (url, opts) => got(url, { ...(opts || {}), method: 'PATCH' });
+    got.delete = (url, opts) => got(url, { ...(opts || {}), method: 'DELETE' });
+    got.extend = defaults => (url, opts) => got(url, { ...(defaults || {}), ...(opts || {}), headers: { ...((defaults || {}).headers), ...((opts || {}).headers) } });
+    return got;
+  }
+
+  function makeSuperagent() {
+    class SuperAgent {
+      constructor(method, url) {
+        this._method = method;
+        this._url = url;
+        this._headers = [];
+        this._query = {};
+        this._body = undefined;
+        this._json = false;
+      }
+      set(k, v) {
+        if (v === undefined && k && typeof k === 'object') {
+          for (const [hk, hv] of Object.entries(k)) this._headers.push([hk, String(hv)]);
+        } else this._headers.push([String(k), String(v)]);
+        return this;
+      }
+      query(q) {
+        if (typeof q === 'string') {
+          for (const part of q.replace(/^\?/, '').split('&')) {
+            if (!part) continue;
+            const i = part.indexOf('=');
+            this._query[decodeURIComponent(i < 0 ? part : part.slice(0, i))] = i < 0 ? '' : decodeURIComponent(part.slice(i + 1));
+          }
+        } else if (q && typeof q === 'object') Object.assign(this._query, q);
+        return this;
+      }
+      type(t) {
+        const map = { json: 'application/json', form: 'application/x-www-form-urlencoded', text: 'text/plain' };
+        this.set('Content-Type', map[t] || t);
+        if (t === 'json') this._json = true;
+        return this;
+      }
+      send(body) { this._body = body; return this; }
+      auth(user, pass) {
+        this.set('Authorization', 'Basic ' + globalThis.btoa(`${user}:${pass || ''}`));
+        return this;
+      }
+      then(resolve, reject) { return this.end().then(resolve, reject); }
+      end(cb) {
+        const headers = this._headers.map(h => h.slice());
+        let body = null;
+        if (this._body != null) {
+          const asJson = this._json || (typeof this._body === 'object' && !headers.some(([k]) => k.toLowerCase() === 'content-type'));
+          if (asJson && typeof this._body !== 'string') {
+            body = JSON.stringify(this._body);
+            upsertHeader(headers, 'Content-Type', 'application/json');
+          } else body = String(this._body);
+        }
+        const p = clientSend({ method: this._method, url: withQuery(this._url, this._query), headers, body }).then(raw => {
+          const headersMap = responseHeaderMap(raw);
+          let parsed;
+          const ct = headersMap['content-type'] || '';
+          if (ct.includes('json')) {
+            try { parsed = JSON.parse(raw.body); } catch (_) { parsed = undefined; }
+          }
+          const res = {
+            status: raw.code,
+            statusText: raw.status,
+            text: raw.body ?? '',
+            body: parsed === undefined ? (raw.body ?? '') : parsed,
+            headers: headersMap,
+            ok: raw.code >= 200 && raw.code < 300,
+          };
+          if (raw.code >= 400) {
+            const err = new Error(`Unsuccessful HTTP response: ${raw.code}`);
+            err.status = raw.code;
+            err.response = res;
+            throw err;
+          }
+          return res;
+        });
+        if (typeof cb === 'function') {
+          p.then(res => cb(null, res), err => cb(err));
+          return undefined;
+        }
+        return p;
+      }
+    }
+    function superagent(method, url) { return new SuperAgent(String(method || 'GET').toUpperCase(), url); }
+    for (const m of ['get', 'post', 'put', 'patch', 'delete', 'head']) {
+      superagent[m] = url => new SuperAgent(m.toUpperCase(), url);
+    }
+    return superagent;
+  }
+
+  function makeUndici() {
+    const fetch = makeFetch();
+    return {
+      fetch,
+      request(url, opts) {
+        return fetch(url, opts).then(res => ({
+          statusCode: res.status,
+          headers: res.headers,
+          body: { text: () => res.text(), json: () => res.json() },
+        }));
+      },
+    };
+  }
+
   // ---------------------------------------------------------------- entry
   globalThis.__lsock = {
     async run(ctxJson, userFn) {
@@ -802,6 +1358,20 @@
       });
     },
   };
+
+  requestClients = {
+    curl: makeCurl(),
+    axios: makeAxios(),
+    'node-fetch': makeFetch(),
+    'cross-fetch': makeFetch(),
+    got: makeGot(),
+    undici: makeUndici(),
+    request: makeRequest(),
+    'postman-request': makeRequest(),
+    superagent: makeSuperagent(),
+  };
+  // Dynamic import() reads this. require() reads `requestClients` directly.
+  globalThis.__requestClients = requestClients;
 
   Object.defineProperty(globalThis, '_', { get: () => scriptRequire('lodash'), configurable: true });
 })();

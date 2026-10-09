@@ -574,6 +574,107 @@ mod tests {
     }
 
     #[test]
+    fn additional_properties_false_rejects_unknown_keys() {
+        let s = json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {"a": {"type": "string"}}
+        });
+        let errs = validate(&s, &json!({"a": "ok", "b": 1}));
+        assert!(
+            errs.iter().any(|e| e.contains("'b'") && e.contains("not an allowed")),
+            "{errs:?}"
+        );
+        assert!(validate(&s, &json!({"a": "ok"})).is_empty());
+    }
+
+    /// Numeric `exclusiveMinimum` / `exclusiveMaximum` (JSON Schema draft 6+)
+    /// are endpoints the value must not equal. The inspector prints them with
+    /// `≤`, and `validate` only reads `minimum` / `maximum`.
+    #[test]
+    #[ignore = "BUG-003"]
+    fn exclusive_numeric_bounds_are_exclusive() {
+        let s = json!({
+            "type": "object",
+            "properties": {
+                "n": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 10}
+            }
+        });
+        let shown = param_rows(&s)
+            .into_iter()
+            .find(|r| r.path == "n")
+            .map(|r| r.constraints)
+            .unwrap_or_default();
+        let at_min = validate(&s, &json!({"n": 0}));
+        let at_max = validate(&s, &json!({"n": 10}));
+        let inside = validate(&s, &json!({"n": 5}));
+        assert!(
+            shown.iter().any(|c| c.contains('<') || c.contains('>'))
+                && at_min.iter().any(|e| e.contains('n'))
+                && at_max.iter().any(|e| e.contains('n'))
+                && inside.is_empty(),
+            "shown={shown:?} at_min={at_min:?} at_max={at_max:?} inside={inside:?}"
+        );
+    }
+
+    /// `oneOf` is exactly one match. `anyOf` / `oneOf` do not skip `required`.
+    #[test]
+    #[ignore = "BUG-012"]
+    fn one_of_is_exclusive_and_sibling_keywords_still_apply() {
+        let both = validate(
+            &json!({"oneOf":[{"type":"string"},{"minLength":1}]}),
+            &json!("ab"),
+        );
+        let missing = validate(
+            &json!({
+                "type": "object",
+                "required": ["a"],
+                "anyOf": [{"properties": {"a": {"type": "string"}}}]
+            }),
+            &json!({}),
+        );
+        assert!(
+            !both.is_empty() && !missing.is_empty(),
+            "both={both:?} missing={missing:?}"
+        );
+    }
+
+    /// Constraints the parameter table prints must be the same rules `validate`
+    /// enforces. `pattern`, `minItems`, and `uniqueItems` are displayed and then
+    /// accepted.
+    #[test]
+    #[ignore = "BUG-004"]
+    fn displayed_pattern_items_and_uniqueness_are_enforced() {
+        let s = json!({
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string", "pattern": "^[\\w-]+/[\\w-]+$"},
+                "labels": {
+                    "type": "array",
+                    "minItems": 2,
+                    "uniqueItems": true,
+                    "items": {"type": "string"}
+                }
+            }
+        });
+        let rows = param_rows(&s);
+        let repo_c = rows.iter().find(|r| r.path == "repo").map(|r| r.constraints.clone());
+        let labels_c = rows.iter().find(|r| r.path == "labels").map(|r| r.constraints.clone());
+        let bad_pattern = validate(&s, &json!({"repo": "not a repo", "labels": ["a", "b"]}));
+        let dupes = validate(&s, &json!({"repo": "acme/api", "labels": ["a", "a"]}));
+        let too_few = validate(&s, &json!({"repo": "acme/api", "labels": ["a"]}));
+        assert!(
+            repo_c.as_ref().is_some_and(|c| c.iter().any(|x| x.contains("pattern")))
+                && labels_c.as_ref().is_some_and(|c| c.iter().any(|x| x.contains("unique")))
+                && labels_c.as_ref().is_some_and(|c| c.iter().any(|x| x.contains("items")))
+                && bad_pattern.iter().any(|e| e.contains("repo"))
+                && dupes.iter().any(|e| e.contains("labels"))
+                && too_few.iter().any(|e| e.contains("labels")),
+            "repo_c={repo_c:?} labels_c={labels_c:?} bad_pattern={bad_pattern:?} dupes={dupes:?} too_few={too_few:?}"
+        );
+    }
+
+    #[test]
     fn example_args_fill_required_with_defaults() {
         assert_eq!(
             example_args(&schema()),

@@ -445,4 +445,41 @@ mod tests {
         );
         assert_eq!(parse_netrc("machine a login b password c", "z"), None);
     }
+
+    /// netrc(5): a `#` starts a comment through end of line, and `macdef`
+    /// consumes the following lines until a blank line. Neither is credentials.
+    #[test]
+    #[ignore = "BUG-002"]
+    fn netrc_ignores_comments_and_macdef_bodies() {
+        let commented =
+            "# machine evil.com login bad password worse\nmachine good.com login u password p\n";
+        let macdef = "\
+machine example.com
+login user
+password secret
+macdef init
+login attacker
+password stolen
+
+machine other.com
+login a
+password b
+";
+        let mut problems = vec![];
+        let from_comment = parse_netrc(commented, "evil.com");
+        if from_comment.is_some() {
+            problems.push(format!("commented machine was used: {from_comment:?}"));
+        }
+        if parse_netrc(commented, "good.com") != Some(("u".into(), "p".into())) {
+            problems.push(format!(
+                "real machine missing: {:?}",
+                parse_netrc(commented, "good.com")
+            ));
+        }
+        let from_macro = parse_netrc(macdef, "example.com");
+        if from_macro != Some(("user".into(), "secret".into())) {
+            problems.push(format!("macdef body overwrote credentials: {from_macro:?}"));
+        }
+        assert!(problems.is_empty(), "{problems:?}");
+    }
 }
