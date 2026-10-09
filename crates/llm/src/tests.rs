@@ -421,7 +421,7 @@ async fn multi_server_names_are_prefixed_unique_and_valid() {
             .find(|s| s.name.ends_with("delete_repo"))
             .unwrap()
             .description
-            .contains("destructive")
+            .contains("· Delete]")
     );
 }
 

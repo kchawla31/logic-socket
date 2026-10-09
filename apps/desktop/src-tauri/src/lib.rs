@@ -17,7 +17,7 @@ use lsock_core::{
 };
 use lsock_engine::Engine;
 use lsock_mcp::schema::{self, ParamRow};
-use lsock_mcp::{Client, Hints, InitializeResult, LogEntry, Notification, ProtocolLog, Tool};
+use lsock_mcp::{Client, InitializeResult, LogEntry, Notification, ProtocolLog, Tool};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::{Emitter, Manager, State};
@@ -735,7 +735,6 @@ struct ToolView {
     #[serde(flatten)]
     tool: Tool,
     display_name: String,
-    hints: Hints,
     /// Read / Create / Update / Delete and where it came from; absent when unknown.
     action: Option<lsock_mcp::action::Classified>,
     params: Vec<ParamRow>,
@@ -771,7 +770,6 @@ async fn mcp_list(state: State<'_, AppState>, server_id: String, kind: String) -
                 .into_iter()
                 .map(|t| ToolView {
                     display_name: t.display_name().to_string(),
-                    hints: t.hints(),
                     action: actions.get(&t.name).copied(),
                     params: schema::param_rows(&t.input_schema),
                     output_params: t

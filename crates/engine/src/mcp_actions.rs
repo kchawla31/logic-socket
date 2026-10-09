@@ -140,7 +140,7 @@ impl Engine {
                 cache.body.actions.insert(
                     t.name.clone(),
                     CachedToolAction {
-                        action: a.label().to_ascii_lowercase(),
+                        action: a.as_str().to_string(),
                         digest: digest(t),
                     },
                 );

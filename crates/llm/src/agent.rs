@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use futures::future::BoxFuture;
 use lsock_mcp::action::{Classified, ToolAction};
-use lsock_mcp::{Client, Hints, Tool};
+use lsock_mcp::{Client, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -51,7 +51,6 @@ pub struct ToolCallInfo {
     /// Original MCP tool name.
     pub tool: String,
     pub input: Value,
-    pub hints: Option<Hints>,
     /// What the tool does and how that was decided; `None` when unknown.
     pub action: Option<Classified>,
     /// Key for "always allow this tool" (`server id::tool name`).
@@ -196,15 +195,12 @@ pub fn tool_specs(sources: &[ToolSource]) -> (Vec<ToolSpec>, HashMap<String, (us
                 );
                 n += 1;
             }
-            let h = t.hints();
             let mut desc = t.description.clone().unwrap_or_default();
-            let tag = if h.read_only {
-                "read-only"
-            } else if h.destructive {
-                "destructive"
-            } else {
-                "modifies state"
-            };
+            let tag = s
+                .actions
+                .get(&t.name)
+                .map(|c| c.action.label())
+                .unwrap_or("unknown");
             if multi {
                 desc = format!("[{} · {tag}] {desc}", s.server_name);
             } else {
@@ -381,7 +377,6 @@ pub async fn run(
                     .map(|m| m.tool.name.clone())
                     .unwrap_or_else(|| name.clone()),
                 input: input.clone(),
-                hints: mapped.map(|m| m.tool.hints()),
                 action: mapped.and_then(|m| sources[m.source].actions.get(&m.tool.name).copied()),
                 allow_key: mapped
                     .map(|m| format!("{}::{}", sources[m.source].server_id, m.tool.name))

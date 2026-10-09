@@ -314,7 +314,6 @@ export interface ToolCallInfo {
   server: string;
   tool: string;
   input: unknown;
-  hints?: Hints | null;
   action?: ToolActionInfo | null;
   allowKey?: string;
 }
@@ -469,14 +468,6 @@ export interface ToolActionInfo {
   source: 'server' | 'ai' | 'name';
 }
 
-export interface Hints {
-  readOnly: boolean;
-  destructive: boolean;
-  idempotent: boolean;
-  openWorld: boolean;
-  declared: boolean;
-}
-
 export interface ToolView {
   /** What the tool does; null when Logic Socket can't tell. */
   action?: ToolActionInfo | null;
@@ -487,7 +478,6 @@ export interface ToolView {
   outputSchema?: Record<string, unknown> | null;
   annotations?: Record<string, unknown> | null;
   displayName: string;
-  hints: Hints;
   params: ParamRow[];
   outputParams: ParamRow[];
   example: unknown;

@@ -12,6 +12,7 @@ use lsock_llm::agent::{
     AgentEvent, AgentOptions, AllowAll, Approval, Approver, AutoApprove, ToolCallInfo, ToolSource,
 };
 use lsock_llm::{ChatRequest, Message, StreamEvent};
+use lsock_mcp::action::ToolAction;
 
 use crate::out::*;
 
@@ -132,10 +133,12 @@ impl Approver for TerminalApprover {
                 return Approval::Deny("no terminal to confirm (use --yes)".into());
             }
             tokio::task::spawn_blocking(move || {
-                let kind = match call.hints {
-                    Some(h) if h.destructive => red("destructive"),
-                    Some(h) if h.read_only => green("read-only"),
-                    _ => yellow("may modify state"),
+                let kind = match call.action.map(|a| a.action) {
+                    Some(a @ ToolAction::Read) => green(a.label()),
+                    Some(a @ ToolAction::Create) => yellow(a.label()),
+                    Some(a @ ToolAction::Update) => blue(a.label()),
+                    Some(a @ ToolAction::Delete) => red(a.label()),
+                    None => yellow("unknown"),
                 };
                 eprint!(
                     "\n  {} run {}.{} ({kind}) with {}? [y/N] ",

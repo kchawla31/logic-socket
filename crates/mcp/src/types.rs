@@ -74,31 +74,6 @@ impl Tool {
             .or(self.annotations.as_ref().and_then(|a| a.title.as_deref()))
             .unwrap_or(&self.name)
     }
-
-    /// Effective behavior hints, applying the spec defaults
-    /// (readOnly=false, destructive=true, idempotent=false, openWorld=true).
-    pub fn hints(&self) -> Hints {
-        let a = self.annotations.clone().unwrap_or_default();
-        let read_only = a.read_only_hint.unwrap_or(false);
-        Hints {
-            read_only,
-            destructive: !read_only && a.destructive_hint.unwrap_or(true),
-            idempotent: a.idempotent_hint.unwrap_or(false),
-            open_world: a.open_world_hint.unwrap_or(true),
-            declared: self.annotations.is_some(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct Hints {
-    pub read_only: bool,
-    pub destructive: bool,
-    pub idempotent: bool,
-    pub open_world: bool,
-    /// False when the server sent no annotations (values are spec defaults).
-    pub declared: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

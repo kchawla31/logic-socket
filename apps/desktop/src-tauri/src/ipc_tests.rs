@@ -234,7 +234,9 @@ fn mcp_inspector_commands_against_mock_server() {
         .find(|t| t["name"] == "create_issue")
         .unwrap();
     assert_eq!(create["displayName"], "create_issue");
-    assert_eq!(create["hints"]["destructive"], false);
+    assert_eq!(create["annotations"]["destructiveHint"], false);
+    assert_eq!(create["action"]["action"], "create");
+    assert_eq!(create["action"]["source"], "server");
     assert!(
         create["params"]
             .as_array()

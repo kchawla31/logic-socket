@@ -19,6 +19,16 @@ pub enum ToolAction {
 }
 
 impl ToolAction {
+    /// Stored and serialized spelling: `read`, `create`, `update`, `delete`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ToolAction::Read => "read",
+            ToolAction::Create => "create",
+            ToolAction::Update => "update",
+            ToolAction::Delete => "delete",
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             ToolAction::Read => "Read",

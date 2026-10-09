@@ -44,15 +44,22 @@ async fn exercise(client: &Client) {
         .find(|t| t.name == "delete_repo")
         .unwrap();
     assert_eq!(del.display_name(), "Delete repository");
-    assert!(del.hints().destructive && del.hints().idempotent);
-    assert!(
+    let del_ann = del.annotations.as_ref().unwrap();
+    assert_eq!(
+        (del_ann.destructive_hint, del_ann.idempotent_hint),
+        (Some(true), Some(true))
+    );
+    assert_eq!(
         tools
             .items
             .iter()
             .find(|t| t.name == "get_weather")
             .unwrap()
-            .hints()
-            .read_only
+            .annotations
+            .as_ref()
+            .unwrap()
+            .read_only_hint,
+        Some(true)
     );
 
     let echo = client

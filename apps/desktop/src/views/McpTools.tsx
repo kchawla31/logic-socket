@@ -266,7 +266,7 @@ function ToolDetail({ serverId, tool, onShowList }: { serverId: string; tool: To
   }, [run, view]);
 
   const definition = useMemo(() => {
-    const { displayName: _d, hints: _h, params: _p, outputParams: _o, example: _e, ...rest } = tool;
+    const { displayName: _d, action: _a, params: _p, outputParams: _o, example: _e, ...rest } = tool;
     return JSON.stringify(rest, null, 2);
   }, [tool]);
 
