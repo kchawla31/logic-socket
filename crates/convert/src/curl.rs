@@ -290,50 +290,39 @@ fn short_takes_value(c: char) -> bool {
 }
 
 /// `-XPUT` and `-d{"a":1}` are one word after [`split_words`]. Split the value off, and
-/// turn boolean clusters (`-sSL`, `-ks`) into one flag per letter.
-fn expand_short_options(words: Vec<String>) -> Vec<String> {
-    let mut out = Vec::with_capacity(words.len());
-    let mut words = words.into_iter();
-    if let Some(argv0) = words.next() {
-        out.push(argv0);
+/// turn boolean clusters (`-sSL`, `-ks`) into one flag per letter. Only called on a word
+/// in flag position, so an option value such as `-d '-name=x'` is never split.
+fn expand_short_cluster(w: &str) -> Option<Vec<String>> {
+    if w.starts_with("--") {
+        return None;
     }
-    for w in words {
-        if !w.starts_with('-') || w.starts_with("--") || w == "-" {
-            out.push(w);
-            continue;
+    let body: Vec<char> = w.strip_prefix('-')?.chars().collect();
+    if body.len() <= 1 || !body[0].is_ascii_alphabetic() {
+        return None;
+    }
+    let mut out = vec![];
+    for (i, &ch) in body.iter().enumerate() {
+        if !ch.is_ascii_alphabetic() {
+            out.push(body[i..].iter().collect());
+            break;
         }
-        let body: Vec<char> = w[1..].chars().collect();
-        if body.len() <= 1 || !body[0].is_ascii_alphabetic() {
-            out.push(w);
-            continue;
-        }
-        let mut i = 0;
-        while i < body.len() {
-            let ch = body[i];
-            if !ch.is_ascii_alphabetic() {
-                out.push(body[i..].iter().collect());
-                break;
+        out.push(format!("-{ch}"));
+        if short_takes_value(ch) {
+            let rest: String = body[i + 1..].iter().collect();
+            if !rest.is_empty() {
+                out.push(rest);
             }
-            out.push(format!("-{ch}"));
-            if short_takes_value(ch) {
-                let rest: String = body[i + 1..].iter().collect();
-                if !rest.is_empty() {
-                    out.push(rest);
-                }
-                break;
-            }
-            i += 1;
+            break;
         }
     }
-    out
+    Some(out)
 }
 
 pub fn parse(cmd: &str) -> Result<Request, CurlError> {
     let prepared = prepare(cmd);
     let words = split_words(strip_hash_prompt(&prepared))?;
-    let words = expand_short_options(peel_glued_argv0(words));
-    let mut it = words.into_iter().peekable();
-    if !it.next().is_some_and(|w| is_curl_argv0(&w)) {
+    let mut it: std::collections::VecDeque<String> = peel_glued_argv0(words).into();
+    if !it.pop_front().is_some_and(|w| is_curl_argv0(&w)) {
         return Err(CurlError::NotCurl);
     }
     let mut req = Request {
@@ -347,13 +336,24 @@ pub fn parse(cmd: &str) -> Result<Request, CurlError> {
     let mut get_mode = false;
     let mut head = false;
 
-    while let Some(w) = it.next() {
+    while let Some(w) = it.pop_front() {
+        if let Some(parts) = expand_short_cluster(&w) {
+            for p in parts.into_iter().rev() {
+                it.push_front(p);
+            }
+            continue;
+        }
         // --flag=value form
         let (flag, inline) = match w.split_once('=') {
             Some((f, v)) if f.starts_with("--") => (f.to_string(), Some(v.to_string())),
             _ => (w.clone(), None),
         };
-        let mut val = || inline.clone().or_else(|| it.next()).unwrap_or_default();
+        let mut val = || {
+            inline
+                .clone()
+                .or_else(|| it.pop_front())
+                .unwrap_or_default()
+        };
         match flag.as_str() {
             "-X" | "--request" => method = Some(val().to_uppercase()),
             "-H" | "--header" => {
@@ -725,6 +725,24 @@ mod tests {
             matches!(auth.authentication, Auth::Basic { ref username, ref password, .. } if username == "user" && password == "pw"),
             "{auth:?}"
         );
+    }
+
+    /// An option value that starts with `-` is taken whole, not split as flags.
+    #[test]
+    fn option_values_starting_with_a_dash_are_not_flags() {
+        let d = parse("curl -d '-name=x' https://ex.test/a").unwrap();
+        assert_eq!(
+            (
+                d.body.params[0].name.as_str(),
+                d.body.params[0].value.as_str()
+            ),
+            ("-name", "x"),
+            "{d:?}"
+        );
+        let a = parse("curl -A -agent https://ex.test/a").unwrap();
+        assert_eq!(a.headers, vec![KeyValue::new("User-Agent", "-agent")]);
+        let long = parse("curl --data -flag https://ex.test/a").unwrap();
+        assert_eq!(long.body.params[0].name, "-flag", "{long:?}");
     }
 
     #[test]

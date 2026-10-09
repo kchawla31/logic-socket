@@ -145,7 +145,9 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
 
   const setUrl = (url: string) => {
     if (!req || curlImporting.current) return;
-    if (looksLikeCurl(url)) {
+    // Only a paste or drop (several characters at once) imports. Typing a command by
+    // hand would otherwise import `curl h` and replace headers, body, and auth.
+    if (url.length - req.url.length > 1 && looksLikeCurl(url)) {
       importCurlText(url);
       return;
     }

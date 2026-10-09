@@ -917,3 +917,36 @@ async fn untouched_url_query_and_fragment_survive() {
         ["x", "page"]
     );
 }
+
+/// An object body defaults to JSON but keeps a content type the script set.
+#[tokio::test]
+async fn request_clients_keep_the_scripts_content_type() {
+    let script = r#"
+        const ct = sent => sent.headers.filter(h => h[0].toLowerCase() === 'content-type').map(h => h[1]);
+        const vnd = { 'Content-Type': 'application/vnd.api+json' };
+        const ax = await require('axios').post('https://x.io/a', { k: 1 }, { headers: vnd });
+        ls.environment.set('ax', JSON.stringify(ct(ax.data)));
+        const fr = await require('node-fetch')('https://x.io/f', { method: 'POST', headers: vnd, body: { k: 1 } });
+        ls.environment.set('fetch', JSON.stringify(ct(await fr.json())));
+        const sa = await require('superagent').post('https://x.io/s').set('Content-Type', 'application/vnd.api+json').send({ k: 5 });
+        ls.environment.set('sa', JSON.stringify(ct(sa.body)));
+        ls.environment.set('saBody', sa.body.body);
+        const plain = await require('axios').post('https://x.io/p', { k: 1 });
+        ls.environment.set('plain', JSON.stringify(ct(plain.data)));
+    "#;
+    let o = run(
+        input(script),
+        Limits::default(),
+        Arc::new(ClientEcho),
+        Arc::new(Renderer::new()),
+    )
+    .await;
+    ok(&o);
+    let e = &o.environment;
+    let vnd = json!(r#"["application/vnd.api+json"]"#);
+    assert_eq!(e["ax"], vnd);
+    assert_eq!(e["fetch"], vnd);
+    assert_eq!(e["sa"], vnd);
+    assert_eq!(e["saBody"], json!(r#"{"k":5}"#));
+    assert_eq!(e["plain"], json!(r#"["application/json"]"#));
+}

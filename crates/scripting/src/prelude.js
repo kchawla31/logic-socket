@@ -777,6 +777,11 @@
     else headers.push([name, value]);
   }
 
+  // Set a header only when the script has not set it, like the real clients.
+  function defaultHeader(headers, name, value) {
+    if (!headers.some(([k]) => k.toLowerCase() === name.toLowerCase())) headers.push([name, value]);
+  }
+
   function withQuery(url, params) {
     if (!params || typeof params !== 'object') return String(url);
     const qs = Object.entries(params)
@@ -886,7 +891,7 @@
         case 'POSTFIELDS': {
           const enc = encodeBody(value);
           this._body = enc ? enc.body : null;
-          if (enc && enc.json) upsertHeader(this._headers, 'Content-Type', 'application/json');
+          if (enc && enc.json) defaultHeader(this._headers, 'Content-Type', 'application/json');
           if (!this._method) this._method = 'POST';
           break;
         }
@@ -951,7 +956,7 @@
     function run(opts) {
       const headers = pairsFromHeaders(opts.headers || opts.httpHeader);
       const enc = encodeBody(opts.data ?? opts.body ?? opts.postFields);
-      if (enc && enc.json) upsertHeader(headers, 'Content-Type', 'application/json');
+      if (enc && enc.json) defaultHeader(headers, 'Content-Type', 'application/json');
       if (opts.user || opts.username) {
         upsertHeader(headers, 'Authorization', 'Basic ' + globalThis.btoa(`${opts.user || opts.username}:${opts.password || opts.pass || ''}`));
       }
@@ -996,7 +1001,7 @@
       config = config || {};
       const headers = pairsFromHeaders(config.headers);
       const enc = encodeBody(config.data);
-      if (enc && enc.json) upsertHeader(headers, 'Content-Type', 'application/json');
+      if (enc && enc.json) defaultHeader(headers, 'Content-Type', 'application/json');
       if (config.auth) {
         upsertHeader(headers, 'Authorization', 'Basic ' + globalThis.btoa(`${config.auth.username || ''}:${config.auth.password || ''}`));
       }
@@ -1076,7 +1081,7 @@
       init = init || {};
       const headers = pairsFromHeaders(init.headers);
       const enc = encodeBody(init.body);
-      if (enc && enc.json) upsertHeader(headers, 'Content-Type', 'application/json');
+      if (enc && enc.json) defaultHeader(headers, 'Content-Type', 'application/json');
       return clientSend({ method: init.method || 'GET', url, headers, body: enc && enc.body }).then(fetchResponse);
     }
     fetch.Headers = FetchHeaders;
@@ -1103,7 +1108,7 @@
       const enc = data == null ? null : (jsonMode && typeof data !== 'string'
         ? { body: JSON.stringify(data), json: true }
         : encodeBody(data));
-      if (enc && (enc.json || jsonMode) && typeof data !== 'string') upsertHeader(headers, 'Content-Type', 'application/json');
+      if (enc && (enc.json || jsonMode) && typeof data !== 'string') defaultHeader(headers, 'Content-Type', 'application/json');
       if (opts.auth && opts.auth.user != null) {
         upsertHeader(headers, 'Authorization', 'Basic ' + globalThis.btoa(`${opts.auth.user}:${opts.auth.pass || ''}`));
       }
@@ -1153,13 +1158,13 @@
         const enc = encodeBody(options.json);
         body = enc && enc.body;
         parse = true;
-        upsertHeader(headers, 'Content-Type', 'application/json');
-        upsertHeader(headers, 'Accept', 'application/json');
+        defaultHeader(headers, 'Content-Type', 'application/json');
+        defaultHeader(headers, 'Accept', 'application/json');
       } else if (options.json === true) parse = true;
       else if (body != null) {
         const enc = encodeBody(body);
         body = enc && enc.body;
-        if (enc && enc.json) upsertHeader(headers, 'Content-Type', 'application/json');
+        if (enc && enc.json) defaultHeader(headers, 'Content-Type', 'application/json');
       }
       const throwHttpErrors = options.throwHttpErrors !== false;
       return clientSend({
@@ -1237,10 +1242,11 @@
         const headers = this._headers.map(h => h.slice());
         let body = null;
         if (this._body != null) {
-          const asJson = this._json || (typeof this._body === 'object' && !headers.some(([k]) => k.toLowerCase() === 'content-type'));
+          const type = (headers.find(([k]) => k.toLowerCase() === 'content-type') || [])[1];
+          const asJson = this._json || (typeof this._body === 'object' && (!type || /json/i.test(type)));
           if (asJson && typeof this._body !== 'string') {
             body = JSON.stringify(this._body);
-            upsertHeader(headers, 'Content-Type', 'application/json');
+            defaultHeader(headers, 'Content-Type', 'application/json');
           } else body = String(this._body);
         }
         const p = clientSend({ method: this._method, url: withQuery(this._url, this._query), headers, body }).then(raw => {

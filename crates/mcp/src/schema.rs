@@ -354,6 +354,11 @@ fn check(
         ));
         return;
     }
+    if let Some(c) = schema.get("const")
+        && c != v
+    {
+        errs.push(format!("{at} must be {c}"));
+    }
     if let Some(e) = schema.get("enum").and_then(Value::as_array)
         && !e.contains(v)
     {
@@ -745,5 +750,19 @@ mod tests {
         );
         let s = json!({"type": "object", "properties": {"u": {"type": "string", "enum": ["c", "f"]}, "n": {"type": "integer", "minimum": 1}}});
         assert_eq!(example_args(&s), json!({"u": "c", "n": 1}));
+    }
+
+    /// The labelled-enum pattern: `oneOf` alternatives that differ only by `const`.
+    #[test]
+    fn one_of_consts_accepts_exactly_the_listed_values() {
+        let s =
+            json!({"oneOf":[{"const":"c","title":"Celsius"},{"const":"f","title":"Fahrenheit"}]});
+        assert!(
+            validate(&s, &json!("c")).is_empty(),
+            "{:?}",
+            validate(&s, &json!("c"))
+        );
+        let bad = validate(&s, &json!("x"));
+        assert!(bad.iter().any(|e| e.contains("does not match")), "{bad:?}");
     }
 }
