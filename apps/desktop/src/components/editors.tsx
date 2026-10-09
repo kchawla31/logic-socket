@@ -8,7 +8,8 @@ import { useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 import type { KeyValue } from '../lib/api';
-import { cn } from '../lib/utils';
+import { cn, kvFromText, kvToText } from '../lib/utils';
+import { CopyButton, Toggle } from './ui';
 import { VarInput } from './VarInput';
 
 export function useDark(): boolean {
@@ -60,8 +61,78 @@ export function CodeEditor({
   );
 }
 
+/** "Copy all" plus a Bulk edit switch, shown above key/value tables and the auth form. */
+export function BulkBar({
+  copyText,
+  bulk,
+  onBulk,
+  hint,
+}: {
+  copyText: string;
+  bulk?: boolean;
+  onBulk?: (on: boolean) => void;
+  hint?: string;
+}) {
+  return (
+    <div className="flex h-8 shrink-0 items-center gap-2 border-b border-app px-2 text-[12px] text-muted">
+      {hint && <span className="truncate">{hint}</span>}
+      <div className="flex-1" />
+      {copyText.trim() && <CopyButton text={copyText} label="Copy all" />}
+      {onBulk && <Toggle checked={!!bulk} onChange={onBulk} label="Bulk edit" />}
+    </div>
+  );
+}
+
+/** Text editor for bulk edits. Keeps its own text so typing is not reformatted on each keystroke. */
+function BulkText({ text, onText, placeholder }: { text: string; onText: (t: string) => void; placeholder: string }) {
+  return <CodeEditor value={text} onChange={onText} language="text" placeholder={placeholder} className="h-72 flex-none" />;
+}
+
+/** Bulk-edit view of key/value rows: one `Name: value` per line, `//` for disabled rows. */
+function KeyValueBulk({ items, onChange }: { items: KeyValue[]; onChange: (items: KeyValue[]) => void }) {
+  const [text, setText] = useState(() => kvToText(items));
+  // Rows changed elsewhere (a curl paste, undo): show them, unless they are what this text parses to.
+  useEffect(() => {
+    setText(t => (kvToText(kvFromText(t, items)) === kvToText(items) ? t : kvToText(items)));
+  }, [items]);
+  return (
+    <BulkText
+      text={text}
+      onText={t => {
+        setText(t);
+        onChange(kvFromText(t, items));
+      }}
+      placeholder={'Content-Type: application/json\nAuthorization: Bearer {{ _.token }}\n// X-Disabled: off'}
+    />
+  );
+}
+
 /** Editable list of name/value rows with enable toggles; always keeps one empty row at the end. */
-export function KeyValueEditor({
+export function KeyValueEditor(props: {
+  items: KeyValue[];
+  onChange: (items: KeyValue[]) => void;
+  contextId?: string;
+  namePlaceholder?: string;
+  valuePlaceholder?: string;
+  readOnlyNames?: boolean;
+}) {
+  const [bulk, setBulk] = useState(false);
+  // Path parameter names come from the URL, so they are copyable but not bulk-editable.
+  const canBulk = !props.readOnlyNames;
+  return (
+    <div className="flex flex-col">
+      <BulkBar
+        copyText={kvToText(props.items)}
+        bulk={bulk}
+        onBulk={canBulk ? setBulk : undefined}
+        hint={bulk && canBulk ? 'One per line as Name: value. Start a line with // to disable it.' : undefined}
+      />
+      {bulk && canBulk ? <KeyValueBulk items={props.items} onChange={props.onChange} /> : <KeyValueRows {...props} />}
+    </div>
+  );
+}
+
+function KeyValueRows({
   items,
   onChange,
   contextId,

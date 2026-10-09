@@ -7,6 +7,10 @@ import {
   looksLikeCurl,
   pathParamsInUrl,
   prettyJson,
+  authFromText,
+  authToText,
+  kvFromText,
+  kvToText,
   splitQuery,
   statusTone,
   tokenizeTemplate,
@@ -109,5 +113,70 @@ describe('url edge cases', () => {
 
   it('takes path params from the path only from the path only', () => {
     expect(pathParamsInUrl('http://x/users/:id?next=/:home#/:frag')).toEqual(['id']);
+  });
+});
+
+describe('bulk edit', () => {
+  it('round-trips rows, with // for disabled ones', () => {
+    const rows = [
+      { name: 'Accept', value: 'application/json' },
+      { name: 'X-Off', value: '1', disabled: true },
+      { name: 'Authorization', value: 'Bearer {{ _.token }}' },
+    ];
+    const text = kvToText(rows);
+    expect(text).toBe('Accept: application/json\n// X-Off: 1\nAuthorization: Bearer {{ _.token }}');
+    expect(kvFromText(text)).toEqual(rows);
+  });
+
+  it('parses a Postman-style paste, blank lines, = pairs, and colons in values', () => {
+    const text = 'Content-Type: application/json\n\n  //Cache-Control:no-cache\nredirect=https://x.io/cb?a=1\nReferer: https://x.io:8443/a\nflag';
+    expect(kvFromText(text)).toEqual([
+      { name: 'Content-Type', value: 'application/json' },
+      { name: 'Cache-Control', value: 'no-cache', disabled: true },
+      { name: 'redirect', value: 'https://x.io/cb?a=1' },
+      { name: 'Referer', value: 'https://x.io:8443/a' },
+      { name: 'flag', value: '' },
+    ]);
+  });
+
+  it('keeps ids and descriptions of rows that are still there, including duplicates', () => {
+    const prev = [
+      { id: 'a', name: 'X', value: '1', description: 'first' },
+      { id: 'b', name: 'X', value: '2' },
+      { id: 'c', name: 'Gone', value: '' },
+    ];
+    expect(kvFromText('X: 10\nX: 20\nNew: 3', prev)).toEqual([
+      { id: 'a', description: 'first', name: 'X', value: '10' },
+      { id: 'b', name: 'X', value: '20' },
+      { name: 'New', value: '3' },
+    ]);
+  });
+
+  const TYPES = ['inherit', 'none', 'basic', 'bearer', 'apikey'] as const;
+  const defaults = (t: string) =>
+    (t === 'basic'
+      ? { type: 'basic', username: '', password: '' }
+      : t === 'bearer'
+        ? { type: 'bearer', token: '', prefix: null }
+        : { type: t }) as never;
+
+  it('round-trips auth settings', () => {
+    const auth = { type: 'basic', username: 'ada', password: 'p:w', disabled: true } as const;
+    const text = authToText(auth);
+    expect(text).toBe('type: basic\nusername: ada\npassword: p:w\ndisabled: true');
+    expect(authFromText(text, auth, defaults, TYPES)).toEqual({ auth, ignored: [] });
+  });
+
+  it('switches type from a pasted block and reports unknown fields', () => {
+    const r = authFromText('type: bearer\ntoken: {{ _.t }}\nprefix:\nscope: x', { type: 'inherit' }, defaults, TYPES);
+    expect(r.auth).toEqual({ type: 'bearer', token: '{{ _.t }}', prefix: null });
+    expect(r.ignored).toEqual(['scope']);
+  });
+
+  it('edits fields in place when the type is unchanged, and ignores an unknown type', () => {
+    const cur = { type: 'basic', username: 'a', password: 'b' } as const;
+    const r = authFromText('type: kerberos\npassword: c', cur, defaults, TYPES);
+    expect(r.auth).toEqual({ type: 'basic', username: 'a', password: 'c' });
+    expect(r.ignored).toEqual(['type']);
   });
 });

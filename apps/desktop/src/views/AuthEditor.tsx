@@ -1,9 +1,11 @@
 import { KeyRound, LogIn, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { BulkBar, CodeEditor } from '../components/editors';
 import { Badge, Button, Select, Toggle, useToast } from '../components/ui';
 import { VarInput } from '../components/VarInput';
 import { api, type Auth, errorText, type TokenStatus } from '../lib/api';
+import { authFromText, authToText } from '../lib/utils';
 
 const LABELS: Record<Auth['type'], string> = {
   inherit: 'Inherit from parent folder',
@@ -130,7 +132,56 @@ function OAuth2Token({ ownerId, grantType }: { ownerId: string; grantType: strin
   );
 }
 
-export function AuthEditor({
+const TYPES = Object.keys(LABELS) as Auth['type'][];
+
+/** Bulk-edit view of the auth settings: one `field: value` per line, `type` first. */
+function AuthBulk({ auth, onChange, allowInherit }: { auth: Auth; onChange: (a: Auth) => void; allowInherit: boolean }) {
+  const types = allowInherit ? TYPES : TYPES.filter(t => t !== 'inherit');
+  const parse = (t: string) => authFromText(t, auth, defaults, types);
+  const [text, setText] = useState(() => authToText(auth));
+  const [ignored, setIgnored] = useState<string[]>([]);
+  // Auth changed elsewhere: show it, unless it is what this text already parses to.
+  useEffect(() => {
+    setText(t => (authToText(parse(t).auth) === authToText(auth) ? t : authToText(auth)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth]);
+  return (
+    <>
+      <CodeEditor
+        value={text}
+        onChange={t => {
+          setText(t);
+          const r = parse(t);
+          setIgnored(r.ignored);
+          onChange(r.auth);
+        }}
+        language="text"
+        placeholder={'type: bearer\ntoken: {{ _.token }}'}
+        className="h-72 flex-none"
+      />
+      {ignored.length > 0 && (
+        <p className="px-3 py-2 text-[12px] text-amber-600">Not a field of this auth type, ignored: {ignored.join(', ')}</p>
+      )}
+    </>
+  );
+}
+
+export function AuthEditor(props: { auth: Auth; onChange: (a: Auth) => void; contextId: string; allowInherit?: boolean }) {
+  const [bulk, setBulk] = useState(false);
+  return (
+    <div className="flex flex-col">
+      <BulkBar
+        copyText={authToText(props.auth)}
+        bulk={bulk}
+        onBulk={setBulk}
+        hint={bulk ? 'One per line as field: value. A type line switches the auth type.' : undefined}
+      />
+      {bulk ? <AuthBulk auth={props.auth} onChange={props.onChange} allowInherit={props.allowInherit ?? true} /> : <AuthForm {...props} />}
+    </div>
+  );
+}
+
+function AuthForm({
   auth,
   onChange,
   contextId,

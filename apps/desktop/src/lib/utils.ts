@@ -1,6 +1,8 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
+import type { Auth, KeyValue } from './api';
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -179,4 +181,95 @@ export function isMac(): boolean {
 
 export function modKey(): string {
   return isMac() ? '⌘' : 'Ctrl';
+}
+
+// ---- bulk edit: key/value rows and auth settings as `name: value` lines
+
+/** Split `name: value` (or `name=value`) on whichever separator comes first. */
+function splitPair(line: string): [string, string] {
+  const colon = line.indexOf(':');
+  const eq = line.indexOf('=');
+  const i = colon < 0 ? eq : eq < 0 ? colon : Math.min(colon, eq);
+  return i < 0 ? [line.trim(), ''] : [line.slice(0, i).trim(), line.slice(i + 1).trim()];
+}
+
+/** Rows as `Name: value` lines; disabled rows start with `//` (Postman's bulk-edit format). */
+export function kvToText(items: KeyValue[]): string {
+  return items
+    .filter(r => r.name || r.value)
+    .map(r => `${r.disabled ? '// ' : ''}${r.name}: ${r.value}`)
+    .join('\n');
+}
+
+/** Parse bulk-edit text back into rows, keeping ids and descriptions of rows with the same name. */
+export function kvFromText(text: string, previous: KeyValue[] = []): KeyValue[] {
+  const unused = [...previous];
+  const rows: KeyValue[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    let line = raw.trim();
+    if (!line) continue;
+    const disabled = line.startsWith('//');
+    if (disabled) line = line.slice(2).trim();
+    const [name, value] = splitPair(line);
+    if (!name && !value) continue;
+    const i = unused.findIndex(p => p.name === name);
+    const prev = i >= 0 ? unused.splice(i, 1)[0] : undefined;
+    rows.push({
+      ...(prev?.id ? { id: prev.id } : {}),
+      ...(prev?.description ? { description: prev.description } : {}),
+      name,
+      value,
+      ...(disabled ? { disabled: true } : {}),
+    });
+  }
+  return rows;
+}
+
+/** Auth settings as `field: value` lines, `type` first. */
+export function authToText(auth: Auth): string {
+  const { type, ...rest } = auth as Auth & Record<string, unknown>;
+  const lines = [`type: ${type}`];
+  for (const [k, v] of Object.entries(rest)) lines.push(`${k}: ${v ?? ''}`);
+  return lines.join('\n');
+}
+
+/**
+ * Apply `field: value` lines to `current`. A `type` line switches to that type's defaults
+ * (from `defaultsFor`) first. Booleans parse from `true`/`false`; unknown fields are returned
+ * in `ignored` rather than stored.
+ */
+export function authFromText(
+  text: string,
+  current: Auth,
+  defaultsFor: (t: Auth['type']) => Auth,
+  types: readonly Auth['type'][],
+): { auth: Auth; ignored: string[] } {
+  const pairs = text
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith('//'))
+    .map(l => {
+      const i = l.indexOf(':');
+      return i < 0 ? [l, ''] : [l.slice(0, i).trim(), l.slice(i + 1).trim()];
+    });
+  const typeLine = pairs.find(([k]) => k === 'type')?.[1] as Auth['type'] | undefined;
+  const base = (typeLine && types.includes(typeLine) && typeLine !== current.type ? defaultsFor(typeLine) : current) as Auth &
+    Record<string, unknown>;
+  const next: Record<string, unknown> = { ...base };
+  const ignored: string[] = [];
+  for (const [k, v] of pairs) {
+    if (k === 'type') {
+      if (!typeLine || !types.includes(typeLine)) ignored.push(k);
+      continue;
+    }
+    const known = k in base || (k === 'disabled' && base.type !== 'inherit' && base.type !== 'none');
+    if (!known) {
+      ignored.push(k);
+      continue;
+    }
+    if (typeof base[k] === 'boolean' || k === 'disabled') next[k] = v.toLowerCase() === 'true';
+    else if (base[k] === null || (k === 'prefix' && base.type === 'bearer')) next[k] = v || null;
+    else next[k] = v;
+  }
+  return { auth: next as Auth, ignored };
 }
