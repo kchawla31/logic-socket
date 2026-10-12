@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CodeEditor, JsonTree } from '../components/editors';
 import { CopyButton, Empty, IconButton, Kbd, Select, Tabs, useToast } from '../components/ui';
 import { api, type ResponseSummary, type ResponseView } from '../lib/api';
-import { cn, formatBytes, formatMs, modKey, prettyJson, statusTone, timeAgo } from '../lib/utils';
+import { cn, formatBytes, formatMs, htmlExcerpt, modKey, presentError, prettyJson, statusTone, timeAgo } from '../lib/utils';
 
 export function ResponsePane({
   requestId,
@@ -55,9 +55,16 @@ export function ResponsePane({
   const failedTests = tests.filter(t => !t.passed && !t.skipped).length;
   const consoleLines = response.console ?? [];
   const cookies = response.headers.filter(h => h.name.toLowerCase() === 'set-cookie');
+  const page = htmlExcerpt(response.bodyText, response.contentType);
+  const authNote =
+    response.statusCode === 401
+      ? 'Authorization failed. Check the Auth tab and the token or API key in the active environment.'
+      : response.statusCode === 403
+        ? 'The server refused this request. The credentials may not be allowed to do this.'
+        : null;
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col', sending && 'opacity-60')}>
+    <div className={cn('flex h-full min-h-0 min-w-0 flex-col', sending && 'opacity-60')}>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-app px-3">
         {response.error ? (
           <span className={cn('shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[12px] font-semibold', statusTone(0))}>Error</span>
@@ -112,18 +119,26 @@ export function ResponsePane({
       </div>
 
       {response.error ? (
-        <div className="m-4 rounded-lg border border-rose-500/30 bg-rose-500/5 p-4">
+        <div className="mx-3 mt-3 shrink-0 rounded-lg border border-rose-500/30 bg-rose-500/5 p-3">
           <div className="mb-1 flex items-center gap-2 font-semibold text-rose-700 dark:text-rose-400">
             <AlertTriangle className="size-4" /> Request failed
           </div>
-          <div className="selectable font-mono text-[12.5px] whitespace-pre-wrap">{response.error}</div>
-          <div className="mt-3 text-[12.5px] text-muted">
+          <div className="selectable max-h-36 overflow-auto font-mono text-[12.5px] break-words whitespace-pre-wrap">{presentError(response.error, 800)}</div>
+          <div className="mt-2 text-[12.5px] text-muted">
             {response.error.includes('unresolved variable')
               ? 'Define the variable in an environment (⌘E) or a parent folder, or fix the name.'
               : response.error.includes('timed out')
                 ? 'Increase the timeout in Settings or check that the server is reachable.'
-                : 'Check the URL, network connection and TLS settings. The Timeline tab shows what was sent.'}
+                : /\b401\b|unauthorized/i.test(response.error)
+                  ? 'Authorization was rejected. Check the Auth tab and the active environment.'
+                  : /\b403\b|forbidden/i.test(response.error)
+                    ? 'The server refused this request.'
+                    : 'Check the URL, network connection and TLS settings. The Timeline tab shows what was sent.'}
           </div>
+        </div>
+      ) : authNote ? (
+        <div className="mx-3 mt-3 shrink-0 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[12.5px] text-amber-800 dark:text-amber-200">
+          {response.statusCode} {response.statusMessage}. {authNote}
         </div>
       ) : null}
 
@@ -167,8 +182,20 @@ export function ResponsePane({
                 }}
               />
             </div>
+          ) : page ? (
+            <div className="max-w-xl p-4">
+              <p className="text-[13px] break-words">{page}</p>
+              <p className="mt-2 text-[12.5px] text-muted">This is an HTML page. The full source is in the Raw tab.</p>
+            </div>
           ) : response.bodyText ? (
-            <pre className="selectable p-3 font-mono text-[12.5px] whitespace-pre-wrap">{response.bodyText}</pre>
+            authNote && response.bodyText.length > 400 ? (
+              <div className="max-w-xl p-4">
+                <pre className="selectable font-mono text-[12.5px] break-words whitespace-pre-wrap">{presentError(response.bodyText, 400)}</pre>
+                <p className="mt-2 text-[12.5px] text-muted">The full response is in the Raw tab.</p>
+              </div>
+            ) : (
+              <pre className="selectable p-3 font-mono text-[12.5px] break-all whitespace-pre-wrap">{response.bodyText}</pre>
+            )
           ) : (
             <Empty title="Empty body" />
           ))}

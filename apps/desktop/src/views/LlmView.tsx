@@ -485,7 +485,7 @@ export function LlmView({ id, tree, onOpenProviders }: { id: string; tree: TreeN
                   ) : it.kind === 'tool' ? (
                     <ToolCard key={it.call.id} item={it} onDecide={running ? (allow, always) => decide(it.call, allow, always) : undefined} />
                   ) : (
-                    <div key={i} className="rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2 font-mono text-[12.5px] text-rose-700 dark:text-rose-400">
+                    <div key={i} className="max-h-36 overflow-auto rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2 font-mono text-[12.5px] break-words text-rose-700 dark:text-rose-400">
                       {it.message}
                     </div>
                   ),

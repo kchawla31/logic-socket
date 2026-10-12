@@ -2,6 +2,7 @@ import { Command as CommandIcon, Download, FileCode2, Folder, GitBranch, Layers,
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Logo, ThemeSwitch } from './components/Brand';
+import { invalidateContextVars } from './components/VarInput';
 import { type Command, CommandPalette } from './components/CommandPalette';
 import { Button, DialogProvider, Empty, IconButton, Kbd, Select, Split, ToastProvider, useDialog, useToast } from './components/ui';
 import { api, type EnvList, errorText, type GitRepo, onDbChanged, type TreeNode, type Workspace } from './lib/api';
@@ -106,8 +107,11 @@ function Shell() {
   // Only the newest refresh may write state (a slow one for the previous
   // workspace must not overwrite the tree after a switch).
   const refreshSeq = useRef(0);
+  // Bumped when the user picks an environment, so a refresh that started earlier cannot snap the dropdown back.
+  const envGen = useRef(0);
   const refresh = useCallback(async () => {
     const seq = ++refreshSeq.current;
+    const gen = envGen.current;
     const ws = await api.workspaceList();
     if (seq !== refreshSeq.current) return;
     setWorkspaces(ws);
@@ -117,7 +121,7 @@ function Shell() {
     const [t, e, r] = await Promise.all([api.treeGet(current.id), api.envList(current.id), api.gitRepoList().catch(() => [])]);
     if (seq !== refreshSeq.current) return;
     setTree(t);
-    setEnvs(e);
+    setEnvs(prev => (envGen.current !== gen && prev ? { ...e, activeId: prev.activeId } : e));
     setRepos(r);
   }, [wsId]);
 
@@ -173,6 +177,24 @@ function Shell() {
       });
     },
     [active],
+  );
+
+  const chooseEnv = useCallback(
+    async (id: string | null) => {
+      if (!wsId) return;
+      const next = id || null;
+      envGen.current += 1;
+      setEnvs(prev => (prev ? { ...prev, activeId: next } : prev));
+      try {
+        await api.envSetActive(wsId, next);
+        invalidateContextVars();
+      } catch (err) {
+        envGen.current += 1;
+        toast(errorText(err), 'error');
+        refresh().catch(() => {});
+      }
+    },
+    [wsId, toast, refresh],
   );
 
   const newRequest = useCallback(async () => {
@@ -286,7 +308,7 @@ function Shell() {
         group: 'Environment',
         label: `Use environment: ${e.name}`,
         icon: <Layers className="size-4" />,
-        run: () => wsId && api.envSetActive(wsId, e.id),
+        run: () => chooseEnv(e.id),
       });
     for (const w of workspaces)
       if (w.id !== wsId) cmds.push({ id: `ws-${w.id}`, group: 'Collections', label: `Open ${w.name}`, icon: <Layers className="size-4" />, run: () => setWsId(w.id) });
@@ -314,7 +336,7 @@ function Shell() {
         run: () => open(n.id, n.kind),
       });
     return cmds;
-  }, [nodes, envs, workspaces, wsId, newRequest, newWorkspace, open, setTheme, active, byId]);
+  }, [nodes, envs, workspaces, wsId, newRequest, newWorkspace, open, setTheme, active, byId, chooseEnv]);
 
   const ws = workspaces.find(w => w.id === wsId);
   const activeTab = tabs.find(t => t.id === active);
@@ -322,11 +344,11 @@ function Shell() {
   return (
     <div className="flex h-full flex-col bg-canvas">
       {/* top bar, on the canvas */}
-      <header data-tauri-drag-region className="flex h-13 shrink-0 items-center gap-2 px-3.5">
+      <header className="flex h-13 shrink-0 items-center gap-2 px-3.5">
         <IconButton label={`${sidebarHidden ? 'Show' : 'Hide'} sidebar (${modKey()} B)`} onClick={toggleSidebar}>
           {sidebarHidden ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
         </IconButton>
-        <div className="flex items-center gap-2 pr-2 text-[14px] font-extrabold tracking-tight">
+        <div data-tauri-drag-region className="flex items-center gap-2 pr-2 text-[14px] font-extrabold tracking-tight">
           <Logo />
           Logic Socket
         </div>
@@ -349,7 +371,7 @@ function Shell() {
         <Select
           aria-label="Environment"
           value={envs?.activeId ?? ''}
-          onChange={e => wsId && api.envSetActive(wsId, e.target.value || null)}
+          onChange={e => chooseEnv(e.target.value)}
           className="h-8 max-w-52 bg-app shadow-sm"
         >
           <option value="">No environment</option>
@@ -487,7 +509,7 @@ function Shell() {
       )}
 
       <CommandPalette open={palette} onClose={() => setPalette(false)} commands={commands} />
-      {wsId && <EnvironmentModal open={envOpen} onClose={() => setEnvOpen(false)} workspaceId={wsId} />}
+      {wsId && <EnvironmentModal open={envOpen} onClose={() => setEnvOpen(false)} workspaceId={wsId} onUse={chooseEnv} />}
       <AiProvidersModal open={aiOpen} onClose={() => setAiOpen(false)} />
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} workspaceId={wsId} workspaceName={ws?.name} onImported={id => setWsId(id)} />
       {wsId && <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} workspaceId={wsId} workspaceName={ws?.name ?? 'Collection'} />}

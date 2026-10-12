@@ -114,10 +114,12 @@ fn environments_preview_and_curl() {
     let mut base = envs["base"].clone();
     base["data"] = json!({"base": "http://example.test", "tok": "secret"});
     h.ok("env_update", json!({"doc": base}));
-    let sub = h.ok(
+    let mut sub = h.ok(
         "env_create",
         json!({"workspaceId": ws_id, "name": "Staging"}),
     );
+    sub["data"] = json!({"user": "staging-user"});
+    h.ok("env_update", json!({"doc": sub}));
     h.ok(
         "env_set_active",
         json!({"workspaceId": ws_id, "envId": sub["id"]}),
@@ -139,6 +141,12 @@ fn environments_preview_and_curl() {
             .unwrap()
             .iter()
             .any(|v| v["name"] == "tok" && v["source"] == "Base Environment")
+    );
+    assert!(
+        vars.as_array().unwrap().iter().any(|v| {
+            v["name"] == "user" && v["value"] == "staging-user" && v["source"] == "Staging"
+        }),
+        "active environment variables must be selectable: {vars}"
     );
 
     let parsed = h.ok(

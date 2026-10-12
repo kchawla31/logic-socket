@@ -16,8 +16,9 @@ pub mod vault;
 
 pub use pipeline::{Outcome, RunState};
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -76,6 +77,8 @@ pub struct Engine {
     pub(crate) renderer: Arc<Renderer>,
     data_dir: Option<PathBuf>,
     pub(crate) secrets: Arc<dyn llm::SecretStore>,
+    /// Pasted OAuth callbacks for sign-ins that are waiting on the browser.
+    pub(crate) oauth_paste: Arc<Mutex<HashMap<String, tokio::sync::mpsc::Sender<String>>>>,
 }
 
 /// A request after rendering and inheritance, ready for `lsock_http::send`.
@@ -106,6 +109,7 @@ impl Engine {
             renderer: Arc::new(Renderer::new()),
             data_dir,
             secrets,
+            oauth_paste: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 

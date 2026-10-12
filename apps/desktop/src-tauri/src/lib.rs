@@ -1126,6 +1126,7 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             auth::oauth2_status,
             auth::oauth2_authorize,
             auth::oauth2_clear,
+            auth::oauth2_submit_callback,
             auth::mcp_oauth_sign_in,
             mcp_classify_tools,
             grpc::proto_file_list,

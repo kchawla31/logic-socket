@@ -88,6 +88,12 @@ pub fn oauth2_clear(state: State<'_, AppState>, owner_id: String) -> CmdResult<(
     state.engine.oauth2_clear(&owner_id).map_err(e)
 }
 
+/// The browser landed on a redirect this app could not catch. `callback` is that URL.
+#[tauri::command]
+pub fn oauth2_submit_callback(state: State<'_, AppState>, owner_id: String, callback: String) -> CmdResult<()> {
+    state.engine.oauth2_submit_callback(&owner_id, &callback).map_err(e)
+}
+
 /// Open a URL in the user's default browser.
 pub fn open_in_browser(url: &str) {
     #[cfg(target_os = "macos")]

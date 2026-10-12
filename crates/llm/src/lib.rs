@@ -340,6 +340,19 @@ pub(crate) fn auth(
     rb
 }
 
+fn clip_message(message: &str) -> String {
+    let collapsed = if message.contains('<') && message.contains('>') {
+        message.split_whitespace().collect::<Vec<_>>().join(" ")
+    } else {
+        message.trim().to_string()
+    };
+    let mut out: String = collapsed.chars().take(240).collect();
+    if collapsed.chars().count() > 240 {
+        out.push('…');
+    }
+    out
+}
+
 pub(crate) fn api_error(cfg: &ProviderConfig, status: u16, body: &Value) -> LlmError {
     let message = body["error"]["message"]
         .as_str()
@@ -356,7 +369,7 @@ pub(crate) fn api_error(cfg: &ProviderConfig, status: u16, body: &Value) -> LlmE
     LlmError::Api {
         provider: format!("{:?}", cfg.kind),
         status,
-        message: format!("{message}{hint}"),
+        message: format!("{}{hint}", clip_message(&message)),
     }
 }
 

@@ -2,7 +2,7 @@ import { KeyRound, LogIn, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { BulkBar, CodeEditor } from '../components/editors';
-import { Badge, Button, Select, Toggle, useToast } from '../components/ui';
+import { Badge, Button, Input, Select, Toggle, useToast } from '../components/ui';
 import { VarInput } from '../components/VarInput';
 import { api, type Auth, errorText, type TokenStatus } from '../lib/api';
 import { authFromText, authToText } from '../lib/utils';
@@ -86,6 +86,7 @@ function OAuth2Token({ ownerId, grantType }: { ownerId: string; grantType: strin
   const toast = useToast();
   const [status, setStatus] = useState<TokenStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pasted, setPasted] = useState('');
   useEffect(() => {
     api.oauth2Status(ownerId).then(setStatus).catch(() => setStatus(null));
   }, [ownerId]);
@@ -128,6 +129,27 @@ function OAuth2Token({ ownerId, grantType }: { ownerId: string; grantType: strin
         )}
       </div>
       {status?.scope && <div className="mt-1 text-[12px] text-muted">scope: {status.scope}</div>}
+      {grantType === 'authorization_code' && (
+        <form
+          className="mt-2 flex gap-2"
+          onSubmit={e => {
+            e.preventDefault();
+            api.oauth2SubmitCallback(ownerId, pasted.trim()).catch(err => toast(errorText(err), 'error'));
+          }}
+        >
+          <Input
+            value={pasted}
+            onChange={e => setPasted(e.target.value)}
+            disabled={!busy}
+            placeholder="Paste the final browser URL if sign-in does not return here"
+            className="h-8 flex-1 font-mono"
+            aria-label="Pasted redirect URL"
+          />
+          <Button size="sm" type="submit" disabled={!busy || !pasted.trim()}>
+            Use URL
+          </Button>
+        </form>
+      )}
     </div>
   );
 }
@@ -247,7 +269,7 @@ function AuthForm({
           {auth.grantType === 'authorization_code' && (
             <>
               <Field label="Authorization URL">{v(auth.authorizationUrl, authorizationUrl => onChange({ ...auth, authorizationUrl }), 'https://auth.example.com/authorize')}</Field>
-              <Field label="Redirect URL" hint="Must be http://localhost or http://127.0.0.1 with a free port — Logic Socket listens there during sign-in. Register it with your provider.">
+              <Field label="Redirect URL" hint="Use the URL your provider has registered. http://127.0.0.1 or http://localhost on a free port is caught here, on IPv4 and IPv6. Any other URL, including a company https address, works too: after Get token, paste the final browser URL below. Company proxies often block the automatic localhost catch.">
                 {v(auth.redirectUrl, redirectUrl => onChange({ ...auth, redirectUrl }))}
               </Field>
               <Field label="PKCE (S256)">

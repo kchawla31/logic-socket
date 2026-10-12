@@ -1,5 +1,11 @@
 //! OAuth 2.0 token handling (client credentials, password, authorization code
-//! with PKCE + localhost redirect, refresh) and `~/.netrc` lookup.
+//! with PKCE, refresh) and `~/.netrc` lookup.
+//!
+//! The code flow catches `http://localhost` and `http://127.0.0.1` (IPv4 and IPv6).
+//! Any other redirect URI — the https URL a company identity provider registered,
+//! or a private scheme — is finished by pasting the browser's final URL.
+
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
@@ -7,6 +13,7 @@ use lsock_core::{Doc, OAuth2Config, OAuth2Token, now_ms};
 use serde_json::Value;
 use sha2::Digest as _;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
 use crate::{Engine, EngineError, Result};
 
@@ -23,6 +30,113 @@ pub fn pkce_pair() -> (String, String) {
     );
     let challenge = URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()));
     (verifier, challenge)
+}
+
+/// Addresses to listen on when `host` is loopback. `None` means this redirect cannot be caught here.
+async fn loopback_addrs(host: &str, port: u16) -> Option<Vec<SocketAddr>> {
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return ip.is_loopback().then(|| vec![SocketAddr::new(ip, port)]);
+    }
+    if !host.eq_ignore_ascii_case("localhost") {
+        let Ok(looked) = tokio::net::lookup_host((host, port)).await else {
+            return None;
+        };
+        let ips: Vec<IpAddr> = looked.map(|s| s.ip()).collect();
+        if ips.is_empty() || ips.iter().any(|ip| !ip.is_loopback()) {
+            return None;
+        }
+    }
+    // `localhost` (and any name that is only loopback) may be 127.0.0.1 or ::1.
+    Some(vec![
+        SocketAddr::from(([127, 0, 0, 1], port)),
+        SocketAddr::from((Ipv6Addr::LOCALHOST, port)),
+    ])
+}
+
+fn code_from_callback(raw: &str, expected_state: &str) -> Result<String> {
+    let raw = raw.trim();
+    let u = if raw.contains("://") {
+        url::Url::parse(raw).map_err(|e| err(format!("OAuth 2: that is not a URL ({e})")))?
+    } else {
+        let q = raw.trim_start_matches('?');
+        url::Url::parse(&format!("http://localhost/?{q}")).map_err(|e| err(format!("OAuth 2: that is not a URL ({e})")))?
+    };
+    let mut pairs: Vec<(String, String)> = u.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    if let Some(fragment) = u.fragment() {
+        pairs.extend(url::form_urlencoded::parse(fragment.as_bytes()).map(|(k, v)| (k.into_owned(), v.into_owned())));
+    }
+    let get = |k: &str| pairs.iter().find(|(q, _)| q == k).map(|(_, v)| v.clone());
+    match (get("code"), get("error")) {
+        (_, Some(e)) => Err(err(format!(
+            "OAuth 2: {e}{}",
+            get("error_description").map(|d| format!(": {d}")).unwrap_or_default()
+        ))),
+        (Some(c), _) if get("state").as_deref() == Some(expected_state) => Ok(c),
+        (Some(_), _) => Err(err("OAuth 2: state mismatch (possible CSRF) — try again")),
+        _ => Err(err(
+            "OAuth 2: that URL has no authorization code. Paste the address the browser landed on after sign-in.",
+        )),
+    }
+}
+
+struct AbortOnDrop(Vec<tokio::task::JoinHandle<()>>);
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        for t in &self.0 {
+            t.abort();
+        }
+    }
+}
+
+struct ClearPaste {
+    map: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::mpsc::Sender<String>>>>,
+    id: String,
+}
+impl Drop for ClearPaste {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.map.lock() {
+            g.remove(&self.id);
+        }
+    }
+}
+
+async fn read_callback(sock: &mut TcpStream, state: &str) -> Result<Option<Result<String>>> {
+    let mut buf = vec![0u8; 8192];
+    let n = sock.read(&mut buf).await.unwrap_or(0);
+    if n == 0 {
+        return Ok(None);
+    }
+    let req = String::from_utf8_lossy(&buf[..n]);
+    let path = req.split_whitespace().nth(1).unwrap_or("/");
+    let Ok(u) = url::Url::parse(&format!("http://localhost{path}")) else {
+        return Ok(None);
+    };
+    let get = |k: &str| u.query_pairs().find(|(q, _)| q == k).map(|(_, v)| v.into_owned());
+    let (title, result) = match (get("code"), get("error")) {
+        (_, Some(e)) => (
+            "Sign-in failed",
+            Some(Err(err(format!(
+                "OAuth 2: {e}{}",
+                get("error_description").map(|d| format!(": {d}")).unwrap_or_default()
+            )))),
+        ),
+        (Some(c), _) if get("state").as_deref() == Some(state) => ("Signed in", Some(Ok(c))),
+        (Some(_), _) => ("Sign-in failed", Some(Err(err("OAuth 2: state mismatch (possible CSRF) — try again")))),
+        _ => return Ok(None),
+    };
+    let html = format!(
+        "<!doctype html><meta charset=utf-8><title>{title}</title><body style='font-family:system-ui;padding:3em'><h2>{title}</h2><p>You can close this window and return to Logic Socket.</p></body>"
+    );
+    let _ = sock
+        .write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}",
+                html.len()
+            )
+            .as_bytes(),
+        )
+        .await;
+    Ok(result)
 }
 
 fn form_body(pairs: &[(&str, &str)]) -> String {
@@ -275,8 +389,10 @@ impl Engine {
         Ok(at)
     }
 
-    /// Authorization code flow with PKCE: opens the browser via `open_url`,
-    /// waits for the redirect on the localhost `redirect_url`, exchanges the code.
+    /// Authorization code flow with PKCE. Opens the browser via `open_url`.
+    /// A loopback `http://` redirect is caught on this machine (127.0.0.1 and ::1).
+    /// Any other redirect — https, a company hostname, a private scheme — waits until
+    /// [`Engine::oauth2_submit_callback`] receives the URL the browser landed on.
     pub async fn oauth2_authorize(
         &self,
         owner_id: &str,
@@ -292,20 +408,39 @@ impl Engine {
         }
         let redirect = url::Url::parse(cfg.redirect_url.trim())
             .map_err(|e| err(format!("OAuth 2: invalid redirect URL: {e}")))?;
-        let host = redirect.host_str().unwrap_or("");
-        if !(host == "localhost" || host == "127.0.0.1") || redirect.scheme() != "http" {
-            return Err(err(
-                "OAuth 2: the redirect URL must be http://localhost:<port>/… or http://127.0.0.1:<port>/… so logic-socket can catch it",
-            ));
+        let catch_addrs = match redirect.scheme() {
+            "http" => {
+                let host = redirect
+                    .host_str()
+                    .ok_or_else(|| err("OAuth 2: the redirect URL needs a host"))?;
+                loopback_addrs(host, redirect.port().unwrap_or(80)).await
+            }
+            "https" => {
+                if redirect.host_str().is_none() {
+                    return Err(err("OAuth 2: the redirect URL needs a host"));
+                }
+                None
+            }
+            "javascript" | "data" | "file" => return Err(err("OAuth 2: that redirect URL is not allowed")),
+            _ => None,
+        };
+        let mut listeners = Vec::new();
+        if let Some(addrs) = &catch_addrs {
+            let mut bind_error = None;
+            for addr in addrs {
+                match TcpListener::bind(addr).await {
+                    Ok(l) => listeners.push(l),
+                    Err(e) => bind_error = Some(e),
+                }
+            }
+            if listeners.is_empty() {
+                let port = addrs[0].port();
+                return Err(err(format!(
+                    "OAuth 2: cannot listen on port {port} ({}). Pick a free port, or paste the final browser URL after signing in.",
+                    bind_error.map(|e| e.to_string()).unwrap_or_else(|| "bind failed".into())
+                )));
+            }
         }
-        let port = redirect.port().unwrap_or(80);
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
-            .await
-            .map_err(|e| {
-                err(format!(
-                    "OAuth 2: cannot listen on port {port} for the redirect: {e}"
-                ))
-            })?;
         let (verifier, challenge) = pkce_pair();
         let state = uuid::Uuid::new_v4().simple().to_string();
         let mut auth_url = url::Url::parse(cfg.authorization_url.trim())
@@ -330,32 +465,68 @@ impl Engine {
                     .append_pair("code_challenge_method", "S256");
             }
         }
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        self.oauth_paste.lock().unwrap().insert(owner_id.to_string(), tx);
+        let _clear = ClearPaste {
+            map: self.oauth_paste.clone(),
+            id: owner_id.to_string(),
+        };
         open_url(auth_url.as_str());
 
+        let caught = !listeners.is_empty();
         let code = tokio::time::timeout(std::time::Duration::from_secs(300), async {
+            let (sock_tx, mut sock_rx) = tokio::sync::mpsc::channel(8);
+            let _tasks = AbortOnDrop(
+                listeners
+                    .into_iter()
+                    .map(|listener| {
+                        let sock_tx = sock_tx.clone();
+                        tokio::spawn(async move {
+                            loop {
+                                match listener.accept().await {
+                                    Ok((sock, _)) => {
+                                        if sock_tx.send(sock).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                    Err(_) => break,
+                                }
+                            }
+                        })
+                    })
+                    .collect(),
+            );
+            drop(sock_tx);
+            let mut listen = caught;
             loop {
-                let (mut sock, _) = listener.accept().await.map_err(|e| err(e.to_string()))?;
-                let mut buf = vec![0u8; 8192];
-                let n = sock.read(&mut buf).await.unwrap_or(0);
-                let req = String::from_utf8_lossy(&buf[..n]).to_string();
-                let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
-                let u = url::Url::parse(&format!("http://localhost{path}")).map_err(|e| err(e.to_string()))?;
-                let get = |k: &str| u.query_pairs().find(|(q, _)| q == k).map(|(_, v)| v.into_owned());
-                let (title, result) = match (get("code"), get("error")) {
-                    (_, Some(e)) => ("Sign-in failed", Err(err(format!("OAuth 2: {e}{}", get("error_description").map(|d| format!(": {d}")).unwrap_or_default())))),
-                    (Some(c), _) if get("state").as_deref() == Some(state.as_str()) => ("Signed in", Ok(c)),
-                    (Some(_), _) => ("Sign-in failed", Err(err("OAuth 2: state mismatch (possible CSRF) — try again"))),
-                    _ => continue, // favicon or unrelated request
-                };
-                let html = format!("<!doctype html><meta charset=utf-8><title>{title}</title><body style='font-family:system-ui;padding:3em'><h2>{title}</h2><p>You can close this window and return to logic-socket.</p></body>");
-                let _ = sock
-                    .write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}", html.len()).as_bytes())
-                    .await;
-                return result;
+                tokio::select! {
+                    biased;
+                    pasted = rx.recv() => {
+                        let pasted = pasted.ok_or_else(|| err("OAuth 2: sign-in was replaced by a newer attempt"))?;
+                        return code_from_callback(&pasted, &state);
+                    }
+                    sock = sock_rx.recv(), if listen => {
+                        match sock {
+                            Some(mut sock) => {
+                                if let Some(result) = read_callback(&mut sock, &state).await? {
+                                    return result;
+                                }
+                            }
+                            None => listen = false,
+                        }
+                    }
+                }
             }
         })
         .await
-        .map_err(|_| err("OAuth 2: timed out waiting for the browser sign-in (5 minutes)"))??;
+        .map_err(|_| {
+            err(if caught {
+                "OAuth 2: timed out waiting for the browser (5 minutes). If a company proxy swallowed the localhost redirect, click Get token again and paste the final browser URL."
+            } else {
+                "OAuth 2: timed out waiting for the browser (5 minutes). Click Get token again and paste the final browser URL."
+            })
+        })??;
 
         let mut pairs = vec![
             ("grant_type", "authorization_code".to_string()),
@@ -370,6 +541,17 @@ impl Engine {
         }
         let token = self.token_request(cfg, pairs).await?;
         self.oauth2_save(owner_id, token)
+    }
+
+    /// Finish a sign-in whose redirect this app cannot catch (a company https URL, or a proxy that ate localhost).
+    /// `callback` is the full URL from the browser address bar, or just the `code` and `state` query.
+    pub fn oauth2_submit_callback(&self, owner_id: &str, callback: &str) -> Result<()> {
+        let guard = self.oauth_paste.lock().unwrap();
+        let tx = guard.get(owner_id).ok_or_else(|| {
+            err("No sign-in is in progress. Click Get token, then paste the URL the browser opened.")
+        })?;
+        tx.try_send(callback.trim().to_string())
+            .map_err(|_| err("That sign-in already received a callback."))
     }
 }
 

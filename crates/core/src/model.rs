@@ -186,7 +186,8 @@ pub struct OAuth2Config {
     pub resource: String,
     pub username: String,
     pub password: String,
-    /// Must be `http://localhost:<port>/...` or `http://127.0.0.1:<port>/...` for the code flow.
+    /// Redirect URI registered with the provider. Loopback `http://localhost` or
+    /// `http://127.0.0.1` is caught on this machine; any other URI is completed by pasting the final browser URL.
     pub redirect_url: String,
     pub use_pkce: bool,
     /// Send client id/secret in the body instead of HTTP Basic.

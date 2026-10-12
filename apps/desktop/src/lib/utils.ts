@@ -38,6 +38,59 @@ export function statusTone(code: number): string {
   return 'bg-rose-500/15 text-rose-700 dark:text-rose-400';
 }
 
+/** Sort key for dropping `dragId` before or after `targetId` among `siblings`. */
+export function dropSortKey(
+  siblings: { id: string; sortKey: number }[],
+  dragId: string,
+  targetId: string | null,
+  place: 'before' | 'after',
+): number {
+  const list = siblings.filter(s => s.id !== dragId);
+  if (!targetId) return (list.length ? list[list.length - 1].sortKey : -1) + 1;
+  const i = list.findIndex(s => s.id === targetId);
+  const index = i < 0 ? list.length : place === 'after' ? i + 1 : i;
+  const prev = index > 0 ? list[index - 1].sortKey : null;
+  const next = index < list.length ? list[index].sortKey : null;
+  if (prev == null && next == null) return 0;
+  if (prev == null) return (next as number) - 1;
+  if (next == null) return prev + 1;
+  return (prev + next) / 2;
+}
+
+/** Collapse an HTML error page or a huge payload into something that fits a banner. */
+export function presentError(text: string, max = 420): string {
+  const html = /<\/?[a-z][^>]*>/i.test(text);
+  const clean = html
+    ? text
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    : text.trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, max)}…`;
+}
+
+/** Short readable text for an HTML response body, or null when the body is not a page. */
+export function htmlExcerpt(text: string, contentType: string): string | null {
+  const html = /html/i.test(contentType) || /^\s*<!doctype html/i.test(text) || /^\s*<html[\s>]/i.test(text);
+  if (!html || !text.trim()) return null;
+  const take = (re: RegExp) => text.match(re)?.[1]?.replace(/\s+/g, ' ').trim();
+  const title = take(/<title[^>]*>([^<]{1,200})<\/title>/i);
+  const heading = take(/<h1[^>]*>([^<]{1,200})<\/h1>/i);
+  const plain = text
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const bits = [title, heading].filter((v): v is string => !!v);
+  if (plain && !bits.some(b => plain.startsWith(b))) bits.push(plain.slice(0, 280));
+  const msg = bits.join(' — ').slice(0, 400);
+  return msg || 'This response is an HTML page.';
+}
+
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;

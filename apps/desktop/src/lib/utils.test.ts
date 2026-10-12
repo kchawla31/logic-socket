@@ -15,6 +15,9 @@ import {
   splitQuery,
   statusTone,
   tokenizeTemplate,
+  dropSortKey,
+  htmlExcerpt,
+  presentError,
 } from './utils';
 
 describe('tokenizeTemplate', () => {
@@ -223,5 +226,34 @@ describe('curlToMcp', () => {
     const c = curlToMcp(req({ authentication: { type: 'basic', username: 'ada', password: 'pä' } }));
     expect(c.authentication).toEqual({ type: 'none' });
     expect(c.headers).toEqual([{ name: 'Authorization', value: `Basic ${btoa('ada:p\u00c3\u00a4')}` }]);
+  });
+});
+
+describe('dropSortKey', () => {
+  const rows = [
+    { id: 'a', sortKey: 1 },
+    { id: 'b', sortKey: 2 },
+    { id: 'c', sortKey: 3 },
+  ];
+
+  it('moves an item down past the next one', () => {
+    expect(dropSortKey(rows, 'a', 'b', 'after')).toBe(2.5);
+  });
+
+  it('moves an item up before an earlier one', () => {
+    expect(dropSortKey(rows, 'c', 'b', 'before')).toBe(1.5);
+  });
+
+  it('places an item at the end when there is no target', () => {
+    expect(dropSortKey(rows, 'a', null, 'after')).toBe(4);
+  });
+});
+
+describe('presentError and htmlExcerpt', () => {
+  it('turns an HTML 401 page into a short message', () => {
+    const html = '<html><head><title>401 Authorization Required</title><style>body{color:red}</style></head><body><h1>Authorization Required</h1><p>This server could not verify you.</p></body></html>';
+    expect(presentError(html)).toBe('401 Authorization Required Authorization Required This server could not verify you.');
+    expect(htmlExcerpt(html, 'text/html')).toContain('401 Authorization Required');
+    expect(htmlExcerpt('{"ok":true}', 'application/json')).toBeNull();
   });
 });

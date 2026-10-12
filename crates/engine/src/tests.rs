@@ -1147,6 +1147,55 @@ mod oauth {
         e.oauth2_clear(&req).unwrap();
         assert!(e.oauth2_cached(&req).unwrap().is_none());
     }
+
+    #[tokio::test]
+    async fn authorization_code_catches_localhost_on_either_stack() {
+        let (base, _) = setup().await;
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let mut c = cfg(&base, "authorization_code");
+        c.client_secret = "shh".into();
+        c.redirect_url = format!("http://localhost:{port}/callback");
+        let (e, req, _) = engine_with(&base, Auth::OAuth2(c.clone()), false);
+        let opener = |url: &str| {
+            let url = url.to_string();
+            tokio::spawn(async move {
+                let body = reqwest::get(&url).await.unwrap().text().await.unwrap();
+                assert!(body.contains("Signed in"), "{body}");
+            });
+        };
+        let tok = e.oauth2_authorize(&req, &c, &opener).await.unwrap();
+        assert_eq!(tok.access_token, "tok-code");
+    }
+
+    #[tokio::test]
+    async fn authorization_code_accepts_a_corporate_redirect_via_pasted_url() {
+        let (base, _) = setup().await;
+        let mut c = cfg(&base, "authorization_code");
+        c.client_secret = "shh".into();
+        c.redirect_url = "https://login.corp.example/oauth/callback".into();
+        let (e, req, _) = engine_with(&base, Auth::OAuth2(c.clone()), false);
+        let err = e.oauth2_submit_callback(&req, "https://login.corp.example/oauth/callback?code=x&state=y").unwrap_err();
+        assert!(err.to_string().contains("Get token"), "{err}");
+        let e2 = e.clone();
+        let owner = req.clone();
+        let opener = move |url: &str| {
+            let url = url.to_string();
+            let e2 = e2.clone();
+            let owner = owner.clone();
+            tokio::spawn(async move {
+                let client = reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .unwrap();
+                let res = client.get(&url).send().await.unwrap();
+                let loc = res.headers().get("location").unwrap().to_str().unwrap().to_string();
+                assert!(loc.starts_with("https://login.corp.example/oauth/callback?"), "{loc}");
+                e2.oauth2_submit_callback(&owner, &loc).unwrap();
+            });
+        };
+        let tok = e.oauth2_authorize(&req, &c, &opener).await.unwrap();
+        assert_eq!(tok.access_token, "tok-code");
+    }
 }
 
 mod phase5 {

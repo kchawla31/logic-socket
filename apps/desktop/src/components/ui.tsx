@@ -270,7 +270,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             className={cn(
-              'pointer-events-auto max-w-md rounded-lg border px-3.5 py-2.5 text-[13px] shadow-lg',
+              'pointer-events-auto max-h-40 max-w-md overflow-auto rounded-lg border px-3.5 py-2.5 text-[13px] break-words shadow-lg',
               t.tone === 'error' && 'border-rose-500/40 bg-rose-50 text-rose-800 dark:bg-rose-950 dark:text-rose-200',
               t.tone === 'success' && 'border-emerald-500/40 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200',
               t.tone === 'info' && 'border-app bg-app',

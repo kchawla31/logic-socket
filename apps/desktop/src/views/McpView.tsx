@@ -20,7 +20,7 @@ import {
   type TokenStatus,
   type ToolView,
 } from '../lib/api';
-import { clockTime, cn, curlToMcp, formatMs, looksLikeCurl } from '../lib/utils';
+import { clockTime, cn, curlToMcp, formatMs, looksLikeCurl, presentError } from '../lib/utils';
 import { useProviders } from './AiProviders';
 import { CodeModal } from './ImportExport';
 import { clipboardPlainText, useAutosave } from './RequestView';
@@ -268,7 +268,7 @@ export function McpView({ id }: { id: string }) {
           <div className="mb-1 flex items-center gap-1.5 font-semibold text-rose-700 dark:text-rose-400">
             <TriangleAlert className="size-4" /> Could not connect
           </div>
-          <div className="selectable font-mono whitespace-pre-wrap">{lastError}</div>
+          <div className="selectable max-h-36 overflow-auto font-mono break-words whitespace-pre-wrap">{presentError(lastError, 800)}</div>
           <div className="mt-2 text-muted">The Protocol log tab shows every frame that was exchanged before the failure.</div>
         </div>
       )}
@@ -403,6 +403,7 @@ function McpAuth({ server, update, contextId, beforeSignIn, afterSignIn, connect
   const kind = auth.type === 'bearer' || auth.type === 'apikey' || auth.type === 'oauth2' ? auth.type : 'none';
   const [token, setToken] = useState<TokenStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pasted, setPasted] = useState('');
   const isHttp = server.transport.kind === 'streamable-http';
   useEffect(() => {
     if (kind === 'oauth2') api.oauth2Status(server.id).then(setToken).catch(() => setToken(null));
@@ -493,9 +494,29 @@ function McpAuth({ server, update, contextId, beforeSignIn, afterSignIn, connect
               </Button>
             )}
           </div>
+          {busy && (
+            <form
+              className="flex gap-2"
+              onSubmit={e => {
+                e.preventDefault();
+                api.oauth2SubmitCallback(server.id, pasted.trim()).catch(err => toast(errorText(err), 'error'));
+              }}
+            >
+              <Input
+                value={pasted}
+                onChange={e => setPasted(e.target.value)}
+                placeholder="Paste the final browser URL if sign-in does not return here"
+                className="h-8 flex-1 font-mono"
+                aria-label="Pasted redirect URL"
+              />
+              <Button size="sm" type="submit" disabled={!pasted.trim()}>
+                Use URL
+              </Button>
+            </form>
+          )}
           <p className="text-[12px] text-muted">
             Sign in opens your browser. Logic Socket finds the server&rsquo;s sign-in page from the server URL, registers itself if needed, and refreshes the token
-            when it expires.
+            when it expires. A company redirect URL is fine: paste the final browser address if it does not return here.
             {auth.authorizationUrl && (
               <>
                 {' '}

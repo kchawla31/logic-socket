@@ -281,6 +281,10 @@ fn postman_auth_kinds() {
         pkce.audience, "https://api.acme.test",
         "object-valued params use their value"
     );
+    let Auth::OAuth2(corp) = &find(&b, "oauth2 corp").authentication else {
+        panic!()
+    };
+    assert_eq!(corp.redirect_url, "https://login.corp.example/oauth/callback");
     let Auth::OAuth2(code) = &find(&b, "oauth2 code").authentication else {
         panic!()
     };

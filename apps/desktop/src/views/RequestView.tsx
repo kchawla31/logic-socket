@@ -5,7 +5,7 @@ import { CodeEditor, KeyValueEditor } from '../components/editors';
 import { GraphQLEditor } from '../components/GraphQLEditor';
 import { ScriptEditor } from '../components/ScriptEditor';
 import { Button, Empty, IconButton, Input, Kbd, Select, Split, Tabs, Toggle, useToast } from '../components/ui';
-import { VarInput } from '../components/VarInput';
+import { useVarRevision, VarInput } from '../components/VarInput';
 import { api, type Body, errorText, type KeyValue, type Preview, type Request, type ResponseView } from '../lib/api';
 import { cn, looksLikeCurl, METHODS, methodColor, modKey, pathParamsInUrl, prettyJson, splitQuery } from '../lib/utils';
 import { AuthEditor } from './AuthEditor';
@@ -103,6 +103,7 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
   const [preview, setPreview] = useState<Preview | null>(null);
   const urlRef = useRef<HTMLInputElement>(null);
   const curlImporting = useRef(false);
+  const varRev = useVarRevision();
 
   // Latest stored response on open.
   useEffect(() => {
@@ -110,14 +111,14 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
     api.responseList(id).then(list => list[0] && api.responseGet(list[0].id).then(setResponse));
   }, [id]);
 
-  // Live URL preview.
+  // Live URL preview. `varRev` changes when the active environment (or any saved data) changes.
   useEffect(() => {
     if (!req) return;
     const t = setTimeout(() => {
       api.renderPreview(id, req.url).then(setPreview).catch(() => setPreview(null));
     }, 200);
     return () => clearTimeout(t);
-  }, [id, req?.url, req]);
+  }, [id, req, req?.url, varRev]);
 
   const update = (patch: Partial<Request>) => req && setReq({ ...req, ...patch });
 

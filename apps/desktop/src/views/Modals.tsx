@@ -4,10 +4,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { ThemeSwitch } from '../components/Brand';
 import { CodeEditor } from '../components/editors';
 import { Button, CopyButton, IconButton, Input, Modal, Toggle, useDialog, useToast } from '../components/ui';
+import { invalidateContextVars } from '../components/VarInput';
 import { api, type EnvList, type Environment, errorText, type Settings, type VaultStatus } from '../lib/api';
 import { cn } from '../lib/utils';
 
-export function EnvironmentModal({ open, onClose, workspaceId }: { open: boolean; onClose: () => void; workspaceId: string }) {
+export function EnvironmentModal({
+  open,
+  onClose,
+  workspaceId,
+  onUse,
+}: {
+  open: boolean;
+  onClose: () => void;
+  workspaceId: string;
+  onUse: (id: string | null) => Promise<void>;
+}) {
   const toast = useToast();
   const dialog = useDialog();
   const [list, setList] = useState<EnvList | null>(null);
@@ -40,6 +51,7 @@ export function EnvironmentModal({ open, onClose, workspaceId }: { open: boolean
       const data = merged(env, t);
       setErr(null);
       await api.envUpdate({ ...env, data });
+      invalidateContextVars();
     } catch (e) {
       setErr(errorText(e));
     }
@@ -90,11 +102,11 @@ export function EnvironmentModal({ open, onClose, workspaceId }: { open: boolean
               <div className="flex-1" />
               {sel.id !== list.base.id &&
                 (list.activeId === sel.id ? (
-                  <Button size="sm" onClick={() => api.envSetActive(workspaceId, null).then(reload)}>
+                  <Button size="sm" onClick={() => onUse(null).then(reload)}>
                     Deactivate
                   </Button>
                 ) : (
-                  <Button size="sm" variant="primary" onClick={() => api.envSetActive(workspaceId, sel.id).then(reload)}>
+                  <Button size="sm" variant="primary" onClick={() => onUse(sel.id).then(reload)}>
                     Use this environment
                   </Button>
                 ))}

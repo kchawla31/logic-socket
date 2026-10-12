@@ -2,6 +2,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
+import { presentError } from './utils';
+
 export interface Meta {
   id: string;
   type: string;
@@ -746,6 +748,7 @@ export const api = {
   rtLog: (id: string) => invoke<RtEvent[]>('rt_log', { id }),
   oauth2Status: (ownerId: string) => invoke<TokenStatus>('oauth2_status', { ownerId }),
   oauth2Authorize: (ownerId: string) => invoke<TokenStatus>('oauth2_authorize', { ownerId }),
+  oauth2SubmitCallback: (ownerId: string, callback: string) => invoke<void>('oauth2_submit_callback', { ownerId, callback }),
   oauth2Clear: (ownerId: string) => invoke<void>('oauth2_clear', { ownerId }),
   mcpOauthSignIn: (serverId: string) => invoke<TokenStatus>('mcp_oauth_sign_in', { serverId }),
   mcpClassifyTools: (serverId: string) => invoke<number>('mcp_classify_tools', { serverId }),
@@ -825,9 +828,18 @@ export function onMcpLog(cb: (serverId: string, entry: LogEntry) => void): Promi
 }
 
 export function errorText(e: unknown): string {
-  if (typeof e === 'string') return e;
-  if (e instanceof Error) return e.message;
-  return JSON.stringify(e);
+  let raw: string;
+  if (typeof e === 'string') raw = e;
+  else if (e instanceof Error) raw = e.message;
+  else if (e && typeof e === 'object' && 'message' in e && typeof (e as { message: unknown }).message === 'string') raw = (e as { message: string }).message;
+  else {
+    try {
+      raw = JSON.stringify(e);
+    } catch {
+      raw = String(e);
+    }
+  }
+  return presentError(raw);
 }
 
 export function onGrpcEvent(cb: (id: string, ev: RtEvent) => void): Promise<UnlistenFn> {

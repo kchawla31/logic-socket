@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { IconButton, useDialog, useToast } from '../components/ui';
 import { api, errorText, type TreeNode } from '../lib/api';
-import { cn, methodColor, methodShort } from '../lib/utils';
+import { cn, dropSortKey, methodColor, methodShort } from '../lib/utils';
 
 interface Props {
   workspaceId: string;
@@ -54,6 +54,55 @@ function collectIds(n: TreeNode): string[] {
   return [n.id, ...n.children.flatMap(collectIds)];
 }
 
+function findNode(nodes: TreeNode[], id: string): TreeNode | undefined {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    const hit = findNode(n.children, id);
+    if (hit) return hit;
+  }
+}
+
+function containsId(n: TreeNode, id: string): boolean {
+  return n.id === id || n.children.some(c => containsId(c, id));
+}
+
+type DropPlace = 'before' | 'after' | 'inside';
+
+function placeOf(e: { currentTarget: Element; clientY: number }, kind: string): DropPlace {
+  const r = e.currentTarget.getBoundingClientRect();
+  const ratio = r.height ? (e.clientY - r.top) / r.height : 0.5;
+  if (kind === 'folder') {
+    if (ratio < 0.28) return 'before';
+    if (ratio > 0.72) return 'after';
+    return 'inside';
+  }
+  return ratio < 0.5 ? 'before' : 'after';
+}
+
+// WKWebView fires dragend before drop and returns "" from getData(). The id lives here, not in dataTransfer.
+let dragId: string | null = null;
+
+function clearDropMark() {
+  document.querySelectorAll<HTMLElement>('[data-drop-place]').forEach(el => {
+    el.style.boxShadow = '';
+    el.style.background = '';
+    delete el.dataset.dropPlace;
+  });
+}
+
+function markDrop(el: HTMLElement, place: DropPlace) {
+  if (el.dataset.dropPlace === place) return;
+  clearDropMark();
+  el.dataset.dropPlace = place;
+  el.style.boxShadow =
+    place === 'before' ? 'inset 0 2px 0 0 var(--accent)' : place === 'after' ? 'inset 0 -2px 0 0 var(--accent)' : 'inset 0 0 0 1px var(--accent)';
+  if (place === 'inside') el.style.background = 'var(--accent-soft)';
+}
+
+function readDragId(data: DataTransfer | null): string {
+  return dragId || data?.getData('text/plain') || '';
+}
+
 interface Menu {
   x: number;
   y: number;
@@ -67,7 +116,6 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
   const [expanded, toggle] = useExpanded(workspaceId);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState<string | null>(null);
   const visible = useMemo(() => filterTree(tree, q), [tree, q]);
 
   useEffect(() => {
@@ -136,20 +184,24 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  // Drop onto folder = move inside (end); onto request/server = place before it.
-  const drop = async (dragId: string, target: TreeNode | null, siblings: TreeNode[], parentId: string) => {
+  // Folders: top/bottom edge reorders, the middle moves inside. Other rows reorder before or after.
+  const drop = async (dragId: string, target: TreeNode | null, siblings: TreeNode[], parentId: string, place: DropPlace) => {
     if (!dragId || dragId === target?.id) return;
     try {
-      if (!target) {
-        await api.itemMove(dragId, workspaceId, Date.now());
-      } else if (target.kind === 'folder') {
-        await api.itemMove(dragId, target.id, Date.now());
+      if (target && place === 'inside' && target.kind === 'folder') {
+        const dragged = findNode(tree, dragId);
+        if (dragged && containsId(dragged, target.id)) {
+          toast('Cannot move a folder into itself', 'error');
+          return;
+        }
+        const kids = target.children.filter(c => c.id !== dragId);
+        const last = kids.length ? kids[kids.length - 1].sortKey : -1;
+        await api.itemMove(dragId, target.id, last + 1);
         toggle(target.id, true);
-      } else {
-        const i = siblings.findIndex(s => s.id === target.id);
-        const prev = i > 0 ? siblings[i - 1].sortKey : target.sortKey - 1;
-        await api.itemMove(dragId, parentId, (prev + target.sortKey) / 2);
+        return;
       }
+      const sortKey = dropSortKey(siblings, dragId, target?.id ?? null, place === 'before' ? 'before' : 'after');
+      await api.itemMove(dragId, parentId, sortKey);
     } catch (e) {
       toast(errorText(e), 'error');
     }
@@ -164,18 +216,40 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
             role="treeitem"
             aria-selected={activeId === n.id}
             aria-expanded={n.kind === 'folder' ? open : undefined}
-            draggable={renaming !== n.id}
-            onDragStart={e => e.dataTransfer.setData('text/lsock-id', n.id)}
-            onDragOver={e => {
-              e.preventDefault();
-              setDragOver(n.id);
+            draggable={renaming !== n.id && !q}
+            onDragStart={e => {
+              if (q) {
+                e.preventDefault();
+                return;
+              }
+              dragId = n.id;
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/plain', n.id);
+              e.stopPropagation();
             }}
-            onDragLeave={() => setDragOver(d => (d === n.id ? null : d))}
+            onDragEnd={() => {
+              // Drop can be delivered after dragend. Keep the id until that handler has read it.
+              const id = dragId;
+              window.setTimeout(() => {
+                if (dragId === id) dragId = null;
+                clearDropMark();
+              }, 50);
+            }}
+            onDragOver={e => {
+              if (!dragId || dragId === n.id) return;
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = 'move';
+              markDrop(e.currentTarget, placeOf(e, n.kind));
+            }}
             onDrop={e => {
               e.preventDefault();
               e.stopPropagation();
-              setDragOver(null);
-              drop(e.dataTransfer.getData('text/lsock-id'), n, nodes, parentId);
+              const id = readDragId(e.dataTransfer);
+              const place = placeOf(e, n.kind);
+              dragId = null;
+              clearDropMark();
+              void drop(id, n, nodes, parentId, place);
             }}
             onClick={() => (n.kind === 'folder' ? (toggle(n.id), onOpen(n)) : onOpen(n))}
             onDoubleClick={() => setRenaming(n.id)}
@@ -189,7 +263,6 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
             className={cn(
               'group flex h-7 cursor-pointer items-center gap-1.5 rounded-md pr-1 text-[13px]',
               activeId === n.id ? 'bg-accent-soft text-app' : 'hover:bg-muted',
-              dragOver === n.id && (n.kind === 'folder' ? 'ring-1 ring-accent' : 'border-t-2 border-accent'),
             )}
           >
             {n.kind === 'folder' ? (
@@ -284,10 +357,17 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
       <div
         role="tree"
         className="min-h-0 flex-1 overflow-auto px-1.5 pb-4"
-        onDragOver={e => e.preventDefault()}
+        onDragOver={e => {
+          if (!dragId) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        }}
         onDrop={e => {
           e.preventDefault();
-          drop(e.dataTransfer.getData('text/lsock-id'), null, tree, workspaceId);
+          const id = readDragId(e.dataTransfer);
+          dragId = null;
+          clearDropMark();
+          void drop(id, null, tree, workspaceId, 'after');
         }}
         onContextMenu={e => {
           e.preventDefault();

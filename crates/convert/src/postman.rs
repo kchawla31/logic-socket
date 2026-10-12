@@ -330,11 +330,10 @@ fn auth_in(auth: Option<&Value>, warnings: &mut Vec<String>, at: &str) -> Auth {
                 resource: g("resource"),
                 username: g("username"),
                 password: g("password"),
-                redirect_url: Some(g("redirect_uri"))
-                    .filter(|s| {
-                        s.starts_with("http://localhost") || s.starts_with("http://127.0.0.1")
-                    })
-                    .unwrap_or(d.redirect_url),
+                redirect_url: {
+                    let s = g("redirect_uri");
+                    if s.is_empty() { d.redirect_url } else { s }
+                },
                 use_pkce: g("grant_type") == "authorization_code_with_pkce",
                 credentials_in_body: g("client_authentication") == "body",
                 token_prefix: g("headerPrefix"),

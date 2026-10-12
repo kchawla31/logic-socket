@@ -1,4 +1,5 @@
 import { type ClipboardEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { api, onDbChanged, type VarInfo } from '../lib/api';
 import { cn, tokenizeTemplate } from '../lib/utils';
@@ -11,18 +12,42 @@ function subscribe(cb: () => void) {
   listeners.add(cb);
   if (!subscribed) {
     subscribed = true;
-    onDbChanged(() => {
-      cache.clear();
-      listeners.forEach(l => l());
-    }).catch(() => {});
+    onDbChanged(() => invalidateContextVars()).catch(() => {});
   }
-  return () => listeners.delete(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+/** Drop cached variable lists and tell every open field to load them again. */
+export function invalidateContextVars() {
+  cache.clear();
+  listeners.forEach(l => l());
+}
+
+/** Bumps whenever environments or other saved data change, so previews re-render. */
+export function useVarRevision(): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => subscribe(() => setTick(t => t + 1)), []);
+  return tick;
+}
+
+function sourceRank(source: string): number {
+  if (source.startsWith('Folder:')) return 2;
+  if (source.startsWith('Global:')) return 1;
+  if (source === 'Base Environment' || !source) return 3;
+  return 0;
+}
+
+function varDefined(names: Set<string>, name: string | undefined): boolean {
+  if (!name) return false;
+  return names.has(name) || names.has(name.split('.')[0]);
 }
 
 export function useContextVars(contextId?: string): VarInfo[] {
   const [vars, setVars] = useState<VarInfo[]>([]);
   const [tick, setTick] = useState(0);
-  useEffect(() => subscribe(() => setTick(t => t + 1)) as unknown as () => void, []);
+  useEffect(() => subscribe(() => setTick(t => t + 1)), []);
   useEffect(() => {
     if (!contextId) return;
     let p = cache.get(contextId);
@@ -86,8 +111,41 @@ export function VarInput({
   const matches = useMemo(() => {
     if (query === null) return [];
     const q = query.toLowerCase();
-    return vars.filter(v => v.name.toLowerCase().includes(q)).slice(0, 8);
+    return vars
+      .filter(v => v.name.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        if (as !== bs) return as - bs;
+        const ar = sourceRank(a.source);
+        const br = sourceRank(b.source);
+        if (ar !== br) return ar - br;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 30);
   }, [query, vars]);
+  const [box, setBox] = useState<{ top: number; left: number; width: number; above: boolean } | null>(null);
+  const placeMenu = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const width = Math.min(360, Math.max(r.width, 280));
+    const left = Math.min(r.left, window.innerWidth - width - 8);
+    const spaceBelow = window.innerHeight - r.bottom;
+    const above = spaceBelow < 200 && r.top > spaceBelow;
+    setBox({ top: above ? r.top - 4 : r.bottom + 4, left: Math.max(8, left), width, above });
+  };
+  useEffect(() => {
+    if (query === null || matches.length === 0) return;
+    placeMenu();
+    const on = () => placeMenu();
+    window.addEventListener('scroll', on, true);
+    window.addEventListener('resize', on);
+    return () => {
+      window.removeEventListener('scroll', on, true);
+      window.removeEventListener('resize', on);
+    };
+  }, [query, matches.length, value]);
 
   const detect = () => {
     const el = ref.current;
@@ -165,7 +223,7 @@ export function VarInput({
                   'rounded-[3px]',
                   s.kind === 'tag'
                     ? 'bg-violet-500/20 text-violet-700 dark:text-violet-300'
-                    : names.has((s.name || '').split('.')[0]) || !contextId
+                    : varDefined(names, s.name) || !contextId
                       ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
                       : 'bg-rose-500/20 text-rose-700 dark:text-rose-300',
                 )}
@@ -198,29 +256,32 @@ export function VarInput({
           hasTemplate && 'text-transparent caret-[var(--fg)]',
         )}
       />
-      {query !== null && matches.length > 0 && (
-        <div
-          role="listbox"
-          className="absolute top-full left-0 z-40 mt-1 w-80 overflow-hidden rounded-lg border border-app bg-app py-1 shadow-xl"
-        >
-          {matches.map((m, i) => (
-            <button
-              key={m.name}
-              role="option"
-              aria-selected={i === sel}
-              onMouseDown={e => {
-                e.preventDefault();
-                complete(m.name);
-              }}
-              className={cn('flex w-full items-center gap-2 px-2.5 py-1 text-left', i === sel && 'bg-accent-soft')}
-            >
-              <span className="font-mono text-[12.5px] text-emerald-700 dark:text-emerald-400">{m.name}</span>
-              <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted">{preview(m.value)}</span>
-              <span className="shrink-0 text-[10.5px] text-muted">{m.source}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {query !== null && matches.length > 0 && box &&
+        createPortal(
+          <div
+            role="listbox"
+            style={{ top: box.top, left: box.left, width: box.width, transform: box.above ? 'translateY(-100%)' : undefined }}
+            className="fixed z-50 max-h-64 overflow-auto rounded-lg border border-app bg-app py-1 shadow-xl"
+          >
+            {matches.map((m, i) => (
+              <button
+                key={`${m.source}:${m.name}`}
+                role="option"
+                aria-selected={i === sel}
+                onMouseDown={e => {
+                  e.preventDefault();
+                  complete(m.name);
+                }}
+                className={cn('flex w-full items-center gap-2 px-2.5 py-1 text-left', i === sel && 'bg-accent-soft')}
+              >
+                <span className="font-mono text-[12.5px] text-emerald-700 dark:text-emerald-400">{m.name}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted">{preview(m.value)}</span>
+                <span className="shrink-0 text-[10.5px] text-muted">{m.source}</span>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
