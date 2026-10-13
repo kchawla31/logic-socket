@@ -88,13 +88,13 @@ async fn fixture() -> Fx {
         &e,
         folder.id(),
         "Login",
-        "{{ _.base }}/login".into(),
+        "${base}/login".into(),
         "",
         "ls.environment.set('token', 'tok-' + ls.info.iteration); ls.test('login ok', () => ls.response.to.have.status(200));",
     );
     let mut items_req = Request {
         name: "Get items".into(),
-        url: "{{ _.base }}/items".into(),
+        url: "${base}/items".into(),
         after_response_script: Some(
             "ls.test('has auth', () => ls.expect(ls.response.json().headers['x-token']).to.equal('tok-' + ls.info.iteration));\n\
              ls.test('row user', () => ls.expect(ls.response.json().query).to.equal('user=' + ls.iterationData.get('user')));"
@@ -104,10 +104,10 @@ async fn fixture() -> Fx {
     };
     items_req
         .headers
-        .push(KeyValue::new("X-Token", "{{ _.token }}"));
+        .push(KeyValue::new("X-Token", "${token}"));
     items_req
         .parameters
-        .push(KeyValue::new("user", "{{ user }}"));
+        .push(KeyValue::new("user", "${user}"));
     let items = e
         .store
         .insert(Some(folder.id()), items_req)

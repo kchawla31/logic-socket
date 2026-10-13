@@ -178,7 +178,7 @@ function AuthBulk({ auth, onChange, allowInherit }: { auth: Auth; onChange: (a: 
           onChange(r.auth);
         }}
         language="text"
-        placeholder={'type: bearer\ntoken: {{ _.token }}'}
+        placeholder={'type: bearer\ntoken: ${token}'}
         className="h-72 flex-none"
       />
       {ignored.length > 0 && (
@@ -240,7 +240,7 @@ function AuthForm({
       )}
       {auth.type === 'bearer' && (
         <>
-          <Field label="Token">{v(auth.token, token => onChange({ ...auth, token }), '{{ _.token }}')}</Field>
+          <Field label="Token">{v(auth.token, token => onChange({ ...auth, token }), '${token}')}</Field>
           <Field label="Prefix">{v(auth.prefix ?? '', p => onChange({ ...auth, prefix: p || null }), 'Bearer')}</Field>
         </>
       )}
@@ -279,7 +279,7 @@ function AuthForm({
           )}
           <Field label="Access token URL">{v(auth.accessTokenUrl, accessTokenUrl => onChange({ ...auth, accessTokenUrl }), 'https://auth.example.com/oauth/token')}</Field>
           <Field label="Client ID">{v(auth.clientId, clientId => onChange({ ...auth, clientId }))}</Field>
-          <Field label="Client secret">{v(auth.clientSecret, clientSecret => onChange({ ...auth, clientSecret }), '{{ _.client_secret }}')}</Field>
+          <Field label="Client secret">{v(auth.clientSecret, clientSecret => onChange({ ...auth, clientSecret }), '${client_secret}')}</Field>
           {auth.grantType === 'password' && (
             <>
               <Field label="Username">{v(auth.username, username => onChange({ ...auth, username }))}</Field>
@@ -316,8 +316,8 @@ function AuthForm({
       )}
       {auth.type === 'iam' && (
         <>
-          <Field label="Access key ID">{v(auth.accessKeyId, accessKeyId => onChange({ ...auth, accessKeyId }), '{{ _.aws_access_key_id }}')}</Field>
-          <Field label="Secret access key">{v(auth.secretAccessKey, secretAccessKey => onChange({ ...auth, secretAccessKey }), '{{ _.aws_secret_access_key }}')}</Field>
+          <Field label="Access key ID">{v(auth.accessKeyId, accessKeyId => onChange({ ...auth, accessKeyId }), '${aws_access_key_id}')}</Field>
+          <Field label="Secret access key">{v(auth.secretAccessKey, secretAccessKey => onChange({ ...auth, secretAccessKey }), '${aws_secret_access_key}')}</Field>
           <Field label="Session token" hint="Only for temporary credentials (STS).">
             {v(auth.sessionToken, sessionToken => onChange({ ...auth, sessionToken }))}
           </Field>

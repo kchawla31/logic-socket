@@ -218,7 +218,7 @@ export function RunnerView({ targetId, workspaceId, workspaceName, tree }: { tar
               {dataText && (
                 <span className="text-[12px] text-muted">
                   {dataName && `${dataName} · `}
-                  {rows} row{rows === 1 ? '' : 's'} — each iteration uses the next row via <code className="font-mono">{'{{ column }}'}</code> or{' '}
+                  {rows} row{rows === 1 ? '' : 's'} — each iteration uses the next row via <code className="font-mono">{'${column}'}</code> or{' '}
                   <code className="font-mono">ls.iterationData</code>
                   {rows > 0 && iterations === 1 && ` (${rows} iterations)`}
                 </span>

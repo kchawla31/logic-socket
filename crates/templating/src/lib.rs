@@ -1,7 +1,9 @@
-//! Nunjucks-compatible variable rendering with layered environments.
+//! Variable rendering with layered environments.
 //!
-//! - `{{ _.var }}` and `{{ var }}` both resolve against the merged context.
-//! - template tags (`{% uuid 'v4' %}`, `{% now 'iso-8601' %}`,
+//! - Variables are `${name}`, `${user.id}`, or `${api-key}`. The `_` prefix is
+//!   not required: `${_.name}` is accepted and means `${name}`.
+//! - `{{ ... }}` is ordinary text. It is not a variable.
+//! - Template tags (`{% uuid 'v4' %}`, `{% now 'iso-8601' %}`,
 //!   `{% base64 'encode', 'normal', 'x' %}`, `{% hash 'sha256', 'hex', 'x' %}`)
 //!   are rewritten to function calls before rendering.
 //! - Unresolved variables are reported by name.
@@ -58,7 +60,7 @@ pub struct Context {
 impl Context {
     /// Merge layers, lowest precedence first:
     /// later layers override earlier ones, nested objects merge,
-    /// self-referencing strings (`base_url: "{{ base_url }}/v2"`) render
+    /// self-referencing strings (`base_url: "${base_url}/v2"`) render
     /// against the value from earlier layers, then up to 3 passes resolve
     /// cross-references between keys.
     pub fn build(renderer: &Renderer, layers: &[Layer]) -> Context {
@@ -155,23 +157,323 @@ fn merge_objects(dst: &mut Map<String, Value>, src: &Map<String, Value>) {
     }
 }
 
-/// Self-reference check: `{{ ?key[ |][^}]*}}` — the value references its own key.
+/// Self-reference check: the value references its own key, as in `${base_url}/v2`.
 fn is_self_recursive(s: &str, key: &str) -> bool {
     let mut rest = s;
-    while let Some(i) = rest.find("{{") {
-        let after = rest[i + 2..].trim_start_matches(' ');
-        let after = after.strip_prefix("_.").unwrap_or(after);
-        if let Some(tail) = after.strip_prefix(key)
-            && (tail.starts_with(' ') || tail.starts_with('|') || tail.starts_with("}}"))
-        {
-            return true;
+    while let Some(i) = rest.find("${") {
+        let after = rest[i + 2..].trim_start();
+        let after = after.strip_prefix("_.").unwrap_or(after).trim_start();
+        if let Some(tail) = after.strip_prefix(key) {
+            let tail = tail.trim_start();
+            if tail.starts_with('}') || tail.starts_with('|') || tail.starts_with('.') || tail.starts_with('[')
+            {
+                return true;
+            }
         }
         rest = &rest[i + 2..];
     }
     false
 }
 
-/// Description of one `{{ ... }}` reference found in a string, for UI highlighting.
+/// `${name}` and `${user.id}`. A leading `_.` is ignored. `api-key` stays as written.
+pub fn legacy_to_dollar(input: &str) -> String {
+    if !input.contains("{{") {
+        return input.to_string();
+    }
+    let mut out = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if input[i..].starts_with("{%") || input[i..].starts_with("{#") {
+            let closer = if input[i..].starts_with("{%") { "%}" } else { "#}" };
+            if let Some(rel) = input[i + 2..].find(closer) {
+                let end = i + 2 + rel + closer.len();
+                out.push_str(&input[i..end]);
+                i = end;
+                continue;
+            }
+        }
+        if input[i..].starts_with("{{")
+            && let Some(rel) = input[i + 2..].find("}}")
+        {
+            let inner = &input[i + 2..i + 2 + rel];
+            if !inner.contains('{') {
+                out.push_str("${");
+                out.push_str(&canonical_expr(inner));
+                out.push('}');
+                i = i + 2 + rel + 2;
+                continue;
+            }
+        }
+        let ch = input[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+/// Rewrite `{{ ... }}` variable text inside every string of a JSON value.
+pub fn rewrite_json_values(v: &mut Value) -> bool {
+    match v {
+        Value::String(s) => {
+            if !s.contains("{{") {
+                return false;
+            }
+            let next = legacy_to_dollar(s);
+            if next != *s {
+                *s = next;
+                true
+            } else {
+                false
+            }
+        }
+        Value::Array(items) => {
+            let mut changed = false;
+            for item in items {
+                changed |= rewrite_json_values(item);
+            }
+            changed
+        }
+        Value::Object(map) => {
+            let mut changed = false;
+            for item in map.values_mut() {
+                changed |= rewrite_json_values(item);
+            }
+            changed
+        }
+        _ => false,
+    }
+}
+
+fn canonical_expr(inner: &str) -> String {
+    let t = inner.trim();
+    let t = t.strip_prefix("_.").map(str::trim_start).unwrap_or(t);
+    let (head, filters) = split_filter(t);
+    let head = head.trim();
+    let name = bracket_key(head).unwrap_or_else(|| head.to_string());
+    if filters.is_empty() {
+        name
+    } else {
+        format!("{name} | {}", filters.trim())
+    }
+}
+
+/// Turn user text into MiniJinja. `${expr}` becomes a variable. `{{` stays literal.
+fn to_minijinja(input: &str) -> String {
+    let mut out = String::with_capacity(input.len() + 8);
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if input[i..].starts_with("{%") || input[i..].starts_with("{#") {
+            let closer = if input[i..].starts_with("{%") { "%}" } else { "#}" };
+            if let Some(rel) = input[i + 2..].find(closer) {
+                let end = i + 2 + rel + closer.len();
+                out.push_str(&input[i..end]);
+                i = end;
+                continue;
+            }
+        }
+        if input[i..].starts_with("${")
+            && let Some((expr, next)) = parse_dollar(input, i)
+        {
+            out.push_str("{{ ");
+            out.push_str(&jinja_expr(&expr));
+            out.push_str(" }}");
+            i = next;
+            continue;
+        }
+        if input[i..].starts_with("{{") {
+            out.push_str("{% raw %}{{{% endraw %}");
+            i += 2;
+            continue;
+        }
+        let ch = input[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
+fn parse_dollar(input: &str, start: usize) -> Option<(String, usize)> {
+    let bytes = input.as_bytes();
+    let mut j = start + 2;
+    let mut depth = 1i32;
+    let mut quote: Option<u8> = None;
+    while j < bytes.len() {
+        let c = bytes[j];
+        if let Some(q) = quote {
+            if c == b'\\' {
+                j += 1 + usize::from(j + 1 < bytes.len());
+                continue;
+            }
+            if c == q {
+                quote = None;
+            }
+            j += 1;
+            continue;
+        }
+        match c {
+            b'\'' | b'"' => quote = Some(c),
+            b'{' | b'[' | b'(' => depth += 1,
+            b'}' | b']' | b')' => {
+                depth -= 1;
+                if depth == 0 && c == b'}' {
+                    return Some((input[start + 2..j].to_string(), j + 1));
+                }
+            }
+            _ => {}
+        }
+        j += 1;
+    }
+    None
+}
+
+fn jinja_expr(expr: &str) -> String {
+    let t = expr.trim();
+    let t = t.strip_prefix("_.").map(str::trim_start).unwrap_or(t);
+    let (head, filters) = split_filter(t);
+    let head = head.trim();
+    let rendered = if let Some(name) = bracket_key(head) {
+        format!("_['{}']", escape_sq(&name))
+    } else if loose_name(head) {
+        format!("_['{}']", escape_sq(head))
+    } else {
+        head.to_string()
+    };
+    if filters.is_empty() {
+        rendered
+    } else {
+        format!("{rendered} | {}", filters.trim())
+    }
+}
+
+fn split_filter(s: &str) -> (&str, &str) {
+    let bytes = s.as_bytes();
+    let mut quote: Option<u8> = None;
+    let mut depth = 0i32;
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if let Some(q) = quote {
+            if c == b'\\' {
+                i += 1 + usize::from(i + 1 < bytes.len());
+                continue;
+            }
+            if c == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'\'' | b'"' => quote = Some(c),
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            b'|' if depth == 0 => return (&s[..i], &s[i + 1..]),
+            _ => {}
+        }
+        i += 1;
+    }
+    (s, "")
+}
+
+fn bracket_key(s: &str) -> Option<String> {
+    let s = s.trim();
+    if let Some(rest) = s.strip_prefix("_['")
+        && let Some(name) = rest.strip_suffix("']")
+    {
+        return Some(name.replace("\\'", "'"));
+    }
+    if let Some(rest) = s.strip_prefix("_[\"")
+        && let Some(name) = rest.strip_suffix("\"]")
+    {
+        return Some(name.to_string());
+    }
+    None
+}
+
+/// A single token that MiniJinja would not accept as an identifier (`api-key`).
+fn loose_name(s: &str) -> bool {
+    if s.is_empty() || s.contains(['.', '[', ']', '(', ')', ' ', '\t', '{', '}', '|', '\'', '"']) {
+        return false;
+    }
+    let mut chars = s.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    let ident = (first.is_ascii_alphabetic() || first == '_')
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    !ident
+}
+
+fn escape_sq(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+/// True when a `${...}` block has no expression (`${}`, `${ }`, `${_.}`).
+fn has_empty_dollar(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if input[i..].starts_with("{%") || input[i..].starts_with("{#") {
+            let closer = if input[i..].starts_with("{%") { "%}" } else { "#}" };
+            if let Some(rel) = input[i + 2..].find(closer) {
+                i = i + 2 + rel + closer.len();
+                continue;
+            }
+        }
+        if input[i..].starts_with("${")
+            && let Some((expr, next)) = parse_dollar(input, i)
+        {
+            if dollar_head_empty(&expr) {
+                return true;
+            }
+            i = next;
+            continue;
+        }
+        let ch = input[i..].chars().next().unwrap();
+        i += ch.len_utf8();
+    }
+    false
+}
+
+fn dollar_head_empty(expr: &str) -> bool {
+    let t = expr.trim();
+    let t = t.strip_prefix("_.").map(str::trim_start).unwrap_or(t);
+    let (head, _) = split_filter(t);
+    head.trim().is_empty()
+}
+
+fn dollar_names(input: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if input[i..].starts_with("{%") || input[i..].starts_with("{#") {
+            let closer = if input[i..].starts_with("{%") { "%}" } else { "#}" };
+            if let Some(rel) = input[i + 2..].find(closer) {
+                i = i + 2 + rel + closer.len();
+                continue;
+            }
+        }
+        if input[i..].starts_with("${")
+            && let Some((expr, next)) = parse_dollar(input, i)
+        {
+            let name = canonical_expr(&expr);
+            let name = name.split('|').next().unwrap_or(&name).trim().to_string();
+            if !name.is_empty() && name != "_" {
+                names.push(name);
+            }
+            i = next;
+            continue;
+        }
+        let ch = input[i..].chars().next().unwrap();
+        i += ch.len_utf8();
+    }
+    names
+}
+
+/// Description of one `${...}` reference found in a string, for UI highlighting.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VarRef {
@@ -225,9 +527,19 @@ impl Renderer {
         if !has_template_syntax(input) {
             return Ok(input.to_string());
         }
-        match self.render_inner(input, ctx) {
+        // `${}` is what you get while typing a variable. MiniJinja would see `{{  }}`
+        // and report "unexpected end of variable block", which does not name the cause.
+        if has_empty_dollar(input) {
+            return keep_or(
+                mode,
+                input,
+                RenderError::Template("empty variable".into()),
+            );
+        }
+        let prepared = to_minijinja(input);
+        match self.render_inner(&prepared, ctx) {
             Ok(out) => {
-                // A variable whose value is a tag (`{{ id }}` → `{% uuid %}`) renders twice,
+                // A variable whose value is a tag (`${id}` → `{% uuid %}`) renders twice,
                 // but only when the original input had no tags of its own (see render.ts).
                 if !input.contains("{%") && out.contains("{%") {
                     return self
@@ -285,18 +597,9 @@ impl Renderer {
 
     /// List the variable references in `input` with their resolution (for the UI).
     pub fn references(&self, input: &str, ctx: &Context) -> Vec<VarRef> {
-        let Ok(src) = tags::rewrite(input) else {
-            return vec![];
-        };
-        let Ok(tmpl) = self.env.template_from_str(&src) else {
-            return vec![];
-        };
-        let mut names: Vec<String> = tmpl
-            .undeclared_variables(true)
-            .into_iter()
-            .filter(|v| !v.starts_with("__tag_") && v != "_")
-            .collect();
+        let mut names = dollar_names(input);
         names.sort();
+        names.dedup();
         names
             .into_iter()
             .map(|n| {
@@ -304,7 +607,7 @@ impl Renderer {
                 VarRef {
                     resolved: value.is_some(),
                     source: ctx.source_of(&n).map(str::to_string),
-                    name: n.strip_prefix("_.").unwrap_or(&n).to_string(),
+                    name: n,
                     value,
                 }
             })
@@ -327,7 +630,7 @@ fn fmt_err(e: &minijinja::Error) -> String {
 }
 
 pub fn has_template_syntax(s: &str) -> bool {
-    (s.contains("{{") && s.contains("}}"))
+    (s.contains("${") && s.contains('}'))
         || (s.contains("{%") && s.contains("%}"))
         || (s.contains("{#") && s.contains("#}"))
 }
@@ -352,30 +655,34 @@ mod tests {
     }
 
     #[test]
-    fn both_variable_syntaxes() {
+    fn dollar_variables_resolve_without_underscore() {
         let (r, c) = ctx(vec![(
             "base",
             json!({"host": "api.io", "n": 3, "obj": {"a": [1, {"b": "deep"}]}}),
         )]);
         assert_eq!(
-            r.render_str("https://{{ _.host }}/{{host}}?n={{ n }}", &c, Mode::Throw)
+            r.render_str("https://${host}/${_.host}?n=${ n }", &c, Mode::Throw)
                 .unwrap(),
             "https://api.io/api.io?n=3"
         );
         assert_eq!(
-            r.render_str("{{ _.obj.a[1].b }}", &c, Mode::Throw).unwrap(),
+            r.render_str("${obj.a[1].b}", &c, Mode::Throw).unwrap(),
             "deep"
         );
-        // names with dashes use bracket notation
         let (r2, c2) = ctx(vec![("base", json!({"api-key": "k1"}))]);
+        assert_eq!(r2.render_str("${api-key}", &c2, Mode::Throw).unwrap(), "k1");
         assert_eq!(
-            r2.render_str("{{ _['api-key'] }}", &c2, Mode::Throw)
-                .unwrap(),
-            "k1"
+            r.render_str("${obj}", &c, Mode::Throw).unwrap(),
+            r#"{"a":[1,{"b":"deep"}]}"#
         );
         assert_eq!(
-            r.render_str("{{ obj }}", &c, Mode::Throw).unwrap(),
-            r#"{"a":[1,{"b":"deep"}]}"#
+            r.render_str("keep {{ host }} literal", &c, Mode::Throw)
+                .unwrap(),
+            "keep {{ host }} literal"
+        );
+        assert_eq!(
+            legacy_to_dollar("{{ _.host }}/{{ _['api-key'] }}/{% uuid 'v4' %}"),
+            "${host}/${api-key}/{% uuid 'v4' %}"
         );
     }
 
@@ -404,7 +711,7 @@ mod tests {
     fn self_recursive_values_extend_parent_value() {
         let (_, c) = ctx(vec![
             ("Base", json!({"base_url": "google.com"})),
-            ("Sub", json!({"base_url": "{{ base_url }}/foo"})),
+            ("Sub", json!({"base_url": "${base_url}/foo"})),
         ]);
         assert_eq!(c.lookup("base_url"), Some(&json!("google.com/foo")));
     }
@@ -412,7 +719,7 @@ mod tests {
     #[test]
     fn cross_references_resolve_across_layers() {
         let (_, c) = ctx(vec![
-            ("Base", json!({"url": "https://{{ host }}/{{ _.ver }}"})),
+            ("Base", json!({"url": "https://${host}/${ver}"})),
             ("Sub", json!({"host": "staging.io", "ver": "v2"})),
         ]);
         assert_eq!(c.lookup("url"), Some(&json!("https://staging.io/v2")));
@@ -422,22 +729,19 @@ mod tests {
     fn unresolved_variables_are_named() {
         let (r, c) = ctx(vec![("Base", json!({"a": 1}))]);
         let err = r
-            .render_str("{{ a }} {{ _.missing }} {{ other.x }}", &c, Mode::Throw)
+            .render_str("${a} ${missing} ${other.x}", &c, Mode::Throw)
             .unwrap_err();
         assert_eq!(
             err,
             RenderError::Unresolved(vec!["missing".into(), "other.x".into()])
         );
-        assert_eq!(
-            r.render_str("{{ nope }}", &c, Mode::Keep).unwrap(),
-            "{{ nope }}"
-        );
+        assert_eq!(r.render_str("${nope}", &c, Mode::Keep).unwrap(), "${nope}");
     }
 
     #[test]
     fn null_renders_empty_and_plain_strings_untouched() {
         let (r, c) = ctx(vec![("Base", json!({"n": null}))]);
-        assert_eq!(r.render_str("[{{ n }}]", &c, Mode::Throw).unwrap(), "[]");
+        assert_eq!(r.render_str("[${n}]", &c, Mode::Throw).unwrap(), "[]");
         assert_eq!(
             r.render_str("no {braces} here", &c, Mode::Throw).unwrap(),
             "no {braces} here"
@@ -447,10 +751,10 @@ mod tests {
     #[test]
     fn render_value_skips_disabled_entries() {
         let (r, c) = ctx(vec![("Base", json!({"t": "tok"}))]);
-        let v = json!([{"name": "A", "value": "{{ t }}"}, {"name": "B", "value": "{{ nope }}", "disabled": true}]);
+        let v = json!([{"name": "A", "value": "${t}"}, {"name": "B", "value": "${nope}", "disabled": true}]);
         let out = r.render_value(&v, &c, Mode::Throw).unwrap();
         assert_eq!(out[0]["value"], "tok");
-        assert_eq!(out[1]["value"], "{{ nope }}");
+        assert_eq!(out[1]["value"], "${nope}");
     }
 
     #[test]
@@ -459,13 +763,27 @@ mod tests {
             "Base",
             json!({"id": "{% base64 'encode', 'normal', 'hi' %}"}),
         )]);
-        assert_eq!(r.render_str("{{ id }}", &c, Mode::Throw).unwrap(), "aGk=");
+        assert_eq!(r.render_str("${id}", &c, Mode::Throw).unwrap(), "aGk=");
+    }
+
+    #[test]
+    fn empty_dollar_is_an_empty_variable_not_a_syntax_error() {
+        let (r, c) = ctx(vec![("Base", json!({}))]);
+        for sample in ["${}", "${ }", "${_.}", "pre ${} post"] {
+            let err = r.render_str(sample, &c, Mode::Throw).unwrap_err();
+            let msg = err.to_string();
+            assert!(msg.contains("empty variable"), "{sample}: {msg}");
+            assert!(!msg.contains("unexpected end"), "{sample}: {msg}");
+            assert_eq!(r.render_str(sample, &c, Mode::Keep).unwrap(), sample);
+        }
+        let (r, c) = ctx(vec![("Base", json!({"host": "h"}))]);
+        assert_eq!(r.render_str("ok ${host}", &c, Mode::Throw).unwrap(), "ok h");
     }
 
     #[test]
     fn references_report_resolution_and_source() {
         let (r, c) = ctx(vec![("Base", json!({"host": "h"}))]);
-        let refs = r.references("{{ _.host }}/{{ missing }}", &c);
+        let refs = r.references("${host}/${missing}", &c);
         assert_eq!(refs.len(), 2);
         let host = refs.iter().find(|x| x.name == "host").unwrap();
         assert!(host.resolved);

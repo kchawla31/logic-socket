@@ -167,7 +167,7 @@ export function AiProvidersModal({ open, onClose }: { open: boolean; onClose: ()
                   value={ks?.type}
                   onChange={e => {
                     const t = e.target.value;
-                    const next: KeySource = t === 'env' ? { type: 'env', var: 'ANTHROPIC_API_KEY' } : t === 'template' ? { type: 'template', template: '{{ _.api_key }}' } : ({ type: t } as KeySource);
+                    const next: KeySource = t === 'env' ? { type: 'env', var: 'ANTHROPIC_API_KEY' } : t === 'template' ? { type: 'template', template: '${api_key}' } : ({ type: t } as KeySource);
                     save({ ...draft, keySource: next });
                   }}
                 >

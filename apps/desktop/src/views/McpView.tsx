@@ -455,14 +455,14 @@ function McpAuth({ server, update, contextId, beforeSignIn, afterSignIn, connect
       </Select>
       {auth.type === 'bearer' && (
         <>
-          <VarInput contextId={contextId} value={auth.token} onChange={t => setAuth({ ...auth, token: t })} placeholder="{{ _.mcp_token }}" />
+          <VarInput contextId={contextId} value={auth.token} onChange={t => setAuth({ ...auth, token: t })} placeholder="${mcp_token}" />
           <p className="text-[12px] text-muted">Sent as an Authorization header on every Streamable HTTP request. Use environment variables to keep tokens out of the config.</p>
         </>
       )}
       {auth.type === 'apikey' && (
         <>
           {field('Header name', auth.key, key => setAuth({ ...auth, key }), 'X-API-Key')}
-          {field('Value', auth.value, value => setAuth({ ...auth, value }), '{{ _.mcp_api_key }}')}
+          {field('Value', auth.value, value => setAuth({ ...auth, value }), '${mcp_api_key}')}
           <p className="text-[12px] text-muted">Sent as this header on every Streamable HTTP request.</p>
         </>
       )}

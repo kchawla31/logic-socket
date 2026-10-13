@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
-import { CodeEditor, KeyValueEditor } from '../components/editors';
+import { KeyValueEditor } from '../components/editors';
 import { ScriptEditor } from '../components/ScriptEditor';
 import { Empty, Input, Tabs } from '../components/ui';
+import { VarMapEditor } from '../components/VarMapEditor';
 import { api, type Folder } from '../lib/api';
 import { AuthEditor } from './AuthEditor';
 import { useAutosave } from './RequestView';
@@ -10,14 +11,6 @@ import { useAutosave } from './RequestView';
 export function FolderView({ id }: { id: string }) {
   const [folder, setFolder] = useAutosave<Folder>(id, api.folderUpdate);
   const [tab, setTab] = useState('environment');
-  const [envText, setEnvText] = useState('{}');
-  const [envError, setEnvError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (folder) setEnvText(JSON.stringify(folder.environment ?? {}, null, 2));
-    // only when switching folders
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [folder?.id]);
 
   if (!folder) return <Empty title="Loading…" />;
   const update = (p: Partial<Folder>) => setFolder({ ...folder, ...p });
@@ -42,24 +35,13 @@ export function FolderView({ id }: { id: string }) {
       />
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === 'environment' && (
-          <div className="flex h-full flex-col">
-            <div className="shrink-0 border-b border-app px-3 py-1.5 text-[12px] text-muted">
-              Folder variables override the base and active environment for requests in this folder. JSON object.
-              {envError && <span className="ml-2 text-rose-600 dark:text-rose-400">⚠ {envError}</span>}
-            </div>
-            <CodeEditor
-              value={envText}
-              onChange={t => {
-                setEnvText(t);
-                try {
-                  const v = JSON.parse(t || '{}');
-                  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('must be a JSON object');
-                  setEnvError(null);
-                  update({ environment: v });
-                } catch (e) {
-                  setEnvError((e as Error).message);
-                }
-              }}
+          <div className="flex h-full min-h-0 flex-col">
+            <VarMapEditor
+              docId={folder.id}
+              data={folder.environment ?? {}}
+              contextId={id}
+              hint="Folder variables override the base and active environment for requests in this folder. Reference with ${name}; values may reference other variables."
+              onChange={environment => update({ environment })}
             />
           </div>
         )}

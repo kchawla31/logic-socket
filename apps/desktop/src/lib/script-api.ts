@@ -12,7 +12,7 @@ const scope = (name: string, label: string): ApiEntry[] => [
   { path: `ls.${name}.has`, args: '(key)', doc: `Is the variable defined in ${label}?` },
   { path: `ls.${name}.unset`, args: '(key)', doc: `Remove a variable from ${label}` },
   { path: `ls.${name}.clear`, args: '()', doc: `Remove every variable from ${label}` },
-  { path: `ls.${name}.replaceIn`, args: '(template)', doc: `Render {{ variables }} in a string using ${label}` },
+  { path: `ls.${name}.replaceIn`, args: '(template)', doc: `Render \${variables} in a string using ${label}` },
   { path: `ls.${name}.toObject`, args: '()', doc: `All variables in ${label} as an object` },
   { path: `ls.${name}.name`, doc: `Name of ${label}` },
 ];
@@ -40,7 +40,7 @@ export const SCRIPT_API: ApiEntry[] = [
   { path: 'ls.variables.set', args: '(key, value)', doc: 'Set a local variable for this run' },
   { path: 'ls.variables.has', args: '(key)', doc: 'Is the variable defined in any scope?' },
   { path: 'ls.variables.unset', args: '(key)', doc: 'Remove a local variable' },
-  { path: 'ls.variables.replaceIn', args: '(template)', doc: 'Render {{ variables }} in a string' },
+  { path: 'ls.variables.replaceIn', args: '(template)', doc: 'Render ${variables} in a string' },
   { path: 'ls.variables.toObject', args: '()', doc: 'Every resolved variable as an object' },
 
   { path: 'ls.request.url', doc: 'The request URL (object; toString() gives the text)' },

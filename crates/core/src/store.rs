@@ -153,6 +153,26 @@ impl Store {
         }
     }
 
+    /// Rewrite the JSON of every document of the given types. Returns how many changed.
+    pub fn rewrite_json(
+        &self,
+        kinds: &[&str],
+        mut f: impl FnMut(&mut Value) -> bool,
+    ) -> Result<usize> {
+        self.batch(|tx| {
+            let mut changed = 0;
+            for kind in kinds {
+                for mut doc in query(tx.conn, "WHERE type = ?1", params![kind])? {
+                    if f(&mut doc.data) {
+                        tx.update_raw(&doc)?;
+                        changed += 1;
+                    }
+                }
+            }
+            Ok(changed)
+        })
+    }
+
     /// Run several writes in one transaction with one change notification.
     pub fn batch<R>(&self, f: impl FnOnce(&mut Tx<'_>) -> Result<R>) -> Result<R> {
         let (out, changes) = {

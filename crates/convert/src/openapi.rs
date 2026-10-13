@@ -54,7 +54,7 @@ impl Ctx<'_> {
         self.env
             .entry(key.to_string())
             .or_insert_with(|| json!(default));
-        format!("{{{{ _.{key} }}}}")
+        format!("${{{key}}}")
     }
 
     /// An example value for a schema: explicit examples first, then a generated one.
@@ -400,7 +400,7 @@ fn operation(ctx: &mut Ctx, path: &str, method: &str, path_item: &Value, op: &Va
             .find(|s| !s.is_empty())
             .unwrap_or_default(),
         method: method.to_uppercase(),
-        url: format!("{{{{ _.base_url }}}}{url_path}"),
+        url: format!("${{base_url}}{url_path}"),
         ..Default::default()
     };
     // (required, optional) `name=value` pairs, each sent as one Cookie header.

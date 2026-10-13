@@ -76,7 +76,7 @@ fn fixture(base_url: &str) -> Fixture {
                     KeyValue::new("X-Shared", "outer"),
                 ],
                 authentication: Auth::Bearer {
-                    token: "{{ token }}".into(),
+                    token: "${token}".into(),
                     prefix: None,
                     disabled: false,
                 },
@@ -104,16 +104,16 @@ fn fixture(base_url: &str) -> Fixture {
             Request {
                 name: "Get user".into(),
                 method: "post".into(),
-                url: "{{ _.base }}/{{ path }}/:id".into(),
-                path_parameters: vec![KeyValue::new("id", "{{ user }}")],
-                parameters: vec![KeyValue::new("who", "{{ user }}")],
+                url: "${base}/${path}/:id".into(),
+                path_parameters: vec![KeyValue::new("id", "${user}")],
+                parameters: vec![KeyValue::new("who", "${user}")],
                 headers: vec![KeyValue::new(
                     "X-Req",
                     "{% base64 'encode', 'normal', 'hi' %}",
                 )],
                 body: Body {
                     mime_type: Some(mime::JSON.into()),
-                    text: Some(r#"{"u":"{{ user }}"}"#.into()),
+                    text: Some(r#"{"u":"${user}"}"#.into()),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -156,7 +156,7 @@ async fn full_pipeline_renders_inherits_and_persists() {
 async fn unresolved_variable_is_a_persisted_error_naming_field_and_var() {
     let f = fixture("http://127.0.0.1:1");
     let mut r = f.e.store.get::<Request>(f.req.id()).unwrap();
-    r.headers.push(KeyValue::new("X-Key", "{{ api_key }}"));
+    r.headers.push(KeyValue::new("X-Key", "${api_key}"));
     f.e.store.update(&r).unwrap();
     let resp = f.e.send(f.req.id()).await.unwrap();
     assert_eq!(
@@ -222,10 +222,37 @@ fn layers_follow_environment_precedence() {
     assert_eq!(ctx.source_of("token"), Some("Folder: Outer"));
 
     let (rendered, refs) =
-        f.e.preview(f.folder.id(), "{{ base }}/{{ path }}/{{ nope }}")
+        f.e.preview(f.folder.id(), "${base}/${path}/${nope}")
             .unwrap();
     assert!(rendered.is_err());
     assert_eq!(refs.iter().filter(|r| r.resolved).count(), 2);
+}
+
+#[test]
+fn blank_query_row_with_empty_variable_still_generates_code() {
+    let f = fixture("https://httpbin.org");
+    let mut r = f.e.store.get::<Request>(f.req.id()).unwrap();
+    r.url = "https://httpbin.org/json".into();
+    r.parameters = vec![
+        lsock_core::KeyValue {
+            name: String::new(),
+            value: "${}".into(),
+            ..Default::default()
+        },
+        lsock_core::KeyValue::new("q", "1"),
+    ];
+    r.authentication = lsock_core::Auth::None;
+    f.e.store.update(&r).unwrap();
+    let (code, notes) = f.e.code_request(r.id()).unwrap();
+    assert!(notes.is_empty(), "{notes:?}");
+    assert_eq!(code.url, "https://httpbin.org/json?q=1");
+
+    r.parameters = vec![lsock_core::KeyValue::new("q", "${}")];
+    f.e.store.update(&r).unwrap();
+    let err = f.e.code_request(r.id()).unwrap_err().to_string();
+    assert!(err.contains("query parameter 'q'"), "{err}");
+    assert!(err.contains("empty variable"), "{err}");
+    assert!(!err.contains("unexpected end"), "{err}");
 }
 
 #[test]
@@ -314,7 +341,7 @@ async fn scripts_run_in_order_and_persist_results() {
     req.pre_request_script = Some(
         r#"console.log('request pre');
         ls.environment.set('user', 'from-script');
-        ls.request.headers.add({ key: 'X-Trail', value: '{{ trail }}>request' });"#
+        ls.request.headers.add({ key: 'X-Trail', value: '${trail}>request' });"#
             .into(),
     );
     req.after_response_script = Some(
@@ -344,7 +371,7 @@ async fn scripts_run_in_order_and_persist_results() {
         ]
     );
     assert_eq!(resp.console[3].source, "after-response");
-    // environment change applied before rendering (path param uses {{ user }})
+    // environment change applied before rendering (path param uses ${user})
     assert_eq!(body_json(&f.e, &resp)["path"], "/users/from-script");
     let results: Vec<(&str, bool)> = resp
         .test_results
@@ -406,9 +433,9 @@ async fn send_request_from_script_reaches_server_and_iteration_data_renders() {
         ls.variables.set('tokenPath', r.json().path);"#
     ));
     req.headers
-        .push(lsock_core::KeyValue::new("X-Token-Path", "{{ tokenPath }}"));
+        .push(lsock_core::KeyValue::new("X-Token-Path", "${tokenPath}"));
     req.headers
-        .push(lsock_core::KeyValue::new("X-Row", "{{ email }}"));
+        .push(lsock_core::KeyValue::new("X-Row", "${email}"));
     f.e.store.update(&req).unwrap();
     let mut state = RunState {
         iteration_data: vars(json!({ "email": "a@b.c" })),
@@ -440,7 +467,7 @@ async fn without_sub_environment_ls_environment_is_the_base() {
         .insert(
             Some(ws.id()),
             Request {
-                url: "{{ _.base }}/a".into(),
+                url: "${base}/a".into(),
                 after_response_script: Some(
                     "ls.environment.set('token', 'abc'); ls.environment.unset('drop'); ls.baseEnvironment.set('other', true);".into(),
                 ),
@@ -453,7 +480,7 @@ async fn without_sub_environment_ls_environment_is_the_base() {
         .insert(
             Some(ws.id()),
             Request {
-                url: "{{ _.base }}/b".into(),
+                url: "${base}/b".into(),
                 pre_request_script: Some(
                     "ls.request.headers.add({ key: 'X-T', value: ls.environment.get('token') });"
                         .into(),
@@ -535,7 +562,7 @@ mod ai {
 
         let mut tpl = p.clone();
         tpl.key_source = KeySource::Template {
-            template: "{{ _.claude_key }}".into(),
+            template: "${claude_key}".into(),
         };
         e.store.update(&tpl).unwrap();
         let err = e
@@ -610,10 +637,10 @@ mod ai {
                 Some(ws.id()),
                 LlmRequest {
                     provider_id: Some(p.meta.id.clone()),
-                    system: "You are {{ persona }}.".into(),
+                    system: "You are ${persona}.".into(),
                     messages: vec![LlmPromptMessage {
                         role: "user".into(),
-                        text: "What's the weather in {{ _.city }}?".into(),
+                        text: "What's the weather in ${city}?".into(),
                     }],
                     mcp_server_ids: vec![server.meta.id.clone()],
                     ..Default::default()
@@ -664,7 +691,7 @@ mod ai {
 
         // a prompt with an unresolved variable fails before calling the provider
         let mut bad = e.store.get::<LlmRequest>(req.id()).unwrap();
-        bad.messages[0].text = "{{ nope }}".into();
+        bad.messages[0].text = "${nope}".into();
         e.store.update(&bad).unwrap();
         assert!(
             e.llm_prepare(req.id())
@@ -780,9 +807,9 @@ fn realtime_options_render_and_inherit() {
                 Some(f.folder.id()),
                 lsock_core::RealtimeRequest {
                     kind: "socketio".into(),
-                    url: "{{ _.base }}/{{ path }}".into(),
-                    headers: vec![KeyValue::new("X-User", "{{ user }}")],
-                    socketio_auth: r#"{"token":"{{ token }}"}"#.into(),
+                    url: "${base}/${path}".into(),
+                    headers: vec![KeyValue::new("X-User", "${user}")],
+                    socketio_auth: r#"{"token":"${token}"}"#.into(),
                     namespace: "/chat".into(),
                     ..Default::default()
                 },
@@ -806,7 +833,7 @@ fn realtime_options_render_and_inherit() {
     );
     assert_eq!(o.auth, Some(json!({"token": "folder-token"})));
     assert_eq!(
-        f.e.realtime_payload(rt.id(), "hi {{ user }}").unwrap(),
+        f.e.realtime_payload(rt.id(), "hi ${user}").unwrap(),
         "hi staging-user"
     );
 }
@@ -839,9 +866,9 @@ async fn graphql_query_uses_request_endpoint_headers_and_auth() {
             Some(ws.id()),
             Request {
                 method: "GET".into(),
-                url: "{{ host }}/graphql".into(),
+                url: "${host}/graphql".into(),
                 authentication: Auth::Bearer {
-                    token: "{{ tok }}".into(),
+                    token: "${tok}".into(),
                     prefix: None,
                     disabled: false,
                 },
@@ -1006,7 +1033,7 @@ mod oauth {
             access_token_url: format!("{base}/token"),
             authorization_url: format!("{base}/authorize"),
             client_id: "app".into(),
-            client_secret: "{{ secret }}".into(),
+            client_secret: "${secret}".into(),
             username: "ada".into(),
             password: "pw".into(),
             ..Default::default()
@@ -1313,9 +1340,9 @@ mod phase5 {
             "variable": [{"key": "base", "value": "https://shop.test"}],
             "item": [
                 {"name": "Orders", "item": [
-                    {"name": "List", "request": {"method": "GET", "url": "{{base}}/orders?page=1", "header": []}},
-                    {"name": "Create", "request": {"method": "POST", "url": "{{base}}/orders",
-                        "body": {"mode": "raw", "raw": "{\"sku\":\"{{sku}}\"}", "options": {"raw": {"language": "json"}}}},
+                    {"name": "List", "request": {"method": "GET", "url": "${base}/orders?page=1", "header": []}},
+                    {"name": "Create", "request": {"method": "POST", "url": "${base}/orders",
+                        "body": {"mode": "raw", "raw": "{\"sku\":\"${sku}\"}", "options": {"raw": {"language": "json"}}}},
                      "event": [{"listen": "test", "script": {"exec": ["pm.test('created', () => pm.response.to.have.status(201));"]}}]}
                 ]}
             ]
@@ -1706,7 +1733,7 @@ mod git_sync {
                 Some(ws.id()),
                 Request {
                     name: "List orders".into(),
-                    url: "{{ _.host }}/orders".into(),
+                    url: "${host}/orders".into(),
                     ..Default::default()
                 },
             )
@@ -1716,7 +1743,7 @@ mod git_sync {
                 Some(ws.id()),
                 Request {
                     name: "Get order".into(),
-                    url: "{{ _.host }}/orders/:id".into(),
+                    url: "${host}/orders/:id".into(),
                     ..Default::default()
                 },
             )
@@ -1848,4 +1875,56 @@ mod git_sync {
         assert_eq!(current, "feature");
         assert!(all.contains(&"main".to_string()));
     }
+}
+
+#[test]
+fn open_rewrites_legacy_brace_variables_and_leaves_responses() {
+    let dir = tempfile::tempdir().unwrap();
+    let req_id = {
+        let store = Store::open(dir.path().join("logic-socket.db")).unwrap();
+        let ws = store.insert(None, Workspace::default()).unwrap();
+        let req = store
+            .insert(
+                Some(ws.id()),
+                Request {
+                    name: "Legacy".into(),
+                    url: "https://{{ _.host }}/{{ _['api-key'] }}".into(),
+                    body: Body {
+                        text: Some("hello {{ name }} and {{ literal {".into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        store
+            .insert(
+                Some(req.id()),
+                Response {
+                    url: "https://{{ _.host }}/kept".into(),
+                    error: Some("body {{ keep }}".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        req.meta.id
+    };
+    let engine = Engine::open(dir.path().to_path_buf()).unwrap();
+    let req = engine.store.get::<Request>(&req_id).unwrap();
+    assert_eq!(req.url, "https://${host}/${api-key}");
+    assert_eq!(
+        req.body.body.text.as_deref(),
+        Some("hello ${name} and {{ literal {")
+    );
+    let saved = engine.store.all_of::<Response>().unwrap();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].url, "https://{{ _.host }}/kept");
+    assert_eq!(saved[0].error.as_deref(), Some("body {{ keep }}"));
+    // A second open must not rewrite the new form again.
+    drop(engine);
+    let again = Engine::open(dir.path().to_path_buf()).unwrap();
+    assert_eq!(
+        again.store.get::<Request>(&req_id).unwrap().url,
+        "https://${host}/${api-key}"
+    );
 }

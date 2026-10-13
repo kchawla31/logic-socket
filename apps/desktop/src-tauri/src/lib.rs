@@ -1013,7 +1013,7 @@ fn seed_if_empty(engine: &Engine) -> lsock_core::store::Result<()> {
         Some(folder.id()),
         Request {
             name: "Get JSON".into(),
-            url: "{{ _.base_url }}/json".into(),
+            url: "${base_url}/json".into(),
             ..Default::default()
         },
     )?;
@@ -1022,7 +1022,7 @@ fn seed_if_empty(engine: &Engine) -> lsock_core::store::Result<()> {
         Request {
             name: "Post body".into(),
             method: "POST".into(),
-            url: "{{ _.base_url }}/post".into(),
+            url: "${base_url}/post".into(),
             body: lsock_core::Body {
                 mime_type: Some(lsock_core::mime::JSON.into()),
                 text: Some("{\n  \"id\": \"{% uuid 'v4' %}\",\n  \"hello\": \"world\"\n}".into()),

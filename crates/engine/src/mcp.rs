@@ -1,4 +1,4 @@
-//! Resolve a saved `McpServer` into connect options, rendering `{{ vars }}`
+//! Resolve a saved `McpServer` into connect options, rendering `${vars}`
 //! in its URL, command, headers and env against the workspace environment.
 
 use std::collections::HashMap;
@@ -222,11 +222,11 @@ mod tests {
                 Some(ws.id()),
                 McpServer {
                     transport: McpTransport::StreamableHttp {
-                        url: "http://{{ host }}/mcp".into(),
+                        url: "http://${host}/mcp".into(),
                     },
                     headers: vec![KeyValue::new("X-A", "1")],
                     authentication: Auth::Bearer {
-                        token: "{{ tok }}".into(),
+                        token: "${tok}".into(),
                         prefix: None,
                         disabled: false,
                     },
@@ -268,7 +268,7 @@ mod tests {
                     },
                     headers: vec![KeyValue::new("X-A", "1")],
                     authentication: Auth::Bearer {
-                        token: "{{ tok }}".into(),
+                        token: "${tok}".into(),
                         prefix: None,
                         disabled: false,
                     },

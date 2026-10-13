@@ -22,17 +22,17 @@ import {
 
 describe('tokenizeTemplate', () => {
   it('splits variables and tags', () => {
-    expect(tokenizeTemplate("{{ _.base }}/users/{{id}}?x={% uuid 'v4' %}")).toEqual([
-      { text: '{{ _.base }}', kind: 'var', name: 'base' },
+    expect(tokenizeTemplate("${base}/users/${id}?x={% uuid 'v4' %}")).toEqual([
+      { text: '${base}', kind: 'var', name: 'base' },
       { text: '/users/', kind: 'text' },
-      { text: '{{id}}', kind: 'var', name: 'id' },
+      { text: '${id}', kind: 'var', name: 'id' },
       { text: '?x=', kind: 'text' },
       { text: "{% uuid 'v4' %}", kind: 'tag', name: 'uuid' },
     ]);
   });
   it('keeps plain text and strips filters', () => {
     expect(tokenizeTemplate('plain')).toEqual([{ text: 'plain', kind: 'text' }]);
-    expect(tokenizeTemplate('{{ name | upper }}')[0].name).toBe('name');
+    expect(tokenizeTemplate('${name | upper}')[0].name).toBe('name');
   });
 });
 
@@ -77,7 +77,7 @@ describe('url helpers', () => {
         { name: 'n', value: '1' },
       ],
     });
-    expect(splitQuery('http://x/a?q={{ v }}').params).toEqual([]);
+    expect(splitQuery('http://x/a?q=${v}').params).toEqual([]);
   });
 });
 
@@ -125,10 +125,10 @@ describe('bulk edit', () => {
     const rows = [
       { name: 'Accept', value: 'application/json' },
       { name: 'X-Off', value: '1', disabled: true },
-      { name: 'Authorization', value: 'Bearer {{ _.token }}' },
+      { name: 'Authorization', value: 'Bearer ${token}' },
     ];
     const text = kvToText(rows);
-    expect(text).toBe('Accept: application/json\n// X-Off: 1\nAuthorization: Bearer {{ _.token }}');
+    expect(text).toBe('Accept: application/json\n// X-Off: 1\nAuthorization: Bearer ${token}');
     expect(kvFromText(text)).toEqual(rows);
   });
 
@@ -172,8 +172,8 @@ describe('bulk edit', () => {
   });
 
   it('switches type from a pasted block and reports unknown fields', () => {
-    const r = authFromText('type: bearer\ntoken: {{ _.t }}\nprefix:\nscope: x', { type: 'inherit' }, defaults, TYPES);
-    expect(r.auth).toEqual({ type: 'bearer', token: '{{ _.t }}', prefix: null });
+    const r = authFromText('type: bearer\ntoken: ${t}\nprefix:\nscope: x', { type: 'inherit' }, defaults, TYPES);
+    expect(r.auth).toEqual({ type: 'bearer', token: '${t}', prefix: null });
     expect(r.ignored).toEqual(['scope']);
   });
 
@@ -204,7 +204,7 @@ describe('curlToMcp', () => {
     const c = curlToMcp(
       req({
         parameters: [
-          { name: 'tenant', value: '{{ _.tenant }}' },
+          { name: 'tenant', value: '${tenant}' },
           { name: 'q', value: 'a b&c' },
         ],
         headers: [
@@ -216,7 +216,7 @@ describe('curlToMcp', () => {
         body: { mimeType: 'application/json', text: '{"jsonrpc":"2.0"}' },
       }),
     );
-    expect(c.url).toBe('https://mcp.example.com/mcp?tenant={{ _.tenant }}&q=a%20b%26c');
+    expect(c.url).toBe('https://mcp.example.com/mcp?tenant=${tenant}&q=a%20b%26c');
     expect(c.headers).toEqual([{ name: 'X-Api-Version', value: '2' }]);
     expect(c.authentication).toEqual({ type: 'bearer', token: '$TOKEN', prefix: null });
     expect(c.dropped).toEqual(['Content-Type', 'Accept', 'request body']);

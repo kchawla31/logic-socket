@@ -33,8 +33,8 @@ Where each capability lives in the code, and the phase that delivered it. Phase:
 | Capability | Rust target | Phase |
 |---|---|---|
 | Render context precedence (global base → global sub → base → sub → folders outer→inner → iteration data → local vars) | templating::Context | 1 |
-| Self-recursive vars (`base_url: '{{ base_url }}/x'`) | templating::Context::layer | 1 |
-| `{{ _.var }}` + bare `{{ var }}` Nunjucks syntax | templating (minijinja) | 1 |
+| Self-recursive vars (`base_url: '${base_url}/x'`) | templating::Context::layer | 1 |
+| `${name}`, `${user.id}`, `${api-key}` (`{{ }}` is literal text) | templating (minijinja) | 1 |
 | Template tags (`{% uuid %}`, `{% now %}`, `{% base64 %}`, `{% hash %}`, `{% response %}`) | templating::tags | 1 (response tag 2) |
 | Path params `/:id` | http::url | 1 |
 | Query params, URL encoding settings | http::build | 1 |

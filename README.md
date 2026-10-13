@@ -2,7 +2,7 @@
 
 An API client for HTTP, GraphQL, gRPC, realtime protocols, MCP and AI, written in Rust: a desktop app (Tauri 2 + React) and the `lsock` CLI sharing one engine.
 
-- **HTTP**: layered environments (global → base → sub-environment → folders), `{{ _.var }}` + template tags, folder-inherited headers/auth, cookies, redirects with a curl-style timeline, response history
+- **HTTP**: layered environments (global → base → sub-environment → folders), `${var}` + template tags, folder-inherited headers/auth, cookies, redirects with a curl-style timeline, response history
 - **MCP Inspector**: stdio and Streamable HTTP servers; tools shown as readable cards (behavior badges, parameter tables with nested fields/constraints/enums), generated call forms with live schema validation, resources, prompts, notifications, and a full JSON-RPC protocol log with latencies
 - **Scripts & tests**: pre-request / after-response scripts with the `ls.*` API (`pm.*` works too) in a QuickJS sandbox (chai, lodash, crypto-js, moment, uuid, ajv, tv4), test results and console per response
 - **AI requests (LLM ↔ MCP)**: Anthropic, OpenAI, Ollama or any OpenAI-compatible endpoint; streaming answers, thinking, and MCP tools the model can call — read-only tools run automatically, risky ones wait for your approval; token usage, time-to-first-token and the exact provider payloads; MCP sampling backed by your provider. Keys stay in the OS keychain
@@ -31,7 +31,7 @@ Shortcuts: `⌘K` command palette · `⌘N` new request · `⌘E` environments �
 cargo build --release -p lsock-cli
 lsock workspace create "My API"
 lsock env set "My API" base_url '"https://httpbin.org"'
-lsock request add "My API" "Get JSON" GET '{{ _.base_url }}/json'
+lsock request add "My API" "Get JSON" GET '${base_url}/json'
 lsock send "Get JSON" -i
 lsock request curl "My API" "curl https://httpbin.org/post -d a=1"
 
@@ -43,7 +43,7 @@ lsock mcp call --url http://localhost:3333/mcp -t get_weather -a '{"city":"Berli
 # AI (keys: OS keychain by default, or --key-env / --key-template)
 lsock llm provider add Claude --kind anthropic --model claude-sonnet-5-5
 lsock llm chat "What's the weather in Berlin?" --mcp-url http://localhost:3333/mcp
-lsock llm request add "My API" "Summarise issues" --prompt "Summarise open issues in {{ repo }}" --mcp GitHub
+lsock llm request add "My API" "Summarise issues" --prompt "Summarise open issues in ${repo}" --mcp GitHub
 lsock llm request run "Summarise issues"
 lsock llm mock-server            # offline mock (key: test-key) for trying it without an account
 

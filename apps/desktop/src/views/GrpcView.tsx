@@ -280,7 +280,7 @@ export function GrpcView({ id, workspaceId }: { id: string; workspaceId: string 
           {tab === 'message' && (
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex shrink-0 items-center gap-2 border-b border-app px-3 py-1">
-                <span className="text-[12px] text-muted">{method ? method.inputType : 'JSON message'} — {'{{ variables }}'} work here</span>
+                <span className="text-[12px] text-muted">{method ? method.inputType : 'JSON message'} — {'${variables}'} work here</span>
                 <div className="flex-1" />
                 {method && (
                   <Button size="sm" variant="ghost" onClick={() => update({ message: JSON.stringify(method.example, null, 2) })}>

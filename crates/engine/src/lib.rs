@@ -26,7 +26,7 @@ use lsock_core::{
     Auth, CookieJar, Doc, Environment, Folder, KeyValue, RawDoc, Request, Response, Settings,
     Store, StoreError, Toggle, Workspace,
 };
-use lsock_templating::{Context, Layer, Mode, RenderError, Renderer, VarRef};
+use lsock_templating::{Context, Layer, Mode, RenderError, Renderer, VarRef, rewrite_json_values};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
@@ -121,7 +121,27 @@ impl Engine {
     /// Open (or create) the database in `data_dir`.
     pub fn open(data_dir: PathBuf) -> Result<Self> {
         let store = Store::open(data_dir.join("logic-socket.db"))?;
-        Ok(Self::new(store, Some(data_dir)))
+        let engine = Self::new(store, Some(data_dir));
+        engine.migrate_legacy_templates()?;
+        Ok(engine)
+    }
+
+    /// Rewrite saved brace variables to `${var}` in authored documents.
+    /// Response bodies are left alone.
+    fn migrate_legacy_templates(&self) -> Result<()> {
+        const KINDS: &[&str] = &[
+            "Workspace",
+            "Folder",
+            "Request",
+            "Environment",
+            "McpServer",
+            "RealtimeRequest",
+            "GrpcRequest",
+            "LlmProvider",
+            "LlmRequest",
+        ];
+        self.store.rewrite_json(KINDS, rewrite_json_values)?;
+        Ok(())
     }
 
     pub fn in_memory() -> Self {
@@ -311,18 +331,24 @@ impl Engine {
                 })
         };
         let kv = |section: &str, list: &[KeyValue]| -> Result<Vec<KeyValue>> {
-            list.iter()
-                .map(|h| {
-                    if h.disabled {
-                        return Ok(h.clone());
-                    }
-                    Ok(KeyValue {
-                        name: r(&format!("{section} name '{}'", h.name), &h.name)?,
-                        value: r(&format!("{section} '{}'", h.name), &h.value)?,
-                        ..h.clone()
-                    })
-                })
-                .collect()
+            let mut out = Vec::with_capacity(list.len());
+            for h in list {
+                if h.disabled {
+                    out.push(h.clone());
+                    continue;
+                }
+                // The editor keeps a blank row. An empty name is not sent, so a
+                // half-typed value such as `${}` must not fail the request.
+                if h.name.is_empty() {
+                    continue;
+                }
+                out.push(KeyValue {
+                    name: r(&format!("{section} name '{}'", h.name), &h.name)?,
+                    value: r(&format!("{section} '{}'", h.name), &h.value)?,
+                    ..h.clone()
+                });
+            }
+            Ok(out)
         };
 
         let mut out = req.clone();
@@ -335,6 +361,8 @@ impl Engine {
             if let Some(t) = &req.body.text {
                 out.body.text = Some(r("body", t)?);
             }
+            // Same unfinished editor row as query parameters.
+            out.body.params.retain(|p| p.disabled || !p.name.is_empty());
             for p in out.body.params.iter_mut().filter(|p| !p.disabled) {
                 p.name = r(&format!("form field name '{}'", p.name), &p.name)?;
                 p.value = r(&format!("form field '{}'", p.name), &p.value)?;

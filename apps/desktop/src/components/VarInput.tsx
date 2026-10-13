@@ -70,8 +70,8 @@ function preview(v: unknown): string {
 }
 
 /**
- * Single-line input that highlights `{{ variables }}` (green = defined,
- * red = undefined) and `{% tags %}`, and autocompletes variables after `{{`.
+ * Single-line input that highlights `${variables}` (green = defined,
+ * red = undefined) and `{% tags %}`, and autocompletes variables after `${`.
  */
 export function VarInput({
   value,
@@ -83,6 +83,7 @@ export function VarInput({
   mono = true,
   onEnter,
   onPaste,
+  onBlur,
   autoFocus,
   inputRef,
 }: {
@@ -95,6 +96,7 @@ export function VarInput({
   mono?: boolean;
   onEnter?: () => void;
   onPaste?: (e: ClipboardEvent<HTMLInputElement>) => void;
+  onBlur?: () => void;
   autoFocus?: boolean;
   inputRef?: React.RefObject<HTMLInputElement | null>;
 }) {
@@ -151,7 +153,7 @@ export function VarInput({
     const el = ref.current;
     if (!el || !contextId) return;
     const before = el.value.slice(0, el.selectionStart ?? el.value.length);
-    const m = before.match(/\{\{\s*(?:_\.)?([\w.-]*)$/);
+    const m = before.match(/\$\{\s*([\w.-]*)$/);
     setQuery(m ? m[1] : null);
     setSel(0);
   };
@@ -159,8 +161,8 @@ export function VarInput({
   const complete = (name: string) => {
     const el = ref.current!;
     const caret = el.selectionStart ?? value.length;
-    const before = value.slice(0, caret).replace(/\{\{\s*(?:_\.)?[\w.-]*$/, `{{ _.${name} }}`);
-    const after = value.slice(caret).replace(/^\s*\}\}/, '');
+    const before = value.slice(0, caret).replace(/\$\{\s*[\w.-]*$/, `\${${name}}`);
+    const after = value.slice(caret).replace(/^\s*\}/, '');
     onChange(before + after);
     setQuery(null);
     requestAnimationFrame(() => {
@@ -247,7 +249,10 @@ export function VarInput({
         }}
         onKeyDown={onKeyDown}
         onKeyUp={e => ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key) && detect()}
-        onBlur={() => setTimeout(() => setQuery(null), 120)}
+        onBlur={() => {
+          onBlur?.();
+          setTimeout(() => setQuery(null), 120);
+        }}
         onScroll={e => overlay.current && (overlay.current.scrollLeft = e.currentTarget.scrollLeft)}
         onPaste={onPaste}
         className={cn(
@@ -280,7 +285,8 @@ export function VarInput({
               </button>
             ))}
           </div>,
-          document.body,
+          // A modal dialog is a top layer, so a menu on document.body sits underneath it and cannot be clicked.
+          ref.current?.closest('dialog') ?? document.body,
         )}
     </div>
   );

@@ -2737,6 +2737,7 @@ dependencies = [
  "chrono",
  "indexmap 2.14.2",
  "lsock-core",
+ "lsock-templating",
  "regex",
  "serde",
  "serde_json",

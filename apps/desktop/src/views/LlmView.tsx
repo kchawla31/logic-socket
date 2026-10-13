@@ -194,7 +194,7 @@ export function LlmView({ id, tree, onOpenProviders }: { id: string; tree: TreeN
       if (ev.type === 'saved') {
         setRunning(false);
         setSelectedRun(ev.run);
-        // the stored transcript has the rendered prompt ({{ vars }} resolved)
+        // the stored transcript has the rendered prompt (${vars} resolved)
         setItems(itemsFromRun(ev.run));
         setStats({ model: ev.run.model, inputTokens: ev.run.inputTokens, outputTokens: ev.run.outputTokens, turns: ev.run.turns, ttftMs: ev.run.ttftMs, totalMs: ev.run.totalMs });
         loadRuns();
@@ -305,7 +305,7 @@ export function LlmView({ id, tree, onOpenProviders }: { id: string; tree: TreeN
             <textarea
               value={req.system}
               onChange={e => update({ system: e.target.value })}
-              placeholder="You are a helpful API assistant. Variables like {{ _.base_url }} work here."
+              placeholder="You are a helpful API assistant. Variables like ${base_url} work here."
               className="h-20 resize-y rounded-md border border-app bg-app p-2 text-[13px] outline-none focus:border-accent"
             />
           </label>
@@ -331,7 +331,7 @@ export function LlmView({ id, tree, onOpenProviders }: { id: string; tree: TreeN
               <textarea
                 value={m.text}
                 onChange={e => update({ messages: req.messages.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)) })}
-                placeholder={i === 0 ? 'Ask something… e.g. “List the open issues and summarise them” — {{ variables }} work here' : ''}
+                placeholder={i === 0 ? 'Ask something… e.g. “List the open issues and summarise them” — ${variables} work here' : ''}
                 className="h-24 w-full resize-y bg-transparent p-2 text-[13px] outline-none"
               />
             </div>

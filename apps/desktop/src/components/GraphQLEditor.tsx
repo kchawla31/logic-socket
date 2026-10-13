@@ -258,7 +258,7 @@ export function GraphQLEditor({ requestId, text, onChange }: { requestId: string
               </div>
               <CodeEditor
                 value={varsText}
-                placeholder={'{\n  "id": "{{ _.user_id }}"\n}'}
+                placeholder={'{\n  "id": "${user_id}"\n}'}
                 onChange={t => {
                   setVarsText(t);
                   if (!t.trim()) {
@@ -271,7 +271,7 @@ export function GraphQLEditor({ requestId, text, onChange }: { requestId: string
                     setVarsError(null);
                     write({ ...body, variables: v });
                   } catch {
-                    setVarsError(t.includes('{{') ? null : 'invalid JSON');
+                    setVarsError(t.includes('${') ? null : 'invalid JSON');
                   }
                 }}
               />

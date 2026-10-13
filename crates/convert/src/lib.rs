@@ -267,22 +267,63 @@ fn detect_value(v: &Value) -> Option<Format> {
     None
 }
 
-/// Import any supported file.
+/// Import any supported file. Brace variables (`{{ name }}`) become `${name}`.
 pub fn import(text: &str) -> Result<Imported> {
     let format = detect(text).ok_or(ConvertError::Unknown)?;
-    if format == Format::Curl {
-        return curl::import_many(text);
+    let mut imported = if format == Format::Curl {
+        curl::import_many(text)?
+    } else {
+        let v = parse_structured(text).ok_or(ConvertError::Unknown)?;
+        match format {
+            Format::LogicSocket => native::import(&v)?,
+            Format::InsomniaV5 => insomnia::import_v5(&v)?,
+            Format::InsomniaV4 => insomnia::import_v4(&v)?,
+            Format::PostmanCollection => postman::import_collection(v.get("collection").unwrap_or(&v))?,
+            Format::PostmanEnvironment => postman::import_environment(&v)?,
+            Format::OpenApi3 | Format::Swagger2 => openapi::import(&v, text, format)?,
+            Format::Har => har::import(&v)?,
+            Format::Curl => unreachable!(),
+        }
+    };
+    for bundle in &mut imported.workspaces {
+        migrate_bundle(bundle);
     }
-    let v = parse_structured(text).ok_or(ConvertError::Unknown)?;
-    match format {
-        Format::LogicSocket => native::import(&v),
-        Format::InsomniaV5 => insomnia::import_v5(&v),
-        Format::InsomniaV4 => insomnia::import_v4(&v),
-        Format::PostmanCollection => postman::import_collection(v.get("collection").unwrap_or(&v)),
-        Format::PostmanEnvironment => postman::import_environment(&v),
-        Format::OpenApi3 | Format::Swagger2 => openapi::import(&v, text, format),
-        Format::Har => har::import(&v),
-        Format::Curl => unreachable!(),
+    Ok(imported)
+}
+
+fn migrated<T: serde::Serialize + serde::de::DeserializeOwned + Clone>(value: &T) -> T {
+    let Ok(mut json) = serde_json::to_value(value) else {
+        return value.clone();
+    };
+    if !lsock_templating::rewrite_json_values(&mut json) {
+        return value.clone();
+    }
+    serde_json::from_value(json).unwrap_or_else(|_| value.clone())
+}
+
+fn migrate_bundle(bundle: &mut WorkspaceBundle) {
+    if let Some(env) = &mut bundle.base_env {
+        env.body = migrated(&env.body);
+    }
+    for env in &mut bundle.sub_envs {
+        env.body = migrated(&env.body);
+    }
+    migrate_items(&mut bundle.items);
+}
+
+fn migrate_items(items: &mut [Item]) {
+    for item in items {
+        match &mut item.node {
+            Node::Folder(folder, children) => {
+                *folder = migrated(folder);
+                migrate_items(children);
+            }
+            Node::Request(request) => *request = migrated(request),
+            Node::Realtime(request) => *request = migrated(request),
+            Node::Grpc(request) => *request = migrated(request),
+            Node::Mcp(server) => *server = migrated(server),
+            Node::Llm(request) => *request = migrated(request),
+        }
     }
 }
 

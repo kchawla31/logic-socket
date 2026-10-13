@@ -51,7 +51,7 @@ pub enum ProviderCmd {
         /// Read the API key from this environment variable at call time
         #[arg(long, conflicts_with_all = ["key_template", "no_key"])]
         key_env: Option<String>,
-        /// Render the key from the workspace environment, e.g. '{{ _.openai_key }}'
+        /// Render the key from the workspace environment, e.g. '${openai_key}'
         #[arg(long, conflicts_with = "no_key")]
         key_template: Option<String>,
         /// Provider needs no key (local Ollama)

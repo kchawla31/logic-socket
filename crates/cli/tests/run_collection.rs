@@ -25,11 +25,11 @@ fn seed(data: &Path, base_url: &str) {
         vec!["env", "set", "Smoke", "base_url", &format!("\"{base_url}\"")],
         vec!["request", "folder", "Smoke", "RPC"],
         vec!["request", "script", "RPC", "--pre", &f("folder-pre.js")],
-        vec!["request", "add", "RPC", "Initialize", "POST", "{{ _.base_url }}/mcp", "--json",
+        vec!["request", "add", "RPC", "Initialize", "POST", "${base_url}/mcp", "--json",
              r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}"#],
         vec!["request", "script", "Initialize", "--after", &f("initialize-after.js")],
-        vec!["request", "add", "RPC", "Weather", "POST", "{{ _.base_url }}/mcp", "--json",
-             r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_weather","arguments":{"city":"{{ city }}"}}}"#],
+        vec!["request", "add", "RPC", "Weather", "POST", "${base_url}/mcp", "--json",
+             r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_weather","arguments":{"city":"${city}"}}}"#],
         vec!["request", "script", "Weather", "--after", &f("weather-after.js")],
     ]
     .into_iter()
@@ -110,7 +110,7 @@ async fn run_collection_reporters_and_exit_codes() {
         "{xml}"
     );
 
-    // exit 1: no data file → unresolved {{ city }} fails the Weather request
+    // exit 1: no data file → unresolved ${city} fails the Weather request
     let o = tokio::task::spawn_blocking({
         let data = data.to_path_buf();
         move || lsock(&data, &["run", "collection", "Smoke", "-r", "json"])

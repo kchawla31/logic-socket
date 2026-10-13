@@ -97,7 +97,7 @@ fn native_format_is_readable_and_keeps_local_state_out() {
     assert_eq!(v["items"][0]["children"][1]["type"], "llm");
     assert_eq!(
         v["items"][0]["children"][0]["url"],
-        "{{ _.base }}/items/:id"
+        "${base}/items/:id"
     );
     assert_eq!(
         native::file_name_for("Shop API v2!"),
@@ -132,7 +132,7 @@ fn postman_v21_collection() {
     };
     assert_eq!(root.name, "Acme Orders");
     assert!(
-        matches!(&root.authentication, Auth::Bearer { token, .. } if token == "{{ _['access-token'] }}")
+        matches!(&root.authentication, Auth::Bearer { token, .. } if token == "${access-token}")
     );
     assert_eq!(
         root.pre_request_script.as_deref(),
@@ -144,7 +144,7 @@ fn postman_v21_collection() {
     );
 
     let list = find(&b, "List orders");
-    assert_eq!(list.url, "{{ base_url }}/orders");
+    assert_eq!(list.url, "${base_url}/orders");
     assert_eq!(
         list.parameters
             .iter()
@@ -234,7 +234,7 @@ fn postman_v20_collection() {
         panic!()
     };
     assert!(
-        matches!(&admin.authentication, Auth::Basic { username, password, .. } if username == "admin" && password == "{{ admin_password }}")
+        matches!(&admin.authentication, Auth::Basic { username, password, .. } if username == "admin" && password == "${admin_password}")
     );
     let refund = find(&b, "Refund");
     assert_eq!(refund.method, "POST");
@@ -261,7 +261,7 @@ fn postman_auth_kinds() {
         matches!(&find(&b, "digest").authentication, Auth::Digest { username, .. } if username == "ben")
     );
     assert!(
-        matches!(&find(&b, "api key in query").authentication, Auth::ApiKey { key, value, add_to: Some(t), .. } if key == "api_key" && value == "{{ key }}" && t == "queryParams")
+        matches!(&find(&b, "api key in query").authentication, Auth::ApiKey { key, value, add_to: Some(t), .. } if key == "api_key" && value == "${key}" && t == "queryParams")
     );
     assert!(
         matches!(&find(&b, "aws").authentication, Auth::Iam(c) if c.region == "eu-west-1" && c.service == "execute-api")
@@ -307,10 +307,10 @@ fn postman_auth_kinds() {
 fn postman_variables_and_faker() {
     assert_eq!(
         postman::vars_in("{{$randomEmail}} {{a-b}} {{ok}}"),
-        "{% faker 'randomEmail' %} {{ _['a-b'] }} {{ ok }}"
+        "{% faker 'randomEmail' %} ${a-b} ${ok}"
     );
     assert_eq!(
-        postman::vars_out("{{ _.host }}/{{ _['a-b'] }}/{% uuid 'v4' %}/{% faker 'randomInt' %}"),
+        postman::vars_out("${host}/${a-b}/{% uuid 'v4' %}/{% faker 'randomInt' %}"),
         "{{host}}/{{a-b}}/{{$guid}}/{{$randomInt}}"
     );
 }
@@ -436,7 +436,7 @@ fn openapi3_bookstore() {
     let env = &b.base_env.as_ref().unwrap().body.data;
     assert_eq!(
         env["base_url"],
-        json!("{{ _.scheme }}://{{ _.host }}/api/{{ _.version }}")
+        json!("${scheme}://${host}/api/${version}")
     );
     assert_eq!(
         (env["scheme"].clone(), env["host"].clone()),
@@ -450,7 +450,7 @@ fn openapi3_bookstore() {
     );
 
     let list = find(&b, "List books");
-    assert_eq!(list.url, "{{ _.base_url }}/books");
+    assert_eq!(list.url, "${base_url}/books");
     assert_eq!(
         list.parameters
             .iter()
@@ -466,7 +466,7 @@ fn openapi3_bookstore() {
 
     let add = find(&b, "Add a book");
     assert!(
-        matches!(&add.authentication, Auth::Bearer { token, .. } if token == "{{ _.bearer_token }}")
+        matches!(&add.authentication, Auth::Bearer { token, .. } if token == "${bearer_token}")
     );
     let book: serde_json::Value = serde_json::from_str(add.body.text.as_deref().unwrap()).unwrap();
     assert_eq!(book["title"], "The Rust Book");
@@ -474,7 +474,7 @@ fn openapi3_bookstore() {
     assert!(book.get("id").is_none(), "readOnly properties are left out");
 
     let get = find(&b, "Get a book");
-    assert_eq!(get.url, "{{ _.base_url }}/books/:bookId");
+    assert_eq!(get.url, "${base_url}/books/:bookId");
     assert_eq!(
         get.path_parameters,
         vec![KeyValue::new("bookId", "bk_42")],
@@ -513,7 +513,7 @@ fn openapi3_bookstore() {
         "allOf merged"
     );
     assert!(
-        matches!(&order.authentication, Auth::Basic { username, .. } if username == "{{ _.http_username }}")
+        matches!(&order.authentication, Auth::Basic { username, .. } if username == "${http_username}")
     );
 
     let cancel = find(&b, "Cancel an order");
@@ -641,7 +641,7 @@ fn insomnia_file_import_and_round_trip() {
     };
     assert_eq!(orders.environment["page_size"], json!(20));
     assert!(
-        matches!(&orders.authentication, Auth::Bearer { token, .. } if token == "{{ _.token }}")
+        matches!(&orders.authentication, Auth::Bearer { token, .. } if token == "${token}")
     );
     assert_eq!(
         orders.pre_request_script.as_deref(),
@@ -776,7 +776,7 @@ fn full_bundle() -> WorkspaceBundle {
                             node: Node::Request(Request {
                                 name: "Create".into(),
                                 method: "POST".into(),
-                                url: "{{ _.base }}/items/:id".into(),
+                                url: "${base}/items/:id".into(),
                                 description: "makes one".into(),
                                 path_parameters: vec![KeyValue::new("id", "7")],
                                 parameters: vec![KeyValue {
@@ -966,7 +966,7 @@ fn insomnia_v4_export() {
             {"_id": "jar_a", "_type": "cookie_jar", "parentId": "wrk_a", "name": "Jar", "cookies": [{"key": "a", "value": "1", "domain": "x.io", "path": "/", "expires": "2030-01-01T00:00:00.000Z"}]},
             {"_id": "fld_a", "_type": "request_group", "parentId": "wrk_a", "name": "API", "metaSortKey": 2, "environment": {"v": 1},
              "authentication": {"type": "bearer", "token": "t"}, "preRequestScript": "console.log(1)"},
-            {"_id": "req_b", "_type": "request", "parentId": "fld_a", "name": "Second", "method": "post", "url": "https://{{ _.host }}/b", "metaSortKey": 5,
+            {"_id": "req_b", "_type": "request", "parentId": "fld_a", "name": "Second", "method": "post", "url": "https://${host}/b", "metaSortKey": 5,
              "body": {"mimeType": "application/json", "text": "{}"}, "settingFollowRedirects": "off", "settingSendCookies": false, "authentication": {}},
             {"_id": "req_a", "_type": "request", "parentId": "fld_a", "name": "First", "method": "GET", "url": "https://x.io/a", "metaSortKey": 1,
              "authentication": {"type": "hawk", "id": "x"}},

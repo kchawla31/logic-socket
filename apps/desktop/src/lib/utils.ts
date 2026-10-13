@@ -117,7 +117,7 @@ export function clockTime(ts: number): string {
   return `${d.toLocaleTimeString([], { hour12: false })}.${String(d.getMilliseconds()).padStart(3, '0')}`;
 }
 
-/** Split text into literal and `{{ var }}` / `{% tag %}` segments for highlighting. */
+/** Split text into literal and `${var}` / `{% tag %}` segments for highlighting. */
 export interface Segment {
   text: string;
   kind: 'text' | 'var' | 'tag';
@@ -126,13 +126,15 @@ export interface Segment {
 
 export function tokenizeTemplate(text: string): Segment[] {
   const out: Segment[] = [];
-  const re = /\{\{\s*([^}]*?)\s*\}\}|\{%\s*([^%]*?)\s*%\}/g;
+  const re = /\$\{\s*([^}]*?)\s*\}|\{%\s*([^%]*?)\s*%\}/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     if (m.index > last) out.push({ text: text.slice(last, m.index), kind: 'text' });
     if (m[1] !== undefined) {
-      const name = m[1].replace(/^_\./, '').split('|')[0].trim();
+      const raw = m[1].trim().replace(/^_\./, '');
+      const bracket = raw.match(/^_\[['"]([\s\S]*)['"]\]$/);
+      const name = (bracket ? bracket[1] : raw).split('|')[0].trim();
       out.push({ text: m[0], kind: 'var', name });
     } else {
       out.push({ text: m[0], kind: 'tag', name: (m[2] || '').split(/\s/)[0] });
@@ -200,7 +202,7 @@ export function splitQuery(url: string): { base: string; params: { name: string;
   const hash = h < 0 ? '' : url.slice(h);
   const noHash = h < 0 ? url : url.slice(0, h);
   const i = noHash.indexOf('?');
-  if (i < 0 || noHash.includes('{{', i)) return { base: url, params: [] };
+  if (i < 0 || noHash.includes('${', i)) return { base: url, params: [] };
   const base = noHash.slice(0, i) + hash;
   const params = noHash
     .slice(i + 1)
@@ -349,10 +351,10 @@ export function curlToMcp(parsed: Request): {
   authentication: Auth;
   dropped: string[];
 } {
-  // Encode the text, but leave `{{ var }}` / `{% tag %}` blocks as written so they still render.
+  // Encode the text, but leave `${var}` / `{% tag %}` blocks as written so they still render.
   const enc = (v: string) =>
     v
-      .split(/(\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\})/)
+      .split(/(\$\{[\s\S]*?\}|\{%[\s\S]*?%\})/)
       .map((part, i) => (i % 2 ? part : encodeURIComponent(part)))
       .join('');
   const qs = parsed.parameters

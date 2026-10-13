@@ -68,13 +68,13 @@ fn workspace_tree_and_request_round_trip() {
 
     // The UI loads with doc_get then saves the edited object with request_update.
     let mut doc = h.ok("doc_get", json!({"id": req["id"]}));
-    doc["url"] = json!("{{ _.base }}/users/:id");
+    doc["url"] = json!("${base}/users/:id");
     doc["pathParameters"] = json!([{"name": "id", "value": "7"}]);
     doc["headers"] = json!([{"name": "X-A", "value": "1"}]);
     doc["body"] = json!({"mimeType": "application/json", "text": "{}", "params": []});
-    doc["authentication"] = json!({"type": "bearer", "token": "{{ _.tok }}"});
+    doc["authentication"] = json!({"type": "bearer", "token": "${tok}"});
     let saved = h.ok("request_update", json!({"doc": doc}));
-    assert_eq!(saved["url"], "{{ _.base }}/users/:id");
+    assert_eq!(saved["url"], "${base}/users/:id");
     assert_eq!(saved["parentId"], folder["id"]);
 
     let tree = h.ok("tree_get", json!({"workspaceId": ws_id}));
@@ -131,7 +131,7 @@ fn environments_preview_and_curl() {
 
     let p = h.ok(
         "render_preview",
-        json!({"id": ws_id, "text": "{{ _.base }}/x/{{ nope }}"}),
+        json!({"id": ws_id, "text": "${base}/x/${nope}"}),
     );
     assert_eq!(p["error"], "unresolved variable: nope");
     assert_eq!(p["refs"].as_array().unwrap().len(), 2);
@@ -517,7 +517,7 @@ fn realtime_commands_connect_send_and_log() {
     );
     let mut doc = r.clone();
     doc["url"] = json!(format!("{}/ws", base.replace("http", "ws")));
-    doc["headers"] = json!([{"name": "X-Token", "value": "{{ _.who }}"}]);
+    doc["headers"] = json!([{"name": "X-Token", "value": "${who}"}]);
     h.ok("rt_update", json!({"doc": doc}));
     let mut env = h.ok("env_list", json!({"workspaceId": ws["id"]}))["base"].clone();
     env["data"] = json!({"who": "ipc"});
@@ -537,7 +537,7 @@ fn realtime_commands_connect_send_and_log() {
     );
     h.ok(
         "rt_send",
-        json!({"id": r["id"], "text": "hi {{ _.who }}", "event": null, "ack": false}),
+        json!({"id": r["id"], "text": "hi ${who}", "event": null, "ack": false}),
     );
     let log = (0..100)
         .find_map(|_| {
@@ -577,7 +577,7 @@ fn grpc_commands_with_protos_and_reflection() {
     let mut doc = r.clone();
     doc["url"] = json!(url);
     doc["method"] = json!("/demo.Greeter/SayHello");
-    doc["message"] = json!(r#"{"name": "{{ _.who }}"}"#);
+    doc["message"] = json!(r#"{"name": "${who}"}"#);
     h.ok("grpc_update", json!({"doc": doc.clone()}));
     let mut env = h.ok("env_list", json!({"workspaceId": ws["id"]}))["base"].clone();
     env["data"] = json!({"who": "ipc"});
@@ -656,7 +656,7 @@ fn import_export_secrets_code_and_git_commands() {
     let postman = json!({
         "info": {"name": "Shop", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
         "variable": [{"key": "base", "value": "https://shop.test"}],
-        "item": [{"name": "List", "request": {"method": "GET", "url": "{{base}}/orders", "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{token}}"}]}}}]
+        "item": [{"name": "List", "request": {"method": "GET", "url": "${base}/orders", "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "${token}"}]}}}]
     })
     .to_string();
 
@@ -728,7 +728,7 @@ fn import_export_secrets_code_and_git_commands() {
         out["content"]
             .as_str()
             .unwrap()
-            .contains("\"{{base}}/orders\"")
+            .contains("\"${base}/orders\"")
     );
 
     // git: open a repo folder, link, status, commit, log

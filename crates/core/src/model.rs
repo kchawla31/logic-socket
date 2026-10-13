@@ -520,7 +520,7 @@ pub struct RealtimeRequest {
     pub url: String,
     pub headers: Vec<KeyValue>,
     pub authentication: Auth,
-    /// Message composer content (supports `{{ variables }}`).
+    /// Message composer content (supports `${variables}`).
     pub payload: String,
     /// `text` | `json`
     pub payload_format: String,
@@ -579,7 +579,7 @@ pub struct GrpcRequest {
     pub schema_source: String,
     /// `/package.Service/Method`
     pub method: String,
-    /// JSON request message (supports `{{ variables }}`).
+    /// JSON request message (supports `${variables}`).
     pub message: String,
     pub metadata: Vec<KeyValue>,
     pub timeout_ms: u64,
@@ -614,7 +614,7 @@ pub enum KeySource {
     Keychain,
     /// Process environment variable, e.g. `ANTHROPIC_API_KEY`.
     Env { var: String },
-    /// Template rendered against the workspace environment, e.g. `{{ _.openai_key }}`.
+    /// Template rendered against the workspace environment, e.g. `${openai_key}`.
     Template { template: String },
 }
 
@@ -637,7 +637,7 @@ model!(LlmProvider, "LlmProvider", "llmp");
 pub struct LlmPromptMessage {
     /// `user` | `assistant`
     pub role: String,
-    /// Supports `{{ variables }}`.
+    /// Supports `${variables}`.
     pub text: String,
 }
 

@@ -15,7 +15,7 @@ fn input(script: &str) -> ScriptInput {
             id: "req_1".into(),
             name: "Get user".into(),
             method: "GET".into(),
-            url: "https://api.example.com/users/{{ _.id }}".into(),
+            url: "https://api.example.com/users/${id}".into(),
             query: vec![ScriptKv {
                 key: "page".into(),
                 value: "1".into(),
@@ -125,7 +125,7 @@ async fn variables_follow_scope_precedence() {
         v.set('value', 'local-value');
         ls.environment.set('r2', v.get('value'));
         ls.environment.set('r3', v.get('host'));
-        ls.environment.set('r4', v.replaceIn('{{ host }}/{{value}}'));
+        ls.environment.set('r4', v.replaceIn('${host}/${value}'));
         "#,
     );
     i.iteration_data = vars(json!({ "value": "iterationData-value" }));
@@ -215,7 +215,7 @@ async fn request_url_query_headers_method_mutations() {
     let o = exec(input(
         r#"
         const r = ls.request;
-        if (r.url.toString() !== 'https://api.example.com/users/{{ _.id }}?page=1') throw new Error(r.url.toString());
+        if (r.url.toString() !== 'https://api.example.com/users/${id}?page=1') throw new Error(r.url.toString());
         if (r.url.getHost() !== 'api.example.com') throw new Error('host ' + r.url.getHost());
         r.url.query.upsert({ key: 'page', value: '2' });
         r.url.addQueryParams('sort=asc&q=a b');
@@ -252,7 +252,7 @@ async fn request_url_assignment_and_body_and_auth() {
         r#"
         ls.request.url = 'https://other.io/v2/items?limit=5';
         ls.request.body.update({ mode: 'raw', raw: JSON.stringify({ a: 1 }), options: { raw: { language: 'json' } } });
-        ls.request.auth.update({ type: 'bearer', bearer: [{ key: 'token', value: '{{ _.token }}' }] });
+        ls.request.auth.update({ type: 'bearer', bearer: [{ key: 'token', value: '${token}' }] });
         "#,
     ))
     .await;
@@ -263,7 +263,7 @@ async fn request_url_assignment_and_body_and_auth() {
     assert_eq!(r.body["raw"], json!("{\"a\":1}"));
     assert_eq!(
         r.auth,
-        json!({ "type": "bearer", "token": "{{ _.token }}", "prefix": null, "disabled": false })
+        json!({ "type": "bearer", "token": "${token}", "prefix": null, "disabled": false })
     );
 }
 

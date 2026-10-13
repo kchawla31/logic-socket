@@ -298,7 +298,7 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
               )}
               <p className="px-3 py-3 text-[12px] text-muted">
                 Tip: use <code className="font-mono">/:name</code> in the URL for path parameters and type{' '}
-                <code className="font-mono">{'{{'}</code> to insert a variable.
+                <code className="font-mono">{'${'}</code> to insert a variable.
               </p>
             </div>
           )}
@@ -345,7 +345,7 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
                   value={req.body.text ?? ''}
                   onChange={text => setBody({ text })}
                   language={mime === 'application/json' ? 'json' : 'text'}
-                  placeholder={mime === 'application/json' ? '{\n  "name": "{{ _.user }}"\n}' : ''}
+                  placeholder={mime === 'application/json' ? '{\n  "name": "${user}"\n}' : ''}
                 />
               )}
               {mime === 'application/x-www-form-urlencoded' && (
@@ -447,7 +447,7 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
             <Kbd>{modKey()}</Kbd> <Kbd>L</Kbd> focus URL
           </span>
           <span>
-            <Kbd>{'{{'}</Kbd> variables
+            <Kbd>{'${'}</Kbd> variables
           </span>
         </div>
       </div>

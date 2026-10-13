@@ -376,7 +376,7 @@ impl Engine {
                 });
             }
         }
-        // Persist environment changes before rendering so `{{ vars }}` see them.
+        // Persist environment changes before rendering so `${vars}` see them.
         if !pre_env_changes.is_empty() || jar_changed {
             let sealed = self.sealed(&pre_env_changes)?;
             self.store.batch(|tx| {

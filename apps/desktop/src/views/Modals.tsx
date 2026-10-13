@@ -1,9 +1,9 @@
-import { Check, Eye, EyeOff, KeyRound, Lock, LockOpen, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Check, Lock, Plus } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ThemeSwitch } from '../components/Brand';
-import { CodeEditor } from '../components/editors';
-import { Button, CopyButton, IconButton, Input, Modal, Toggle, useDialog, useToast } from '../components/ui';
+import { VarMapEditor } from '../components/VarMapEditor';
+import { Button, CopyButton, Input, Modal, Toggle, useDialog, useToast } from '../components/ui';
 import { invalidateContextVars } from '../components/VarInput';
 import { api, type EnvList, type Environment, errorText, type Settings, type VaultStatus } from '../lib/api';
 import { cn } from '../lib/utils';
@@ -23,10 +23,15 @@ export function EnvironmentModal({
   const dialog = useDialog();
   const [list, setList] = useState<EnvList | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
-  const [text, setText] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [gen, setGen] = useState(0);
+  const envRef = useRef<Environment | null>(null);
 
-  const reload = () => api.envList(workspaceId).then(setList);
+  const reload = () =>
+    api.envList(workspaceId).then(l => {
+      setList(l);
+      setGen(n => n + 1);
+    });
   useEffect(() => {
     if (open) reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -34,27 +39,19 @@ export function EnvironmentModal({
 
   const all = useMemo(() => (list ? [list.base, ...list.subs] : []), [list]);
   const sel = all.find(e => e.id === selId) ?? all[0];
+  if (sel) envRef.current = sel;
   useEffect(() => {
-    if (sel) setText(JSON.stringify(plainData(sel), null, 2));
     setErr(null);
-  }, [sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sel?.id]);
 
-  // the JSON editor holds plain variables; secrets are edited separately and kept as stored
-  const merged = (env: Environment, t: string) => {
-    const data = JSON.parse(t || '{}');
-    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('must be a JSON object');
-    const secrets = Object.fromEntries(env.secretKeys.filter(k => k in env.data).map(k => [k, env.data[k]]));
-    return { ...secrets, ...data };
-  };
-  const save = async (env: Environment, t: string) => {
-    try {
-      const data = merged(env, t);
-      setErr(null);
-      await api.envUpdate({ ...env, data });
-      invalidateContextVars();
-    } catch (e) {
-      setErr(errorText(e));
-    }
+  const commit = (data: Record<string, unknown>, secretKeys: string[]) => {
+    const cur = envRef.current;
+    if (!cur || !list) return;
+    const next = { ...cur, data, secretKeys };
+    envRef.current = next;
+    setList(list.base.id === next.id ? { ...list, base: next } : { ...list, subs: list.subs.map(s => (s.id === next.id ? next : s)) });
+    setErr(null);
+    api.envUpdate(next).then(() => invalidateContextVars()).catch(e => setErr(errorText(e)));
   };
 
   return (
@@ -96,8 +93,15 @@ export function EnvironmentModal({
                 className="max-w-xs font-medium"
                 value={sel.name}
                 disabled={sel.id === list.base.id}
-                onChange={e => setList({ ...list, subs: list.subs.map(s => (s.id === sel.id ? { ...s, name: e.target.value } : s)) })}
-                onBlur={() => api.envUpdate({ ...sel, data: merged(sel, text) }).catch(() => {})}
+                onChange={e => {
+                  const name = e.target.value;
+                  envRef.current = envRef.current && envRef.current.id === sel.id ? { ...envRef.current, name } : { ...sel, name };
+                  setList({ ...list, subs: list.subs.map(s => (s.id === sel.id ? { ...s, name } : s)) });
+                }}
+                onBlur={() => {
+                  const cur = envRef.current;
+                  if (cur && cur.id !== list.base.id) api.itemRename(cur.id, cur.name).catch(e => setErr(errorText(e)));
+                }}
               />
               <div className="flex-1" />
               {sel.id !== list.base.id &&
@@ -125,155 +129,24 @@ export function EnvironmentModal({
                 </Button>
               )}
             </div>
-            <div className="shrink-0 border-b border-app px-3 py-1.5 text-[12px] text-muted">
-              {sel.id === list.base.id
-                ? 'Base variables are always available. The active sub-environment overrides them.'
-                : 'Overrides the base environment while active.'}{' '}
-              Reference with <code className="font-mono">{'{{ _.name }}'}</code>; values may reference other variables.
-              {err && <span className="ml-2 text-rose-600 dark:text-rose-400">⚠ {err}</span>}
-            </div>
-            <CodeEditor
-              value={text}
-              onChange={t => {
-                setText(t);
-                save(sel, t);
-              }}
-            />
-            <SecretsPanel
-              env={sel}
-              onChanged={async () => {
-                const l = await api.envList(workspaceId);
-                setList(l);
-                const fresh = [l.base, ...l.subs].find(e => e.id === sel.id);
-                if (fresh) setText(JSON.stringify(plainData(fresh), null, 2));
-              }}
+            <VarMapEditor
+              docId={`${sel.id}:${gen}`}
+              data={sel.data}
+              secretKeys={sel.secretKeys}
+              contextId={workspaceId}
+              error={err}
+              hint={
+                sel.id === list.base.id
+                  ? 'Base variables are always available. The active sub-environment overrides them. Reference with ${name}; values may reference other variables.'
+                  : 'Overrides the base environment while active. Reference with ${name}; values may reference other variables.'
+              }
+              onChange={commit}
+              onReveal={key => api.envReveal(sel.id, key)}
             />
           </div>
         </div>
       )}
     </Modal>
-  );
-}
-
-function plainData(env: Environment) {
-  return Object.fromEntries(Object.entries(env.data).filter(([k]) => !env.secretKeys.includes(k)));
-}
-
-function SecretsPanel({ env, onChanged }: { env: Environment; onChanged: () => void }) {
-  const toast = useToast();
-  const dialog = useDialog();
-  const [shown, setShown] = useState<Record<string, string>>({});
-  const [name, setName] = useState('');
-  const [value, setValue] = useState('');
-  const [editing, setEditing] = useState<string | null>(null);
-  useEffect(() => {
-    setShown({});
-    setEditing(null);
-  }, [env.id]);
-  const run = async (f: () => Promise<unknown>) => {
-    try {
-      await f();
-      onChanged();
-    } catch (e) {
-      toast(errorText(e), 'error');
-    }
-  };
-  const plainKeys = Object.keys(env.data).filter(k => !env.secretKeys.includes(k));
-  return (
-    <div className="shrink-0 border-t border-app bg-subtle px-3 py-2.5">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[12.5px] font-semibold">
-        <Lock className="size-3.5" /> Secrets
-        <span className="font-normal text-muted">— encrypted on this computer, never exported or committed. Use like any variable.</span>
-      </div>
-      {env.secretKeys.map(k => (
-        <div key={k} className="flex h-8 items-center gap-2">
-          <KeyRound className="size-3.5 text-amber-600" />
-          <span className="w-40 truncate font-mono text-[12.5px]">{k}</span>
-          {editing === k ? (
-            <Input
-              autoFocus
-              type="password"
-              className="h-7 flex-1"
-              placeholder="New value"
-              onKeyDown={e => {
-                if (e.key === 'Escape') setEditing(null);
-                if (e.key === 'Enter') {
-                  const v = (e.target as HTMLInputElement).value;
-                  setEditing(null);
-                  run(() => api.envSetVar(env.id, k, v, true));
-                }
-              }}
-            />
-          ) : (
-            <button className="min-w-0 flex-1 truncate text-left font-mono text-[12.5px] text-muted hover:text-app" title="Click to change" onClick={() => setEditing(k)}>
-              {k in shown ? shown[k] || '(empty)' : env.data[k] ? '••••••••••' : '(not set on this computer)'}
-            </button>
-          )}
-          {k in shown && <CopyButton text={shown[k]} />}
-          <IconButton
-            label={k in shown ? 'Hide' : 'Reveal'}
-            onClick={async () => {
-              if (k in shown) {
-                const { [k]: _, ...rest } = shown;
-                setShown(rest);
-              } else {
-                try {
-                  setShown({ ...shown, [k]: await api.envReveal(env.id, k) });
-                } catch (e) {
-                  toast(errorText(e), 'error');
-                }
-              }
-            }}
-          >
-            {k in shown ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-          </IconButton>
-          <IconButton
-            label="Make it a plain variable"
-            onClick={async () => {
-              if (!(await dialog.confirm(`Store “${k}” unencrypted?`, { message: 'It will be visible in the editor, exports and Git.', confirmLabel: 'Make plain' }))) return;
-              run(async () => api.envSetVar(env.id, k, await api.envReveal(env.id, k), false));
-            }}
-          >
-            <LockOpen className="size-3.5" />
-          </IconButton>
-          <IconButton
-            label="Delete"
-            onClick={async () => {
-              if (!(await dialog.confirm(`Delete secret “${k}”?`, { danger: true, confirmLabel: 'Delete' }))) return;
-              const data = { ...env.data };
-              delete data[k];
-              run(() => api.envUpdate({ ...env, data, secretKeys: env.secretKeys.filter(x => x !== k) }));
-            }}
-          >
-            <Trash2 className="size-3.5" />
-          </IconButton>
-        </div>
-      ))}
-      <form
-        className="mt-1 flex items-center gap-2"
-        onSubmit={e => {
-          e.preventDefault();
-          if (!name.trim()) return;
-          const key = name.trim();
-          run(async () => {
-            await api.envSetVar(env.id, key, value, true);
-            setName('');
-            setValue('');
-          });
-        }}
-      >
-        <Input className="h-7 w-44 font-mono" list={`plain-${env.id}`} placeholder="name (or an existing variable)" value={name} onChange={e => setName(e.target.value)} />
-        <datalist id={`plain-${env.id}`}>
-          {plainKeys.map(k => (
-            <option key={k} value={k} />
-          ))}
-        </datalist>
-        <Input className="h-7 flex-1" type="password" placeholder="value" value={value} onChange={e => setValue(e.target.value)} />
-        <Button size="sm" type="submit" disabled={!name.trim()}>
-          <Plus className="size-3.5" /> Add secret
-        </Button>
-      </form>
-    </div>
   );
 }
 

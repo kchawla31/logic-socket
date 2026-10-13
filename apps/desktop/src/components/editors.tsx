@@ -102,7 +102,7 @@ function KeyValueBulk({ items, onChange }: { items: KeyValue[]; onChange: (items
         setText(t);
         onChange(kvFromText(t, items));
       }}
-      placeholder={'Content-Type: application/json\nAuthorization: Bearer {{ _.token }}\n// X-Disabled: off'}
+      placeholder={'Content-Type: application/json\nAuthorization: Bearer ${token}\n// X-Disabled: off'}
     />
   );
 }

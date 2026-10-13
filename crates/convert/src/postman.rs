@@ -20,8 +20,8 @@ pub const SCHEMA_V21: &str = "https://schema.getpostman.com/json/collection/v2.1
 
 static VAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*([^{}]+?)\s*\}\}").unwrap());
 
-/// Postman `{{var}}` → our template syntax. Dynamic variables (`{{$guid}}`) become
-/// faker tags; names that aren't identifiers use bracket notation.
+/// Postman `{{var}}` → `${var}`. Dynamic variables (`{{$guid}}`) become faker tags.
+/// Names that are not a single token are kept as `${_['name']}` so quotes survive.
 pub fn vars_in(s: &str) -> String {
     if !s.contains("{{") {
         return s.to_string();
@@ -38,23 +38,23 @@ pub fn vars_in(s: &str) -> String {
         }
         if name
             .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.')
         {
-            format!("{{{{ {name} }}}}")
+            format!("${{{name}}}")
         } else {
-            format!("{{{{ _['{}'] }}}}", name.replace('\'', "\\'"))
+            format!("${{_['{}']}}", name.replace('\'', "\\'"))
         }
     })
     .into_owned()
 }
 
 static OUR_VAR: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"\{\{\s*(?:_\.([A-Za-z0-9_]+)|_\['([^']+)'\]|([A-Za-z0-9_]+))\s*\}\}"#).unwrap()
+    Regex::new(r"\$\{\s*(?:_\.([A-Za-z0-9_.]+)|_\['([^']+)'\]|([^}]+?))\s*\}").unwrap()
 });
 static OUR_TAG: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"\{%\s*(\w+)\s*([^%]*?)\s*%\}"#).unwrap());
 
-/// Our template syntax → Postman `{{var}}` (best effort; unknown tags are left as-is).
+/// Our `${var}` syntax → Postman `{{var}}` (best effort; unknown tags are left as-is).
 pub fn vars_out(s: &str) -> String {
     let s = OUR_VAR.replace_all(s, |c: &regex::Captures| {
         let n = c

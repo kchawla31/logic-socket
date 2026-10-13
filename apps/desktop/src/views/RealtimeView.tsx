@@ -124,7 +124,7 @@ export function RealtimeView({ id }: { id: string }) {
   const sent = events.filter(e => e.direction === 'out').length;
   const received = events.filter(e => e.direction === 'in').length;
   const isJson = req.payloadFormat === 'json';
-  const payloadError = isJson && req.payload.trim() && !req.payload.includes('{{') && prettyJson(req.payload) === null;
+  const payloadError = isJson && req.payload.trim() && !req.payload.includes('${') && prettyJson(req.payload) === null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -221,7 +221,7 @@ export function RealtimeView({ id }: { id: string }) {
                     value={req.payload}
                     onChange={payload => update({ payload })}
                     language={isJson ? 'json' : 'text'}
-                    placeholder={req.kind === 'socketio' ? '["arg1", {"arg2": true}]  — an array becomes the event arguments' : '{"type": "subscribe", "channel": "{{ _.channel }}"}'}
+                    placeholder={req.kind === 'socketio' ? '["arg1", {"arg2": true}]  — an array becomes the event arguments' : '{"type": "subscribe", "channel": "${channel}"}'}
                   />
                   <div className="flex shrink-0 items-center gap-2 border-t border-app px-3 py-2">
                     {payloadError && <span className="text-[12px] text-amber-600">Not valid JSON</span>}
@@ -260,7 +260,7 @@ export function RealtimeView({ id }: { id: string }) {
                       <textarea
                         value={req.socketioAuth}
                         onChange={e => update({ socketioAuth: e.target.value })}
-                        placeholder={'{"token": "{{ _.token }}"}'}
+                        placeholder={'{"token": "${token}"}'}
                         className="h-24 rounded-md border border-app bg-app p-2 font-mono text-[12.5px] outline-none focus:border-accent"
                       />
                     </label>
