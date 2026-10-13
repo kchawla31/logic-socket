@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { BulkBar, CodeEditor } from '../components/editors';
 import { Badge, Button, Input, Select, Toggle, useToast } from '../components/ui';
 import { VarInput } from '../components/VarInput';
-import { api, type Auth, errorText, type TokenStatus } from '../lib/api';
+import { api, type Auth, errorText, type RevealedOAuthToken, type TokenStatus } from '../lib/api';
 import { authFromText, authToText } from '../lib/utils';
 
 const LABELS: Record<Auth['type'], string> = {
@@ -82,6 +82,75 @@ function defaults(t: Auth['type']): Auth {
   }
 }
 
+const TOKEN_ROWS = [
+  ['accessToken', 'Access token'],
+  ['refreshToken', 'Refresh token'],
+  ['idToken', 'ID token'],
+] as const;
+
+/** Show the saved access token, refresh token, and ID token, and copy any of them. */
+export function OAuthTokenCopies({ ownerId, tokenKey }: { ownerId: string; tokenKey: string }) {
+  const toast = useToast();
+  const [shown, setShown] = useState<RevealedOAuthToken | null>(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    setShown(null);
+  }, [ownerId, tokenKey]);
+  const toggle = async () => {
+    if (shown) {
+      setShown(null);
+      return;
+    }
+    setLoading(true);
+    try {
+      setShown(await api.oauth2Reveal(ownerId));
+    } catch (err) {
+      toast(errorText(err), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+  const copy = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast(`Copied ${label}`, 'success');
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+  };
+  return (
+    <div className="mt-2">
+      <Button size="sm" variant="ghost" onClick={toggle} loading={loading}>
+        {shown ? 'Hide tokens' : 'Show tokens'}
+      </Button>
+      {shown && (
+        <div className="mt-2 flex flex-col gap-2">
+          {TOKEN_ROWS.map(([key, label]) => {
+            const value = shown[key];
+            return (
+              <div key={key}>
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="text-[12px] text-muted">{label}</span>
+                  {value && (
+                    <Button size="sm" variant="ghost" onClick={() => copy(label.toLowerCase(), value)}>
+                      Copy
+                    </Button>
+                  )}
+                </div>
+                {value ? (
+                  <textarea readOnly value={value} rows={3} aria-label={label} onFocus={e => e.currentTarget.select()} className="w-full resize-y rounded-md border border-app bg-app p-2 font-mono text-[11.5px] outline-none focus:border-accent" />
+                ) : (
+                  <p className="text-[12px] text-muted">Not returned by the provider.</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OAuth2Token({ ownerId, grantType }: { ownerId: string; grantType: string }) {
   const toast = useToast();
   const [status, setStatus] = useState<TokenStatus | null>(null);
@@ -128,6 +197,7 @@ function OAuth2Token({ ownerId, grantType }: { ownerId: string; grantType: strin
           </Button>
         )}
       </div>
+      {status?.hasToken && <OAuthTokenCopies ownerId={ownerId} tokenKey={`${status.preview ?? ''}:${status.expiresAt ?? ''}`} />}
       {status?.scope && <div className="mt-1 text-[12px] text-muted">scope: {status.scope}</div>}
       {grantType === 'authorization_code' && (
         <form

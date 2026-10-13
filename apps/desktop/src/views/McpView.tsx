@@ -21,6 +21,7 @@ import {
   type ToolView,
 } from '../lib/api';
 import { clockTime, cn, curlToMcp, formatMs, looksLikeCurl, presentError } from '../lib/utils';
+import { OAuthTokenCopies } from './AuthEditor';
 import { useProviders } from './AiProviders';
 import { CodeModal } from './ImportExport';
 import { clipboardPlainText, useAutosave } from './RequestView';
@@ -494,6 +495,7 @@ function McpAuth({ server, update, contextId, beforeSignIn, afterSignIn, connect
               </Button>
             )}
           </div>
+          {token?.hasToken && <OAuthTokenCopies ownerId={server.id} tokenKey={`${token.preview ?? ''}:${token.expiresAt ?? ''}`} />}
           {busy && (
             <form
               className="flex gap-2"

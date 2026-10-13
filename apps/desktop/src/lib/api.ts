@@ -84,6 +84,12 @@ export interface TokenStatus {
   tokenType?: string | null;
 }
 
+export interface RevealedOAuthToken {
+  accessToken: string;
+  refreshToken?: string | null;
+  idToken?: string | null;
+}
+
 export interface BodyParam {
   id?: string | null;
   name: string;
@@ -747,6 +753,7 @@ export const api = {
   rtDisconnect: (id: string) => invoke<void>('rt_disconnect', { id }),
   rtLog: (id: string) => invoke<RtEvent[]>('rt_log', { id }),
   oauth2Status: (ownerId: string) => invoke<TokenStatus>('oauth2_status', { ownerId }),
+  oauth2Reveal: (ownerId: string) => invoke<RevealedOAuthToken>('oauth2_reveal', { ownerId }),
   oauth2Authorize: (ownerId: string) => invoke<TokenStatus>('oauth2_authorize', { ownerId }),
   oauth2SubmitCallback: (ownerId: string, callback: string) => invoke<void>('oauth2_submit_callback', { ownerId, callback }),
   oauth2Clear: (ownerId: string) => invoke<void>('oauth2_clear', { ownerId }),

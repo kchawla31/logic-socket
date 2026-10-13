@@ -88,6 +88,32 @@ pub fn oauth2_clear(state: State<'_, AppState>, owner_id: String) -> CmdResult<(
     state.engine.oauth2_clear(&owner_id).map_err(e)
 }
 
+/// Decrypted tokens, for an explicit show or copy. Status stays redacted.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevealedOAuthToken {
+    access_token: String,
+    refresh_token: Option<String>,
+    id_token: Option<String>,
+}
+
+#[tauri::command]
+pub fn oauth2_reveal(state: State<'_, AppState>, owner_id: String) -> CmdResult<RevealedOAuthToken> {
+    let t = state
+        .engine
+        .oauth2_cached(&owner_id)
+        .map_err(e)?
+        .ok_or_else(|| "no OAuth token yet. Click Get token first.".to_string())?;
+    if t.body.access_token.is_empty() {
+        return Err("no OAuth token yet. Click Get token first.".into());
+    }
+    Ok(RevealedOAuthToken {
+        access_token: t.body.access_token,
+        refresh_token: t.body.refresh_token.filter(|s| !s.is_empty()),
+        id_token: t.body.id_token.filter(|s| !s.is_empty()),
+    })
+}
+
 /// The browser landed on a redirect this app could not catch. `callback` is that URL.
 #[tauri::command]
 pub fn oauth2_submit_callback(state: State<'_, AppState>, owner_id: String, callback: String) -> CmdResult<()> {
