@@ -221,6 +221,7 @@ export function RealtimeView({ id }: { id: string }) {
                     value={req.payload}
                     onChange={payload => update({ payload })}
                     language={isJson ? 'json' : 'text'}
+                    contextId={id}
                     placeholder={req.kind === 'socketio' ? '["arg1", {"arg2": true}]  — an array becomes the event arguments' : '{"type": "subscribe", "channel": "${channel}"}'}
                   />
                   <div className="flex shrink-0 items-center gap-2 border-t border-app px-3 py-2">

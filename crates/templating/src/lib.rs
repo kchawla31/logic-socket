@@ -116,27 +116,23 @@ impl Context {
         self.vars.insert(key, value);
     }
 
-    /// Resolve a dotted path (`a.b.0.c`), with an optional leading `_.`.
+    /// Resolve `path`. A stored name that contains a period (`api.key`) wins
+    /// over walking a shorter object path. Otherwise `a.b.0.c` walks objects
+    /// and arrays. A leading `_.` is ignored.
     pub fn lookup(&self, path: &str) -> Option<&Value> {
         let path = path.strip_prefix("_.").unwrap_or(path);
-        let mut parts = path.split('.');
-        let mut cur = self.vars.get(parts.next()?)?;
-        for p in parts {
-            cur = match cur {
-                Value::Object(m) => m.get(p)?,
-                Value::Array(a) => a.get(p.parse::<usize>().ok()?)?,
-                _ => return None,
-            };
-        }
-        Some(cur)
+        let (key, rest) = literal_key_prefix(path, &self.vars)?;
+        walk(self.vars.get(key)?, rest)
     }
 
-    /// Source layer of the top-level key in `path`.
+    /// Source layer of the stored key in `path`.
     pub fn source_of(&self, path: &str) -> Option<&str> {
         let path = path.strip_prefix("_.").unwrap_or(path);
-        self.sources
-            .get(path.split('.').next()?)
-            .map(String::as_str)
+        let key = match literal_key_prefix(path, &self.vars) {
+            Some((key, _)) => key,
+            None => path.split('.').next()?,
+        };
+        self.sources.get(key).map(String::as_str)
     }
 
     fn to_template_value(&self) -> minijinja::Value {
@@ -165,7 +161,10 @@ fn is_self_recursive(s: &str, key: &str) -> bool {
         let after = after.strip_prefix("_.").unwrap_or(after).trim_start();
         if let Some(tail) = after.strip_prefix(key) {
             let tail = tail.trim_start();
-            if tail.starts_with('}') || tail.starts_with('|') || tail.starts_with('.') || tail.starts_with('[')
+            if tail.starts_with('}')
+                || tail.starts_with('|')
+                || tail.starts_with('.')
+                || tail.starts_with('[')
             {
                 return true;
             }
@@ -185,7 +184,11 @@ pub fn legacy_to_dollar(input: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if input[i..].starts_with("{%") || input[i..].starts_with("{#") {
-            let closer = if input[i..].starts_with("{%") { "%}" } else { "#}" };
+            let closer = if input[i..].starts_with("{%") {
+                "%}"
+            } else {
+                "#}"
+            };
             if let Some(rel) = input[i + 2..].find(closer) {
                 let end = i + 2 + rel + closer.len();
                 out.push_str(&input[i..end]);
@@ -259,13 +262,17 @@ fn canonical_expr(inner: &str) -> String {
 }
 
 /// Turn user text into MiniJinja. `${expr}` becomes a variable. `{{` stays literal.
-fn to_minijinja(input: &str) -> String {
+fn to_minijinja(input: &str, ctx: &Context) -> String {
     let mut out = String::with_capacity(input.len() + 8);
     let bytes = input.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
         if input[i..].starts_with("{%") || input[i..].starts_with("{#") {
-            let closer = if input[i..].starts_with("{%") { "%}" } else { "#}" };
+            let closer = if input[i..].starts_with("{%") {
+                "%}"
+            } else {
+                "#}"
+            };
             if let Some(rel) = input[i + 2..].find(closer) {
                 let end = i + 2 + rel + closer.len();
                 out.push_str(&input[i..end]);
@@ -277,7 +284,7 @@ fn to_minijinja(input: &str) -> String {
             && let Some((expr, next)) = parse_dollar(input, i)
         {
             out.push_str("{{ ");
-            out.push_str(&jinja_expr(&expr));
+            out.push_str(&jinja_expr(&expr, ctx));
             out.push_str(" }}");
             i = next;
             continue;
@@ -328,18 +335,12 @@ fn parse_dollar(input: &str, start: usize) -> Option<(String, usize)> {
     None
 }
 
-fn jinja_expr(expr: &str) -> String {
+fn jinja_expr(expr: &str, ctx: &Context) -> String {
     let t = expr.trim();
     let t = t.strip_prefix("_.").map(str::trim_start).unwrap_or(t);
     let (head, filters) = split_filter(t);
     let head = head.trim();
-    let rendered = if let Some(name) = bracket_key(head) {
-        format!("_['{}']", escape_sq(&name))
-    } else if loose_name(head) {
-        format!("_['{}']", escape_sq(head))
-    } else {
-        head.to_string()
-    };
+    let rendered = rendered_head(head, ctx);
     if filters.is_empty() {
         rendered
     } else {
@@ -392,6 +393,85 @@ fn bracket_key(s: &str) -> Option<String> {
     None
 }
 
+/// How `${head}` is written for MiniJinja.
+///
+/// A stored key whose name is not a plain identifier (`api.key`, `api-key`)
+/// is read with `_['api.key']`. A plain name such as `user.id` stays an
+/// attribute path so a missing field is still reported as `user.id`.
+fn rendered_head(head: &str, ctx: &Context) -> String {
+    if let Some(name) = bracket_key(head) {
+        return format!("_['{}']", escape_sq(&name));
+    }
+    if loose_name(head) {
+        return format!("_['{}']", escape_sq(head));
+    }
+    if let Some((key, rest)) = literal_key_prefix(head, &ctx.vars)
+        && !plain_ident(key)
+    {
+        let base = format!("_['{}']", escape_sq(key));
+        if rest.is_empty() {
+            return base;
+        }
+        if rest.starts_with('[') {
+            return format!("{base}{rest}");
+        }
+        return format!("{base}.{rest}");
+    }
+    head.to_string()
+}
+
+/// Longest stored key that is `head` or a dot-separated prefix of it.
+/// `obj.a[1].b` can match the key `obj`, leaving the rest `a[1].b`.
+fn literal_key_prefix<'a>(head: &'a str, vars: &Map<String, Value>) -> Option<(&'a str, &'a str)> {
+    if vars.contains_key(head) {
+        return Some((head, ""));
+    }
+    let bytes = head.as_bytes();
+    let mut depth = 0i32;
+    let mut cuts = Vec::new();
+    for (i, &c) in bytes.iter().enumerate() {
+        match c {
+            b'[' | b'(' => depth += 1,
+            b']' | b')' => depth -= 1,
+            b'.' if depth == 0 => cuts.push(i),
+            _ => {}
+        }
+    }
+    for &i in cuts.iter().rev() {
+        let prefix = &head[..i];
+        if !prefix.is_empty() && vars.contains_key(prefix) {
+            return Some((prefix, &head[i + 1..]));
+        }
+    }
+    None
+}
+
+fn walk<'a>(mut cur: &'a Value, rest: &str) -> Option<&'a Value> {
+    if rest.is_empty() {
+        return Some(cur);
+    }
+    for part in rest.split('.') {
+        if part.is_empty() {
+            return None;
+        }
+        cur = match cur {
+            Value::Object(m) => m.get(part)?,
+            Value::Array(a) => a.get(part.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    Some(cur)
+}
+
+fn plain_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_alphabetic() || first == '_' => {}
+        _ => return false,
+    }
+    s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// A single token that MiniJinja would not accept as an identifier (`api-key`).
 fn loose_name(s: &str) -> bool {
     if s.is_empty() || s.contains(['.', '[', ']', '(', ')', ' ', '\t', '{', '}', '|', '\'', '"']) {
@@ -416,7 +496,11 @@ fn has_empty_dollar(input: &str) -> bool {
     let mut i = 0;
     while i < bytes.len() {
         if input[i..].starts_with("{%") || input[i..].starts_with("{#") {
-            let closer = if input[i..].starts_with("{%") { "%}" } else { "#}" };
+            let closer = if input[i..].starts_with("{%") {
+                "%}"
+            } else {
+                "#}"
+            };
             if let Some(rel) = input[i + 2..].find(closer) {
                 i = i + 2 + rel + closer.len();
                 continue;
@@ -450,7 +534,11 @@ fn dollar_names(input: &str) -> Vec<String> {
     let mut i = 0;
     while i < bytes.len() {
         if input[i..].starts_with("{%") || input[i..].starts_with("{#") {
-            let closer = if input[i..].starts_with("{%") { "%}" } else { "#}" };
+            let closer = if input[i..].starts_with("{%") {
+                "%}"
+            } else {
+                "#}"
+            };
             if let Some(rel) = input[i + 2..].find(closer) {
                 i = i + 2 + rel + closer.len();
                 continue;
@@ -530,13 +618,9 @@ impl Renderer {
         // `${}` is what you get while typing a variable. MiniJinja would see `{{  }}`
         // and report "unexpected end of variable block", which does not name the cause.
         if has_empty_dollar(input) {
-            return keep_or(
-                mode,
-                input,
-                RenderError::Template("empty variable".into()),
-            );
+            return keep_or(mode, input, RenderError::Template("empty variable".into()));
         }
-        let prepared = to_minijinja(input);
+        let prepared = to_minijinja(input, ctx);
         match self.render_inner(&prepared, ctx) {
             Ok(out) => {
                 // A variable whose value is a tag (`${id}` → `{% uuid %}`) renders twice,
@@ -789,5 +873,52 @@ mod tests {
         assert!(host.resolved);
         assert_eq!(host.source.as_deref(), Some("Base"));
         assert!(!refs.iter().find(|x| x.name == "missing").unwrap().resolved);
+    }
+
+    #[test]
+    fn variable_names_with_periods_are_literal_keys() {
+        let (r, c) = ctx(vec![(
+            "Base",
+            json!({
+                "api.key": "secret",
+                "user": {"id": "1"},
+                "a.b": {"c": "x"},
+                "api": {"key": "nested"},
+            }),
+        )]);
+        assert_eq!(
+            r.render_str("${api.key}", &c, Mode::Throw).unwrap(),
+            "secret"
+        );
+        assert_eq!(r.render_str("${ user.id }", &c, Mode::Throw).unwrap(), "1");
+        assert_eq!(r.render_str("${a.b.c}", &c, Mode::Throw).unwrap(), "x");
+        assert_eq!(c.lookup("api.key"), Some(&json!("secret")));
+        assert_eq!(c.lookup("user.id"), Some(&json!("1")));
+        assert_eq!(c.source_of("api.key"), Some("Base"));
+        assert_eq!(c.source_of("user.id"), Some("Base"));
+        let err = r.render_str("${missing.key}", &c, Mode::Throw).unwrap_err();
+        assert_eq!(err, RenderError::Unresolved(vec!["missing.key".into()]));
+    }
+
+    #[test]
+    fn dotted_name_extends_the_same_key_from_an_earlier_layer() {
+        let (_, c) = ctx(vec![
+            ("Base", json!({"api.key": "https://ex.test"})),
+            ("Sub", json!({"api.key": "${api.key}/v2"})),
+        ]);
+        assert_eq!(c.lookup("api.key"), Some(&json!("https://ex.test/v2")));
+    }
+
+    #[test]
+    fn a_dotted_name_in_a_json_body_is_substituted() {
+        let (r, c) = ctx(vec![(
+            "Base",
+            json!({"api.key": "secret", "user": {"id": 7}}),
+        )]);
+        let body = "{\n  \"token\": \"${api.key}\",\n  \"id\": ${user.id}\n}";
+        assert_eq!(
+            r.render_str(body, &c, Mode::Throw).unwrap(),
+            "{\n  \"token\": \"secret\",\n  \"id\": 7\n}"
+        );
     }
 }

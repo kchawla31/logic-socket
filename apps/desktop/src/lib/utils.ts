@@ -124,6 +124,19 @@ export interface Segment {
   name?: string;
 }
 
+/** True when `name` is a stored variable or a path under one (`user.id`, `api.key`). */
+export function variableDefined(names: Set<string>, name: string | undefined): boolean {
+  if (!name) return false;
+  if (names.has(name)) return true;
+  const parts = name.split('.');
+  let prefix = '';
+  for (let i = 0; i < parts.length - 1; i++) {
+    prefix = prefix ? `${prefix}.${parts[i]}` : parts[i];
+    if (names.has(prefix)) return true;
+  }
+  return false;
+}
+
 export function tokenizeTemplate(text: string): Segment[] {
   const out: Segment[] = [];
   const re = /\$\{\s*([^}]*?)\s*\}|\{%\s*([^%]*?)\s*%\}/g;

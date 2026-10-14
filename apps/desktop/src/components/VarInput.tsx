@@ -2,7 +2,7 @@ import { type ClipboardEvent, type KeyboardEvent, useEffect, useMemo, useRef, us
 import { createPortal } from 'react-dom';
 
 import { api, onDbChanged, type VarInfo } from '../lib/api';
-import { cn, tokenizeTemplate } from '../lib/utils';
+import { cn, tokenizeTemplate, variableDefined } from '../lib/utils';
 
 // Context variables cached per context id; invalidated on any DB change.
 const cache = new Map<string, Promise<VarInfo[]>>();
@@ -37,11 +37,6 @@ function sourceRank(source: string): number {
   if (source.startsWith('Global:')) return 1;
   if (source === 'Base Environment' || !source) return 3;
   return 0;
-}
-
-function varDefined(names: Set<string>, name: string | undefined): boolean {
-  if (!name) return false;
-  return names.has(name) || names.has(name.split('.')[0]);
 }
 
 export function useContextVars(contextId?: string): VarInfo[] {
@@ -225,7 +220,7 @@ export function VarInput({
                   'rounded-[3px]',
                   s.kind === 'tag'
                     ? 'bg-violet-500/20 text-violet-700 dark:text-violet-300'
-                    : varDefined(names, s.name) || !contextId
+                    : variableDefined(names, s.name) || !contextId
                       ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
                       : 'bg-rose-500/20 text-rose-700 dark:text-rose-300',
                 )}

@@ -15,6 +15,7 @@ import {
   splitQuery,
   statusTone,
   tokenizeTemplate,
+  variableDefined,
   dropSortKey,
   htmlExcerpt,
   presentError,
@@ -33,6 +34,14 @@ describe('tokenizeTemplate', () => {
   it('keeps plain text and strips filters', () => {
     expect(tokenizeTemplate('plain')).toEqual([{ text: 'plain', kind: 'text' }]);
     expect(tokenizeTemplate('${name | upper}')[0].name).toBe('name');
+  });
+  it('treats a dotted name as defined when that key or a prefix exists', () => {
+    const names = new Set(['api.key', 'user', 'a.b']);
+    expect(variableDefined(names, 'api.key')).toBe(true);
+    expect(variableDefined(names, 'user.id')).toBe(true);
+    expect(variableDefined(names, 'a.b.c')).toBe(true);
+    expect(variableDefined(names, 'missing.key')).toBe(false);
+    expect(variableDefined(names, 'host')).toBe(false);
   });
 });
 

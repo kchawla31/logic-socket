@@ -288,7 +288,7 @@ export function GrpcView({ id, workspaceId }: { id: string; workspaceId: string 
                   </Button>
                 )}
               </div>
-              <CodeEditor value={req.message} onChange={message => update({ message })} />
+              <CodeEditor value={req.message} onChange={message => update({ message })} contextId={id} />
               {streaming && method?.clientStreaming && (
                 <div className="flex shrink-0 items-center gap-2 border-t border-app px-3 py-2">
                   <span className="text-[11.5px] text-muted">

@@ -241,7 +241,7 @@ export function VarMapEditor({
         <Toggle checked={jsonOn} onChange={showJson} label="JSON" />
       </div>
       {jsonOn ? (
-        <CodeEditor value={jsonText} onChange={editJson} />
+        <CodeEditor value={jsonText} onChange={editJson} contextId={contextId} />
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
           {visible.map((r, i) => {

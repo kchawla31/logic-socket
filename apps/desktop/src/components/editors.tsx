@@ -1,6 +1,8 @@
 import { javascript } from '@codemirror/lang-javascript';
 import { editorTheme } from '../lib/editorTheme';
 import { json } from '@codemirror/lang-json';
+import { jsonSearchEscapes } from '../lib/searchPanel';
+import { variableExtensions } from '../lib/varEditor';
 import { EditorView } from '@codemirror/view';
 import CodeMirror from '@uiw/react-codemirror';
 import { Plus, Trash2 } from 'lucide-react';
@@ -10,7 +12,7 @@ import ReactMarkdown from 'react-markdown';
 import type { KeyValue } from '../lib/api';
 import { cn, kvFromText, kvToText } from '../lib/utils';
 import { CopyButton, Toggle } from './ui';
-import { VarInput } from './VarInput';
+import { useContextVars, VarInput } from './VarInput';
 
 export function useDark(): boolean {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
@@ -29,6 +31,7 @@ export function CodeEditor({
   readOnly,
   className,
   placeholder,
+  contextId,
 }: {
   value: string;
   onChange?: (v: string) => void;
@@ -36,13 +39,17 @@ export function CodeEditor({
   readOnly?: boolean;
   className?: string;
   placeholder?: string;
+  /** When set, `${` inserts a variable from this request or folder. */
+  contextId?: string;
 }) {
+  const vars = useContextVars(contextId);
   const extensions = useMemo(() => {
-    const ext = [EditorView.lineWrapping];
+    const ext = [EditorView.lineWrapping, jsonSearchEscapes.of(language === 'json')];
     if (language === 'json') ext.push(json());
     if (language === 'javascript') ext.push(javascript());
+    if (contextId) ext.push(variableExtensions(vars));
     return ext;
-  }, [language]);
+  }, [language, contextId, vars]);
   return (
     <div className={cn('min-h-0 flex-1 overflow-hidden', className)}>
       <CodeMirror

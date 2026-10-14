@@ -345,7 +345,8 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
                   value={req.body.text ?? ''}
                   onChange={text => setBody({ text })}
                   language={mime === 'application/json' ? 'json' : 'text'}
-                  placeholder={mime === 'application/json' ? '{\n  "name": "${user}"\n}' : ''}
+                  contextId={id}
+                  placeholder={mime === 'application/json' ? '{\n  "name": "${user}"\n}' : 'Use ${name} for a variable'}
                 />
               )}
               {mime === 'application/x-www-form-urlencoded' && (

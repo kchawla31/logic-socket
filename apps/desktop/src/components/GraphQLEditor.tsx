@@ -23,29 +23,13 @@ import { BookOpen, Braces, RefreshCw, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { api, errorText } from '../lib/api';
+import { type GqlBody, parseGqlBody, serializeGqlBody, variablesText } from '../lib/gqlBody';
 import { cn, timeAgo } from '../lib/utils';
 import { CodeEditor } from './editors';
 import { Button, Select, Split, useToast } from './ui';
 
-interface GqlBody {
-  query: string;
-  variables?: unknown;
-  operationName?: string | null;
-}
-
 /** Schemas cached per request for this app session. */
 const schemaCache = new Map<string, { schema: GraphQLSchema; at: number }>();
-
-export function parseGqlBody(text: string | null | undefined): GqlBody {
-  if (!text?.trim()) return { query: '' };
-  try {
-    const v = JSON.parse(text);
-    if (v && typeof v === 'object' && typeof v.query === 'string') return v as GqlBody;
-  } catch {
-    /* not JSON */
-  }
-  return { query: text };
-}
 
 function operations(query: string): string[] {
   try {
@@ -165,7 +149,7 @@ function Explorer({ schema, onClose }: { schema: GraphQLSchema; onClose: () => v
 export function GraphQLEditor({ requestId, text, onChange }: { requestId: string; text: string; onChange: (text: string) => void }) {
   const toast = useToast();
   const body = useMemo(() => parseGqlBody(text), [text]);
-  const [varsText, setVarsText] = useState(() => (body.variables ? JSON.stringify(body.variables, null, 2) : ''));
+  const [varsText, setVarsText] = useState(() => variablesText(body.variables));
   const [varsError, setVarsError] = useState<string | null>(null);
   const [cached, setCached] = useState(() => schemaCache.get(requestId) ?? null);
   const [loading, setLoading] = useState(false);
@@ -177,11 +161,8 @@ export function GraphQLEditor({ requestId, text, onChange }: { requestId: string
     if (view.current && cached) updateSchema(view.current, cached.schema);
   }, [cached]);
 
-  const write = (next: GqlBody) => {
-    const out: GqlBody = { query: next.query };
-    if (next.variables !== undefined && next.variables !== null && !(typeof next.variables === 'object' && Object.keys(next.variables as object).length === 0)) out.variables = next.variables;
-    if (next.operationName) out.operationName = next.operationName;
-    onChange(JSON.stringify(out, null, 2));
+  const write = (next: GqlBody, nextVars = varsText) => {
+    onChange(serializeGqlBody(next.query, nextVars, next.operationName));
   };
 
   const fetchSchema = async () => {
@@ -257,22 +238,21 @@ export function GraphQLEditor({ requestId, text, onChange }: { requestId: string
                 {varsError && <span className="font-normal normal-case text-rose-600">{varsError}</span>}
               </div>
               <CodeEditor
+                contextId={requestId}
                 value={varsText}
                 placeholder={'{\n  "id": "${user_id}"\n}'}
                 onChange={t => {
                   setVarsText(t);
-                  if (!t.trim()) {
-                    setVarsError(null);
-                    write({ ...body, variables: undefined });
-                    return;
+                  if (!t.trim()) setVarsError(null);
+                  else {
+                    try {
+                      JSON.parse(t);
+                      setVarsError(null);
+                    } catch {
+                      setVarsError(t.includes('${') ? null : 'invalid JSON');
+                    }
                   }
-                  try {
-                    const v = JSON.parse(t);
-                    setVarsError(null);
-                    write({ ...body, variables: v });
-                  } catch {
-                    setVarsError(t.includes('${') ? null : 'invalid JSON');
-                  }
+                  write(body, t);
                 }}
               />
             </div>
