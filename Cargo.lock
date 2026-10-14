@@ -2608,7 +2608,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "logic-socket-desktop"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2707,7 +2707,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "lsock-cli"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anyhow",
  "axum",
@@ -2731,7 +2731,7 @@ dependencies = [
 
 [[package]]
 name = "lsock-convert"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2748,7 +2748,7 @@ dependencies = [
 
 [[package]]
 name = "lsock-core"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "chrono",
  "indexmap 2.14.2",
@@ -2762,7 +2762,7 @@ dependencies = [
 
 [[package]]
 name = "lsock-engine"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "aes-gcm",
  "axum",
@@ -2792,7 +2792,7 @@ dependencies = [
 
 [[package]]
 name = "lsock-grpc"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "futures",
  "http",
@@ -2815,7 +2815,7 @@ dependencies = [
 
 [[package]]
 name = "lsock-http"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "aws-credential-types",
  "aws-sigv4",
@@ -2840,7 +2840,7 @@ dependencies = [
 
 [[package]]
 name = "lsock-llm"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "axum",
  "chrono",
@@ -2855,7 +2855,7 @@ dependencies = [
 
 [[package]]
 name = "lsock-mcp"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2874,7 +2874,7 @@ dependencies = [
 
 [[package]]
 name = "lsock-realtime"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "axum",
  "chrono",
@@ -2890,7 +2890,7 @@ dependencies = [
 
 [[package]]
 name = "lsock-runner"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "axum",
  "chrono",
@@ -2906,7 +2906,7 @@ dependencies = [
 
 [[package]]
 name = "lsock-scripting"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2923,7 +2923,7 @@ dependencies = [
 
 [[package]]
 name = "lsock-templating"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "base64 0.22.1",
  "chrono",
