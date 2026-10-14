@@ -32,6 +32,8 @@ async fn blocking<T: Send + 'static>(
 #[serde(rename_all = "camelCase")]
 pub struct PreviewWorkspace {
     name: String,
+    /// Name a new copy will use. A collection that is already imported becomes "Name v1".
+    import_name: String,
     scope: lsock_core::WorkspaceScope,
     requests: usize,
     folders: usize,
@@ -52,29 +54,36 @@ pub struct ImportPreview {
 #[tauri::command]
 pub fn import_preview(state: State<'_, AppState>, text: String) -> CmdResult<ImportPreview> {
     let i = lsock_convert::import(&text).map_err(e)?;
+    let mut reserved = Vec::new();
+    let mut workspaces = Vec::new();
+    for b in &i.workspaces {
+        let import_name = state
+            .engine
+            .copy_workspace_name(&b.workspace.name, &reserved)
+            .map_err(e)?;
+        reserved.push(import_name.clone());
+        workspaces.push(PreviewWorkspace {
+            name: b.workspace.name.clone(),
+            import_name,
+            scope: b.workspace.scope,
+            requests: b.request_count(),
+            folders: b
+                .walk()
+                .iter()
+                .filter(|x| matches!(x.node, lsock_convert::Node::Folder(..)))
+                .count(),
+            environments: b.base_env.iter().count() + b.sub_envs.len(),
+            exists: b
+                .meta
+                .id
+                .as_ref()
+                .is_some_and(|id| state.engine.store.get::<Workspace>(id).is_ok()),
+        });
+    }
     Ok(ImportPreview {
         format: i.format,
         format_label: i.format.to_string(),
-        workspaces: i
-            .workspaces
-            .iter()
-            .map(|b| PreviewWorkspace {
-                name: b.workspace.name.clone(),
-                scope: b.workspace.scope,
-                requests: b.request_count(),
-                folders: b
-                    .walk()
-                    .iter()
-                    .filter(|x| matches!(x.node, lsock_convert::Node::Folder(..)))
-                    .count(),
-                environments: b.base_env.iter().count() + b.sub_envs.len(),
-                exists: b
-                    .meta
-                    .id
-                    .as_ref()
-                    .is_some_and(|id| state.engine.store.get::<Workspace>(id).is_ok()),
-            })
-            .collect(),
+        workspaces,
         warnings: i.warnings,
     })
 }

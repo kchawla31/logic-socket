@@ -14,6 +14,8 @@ interface Props {
   onDeleted: (ids: string[]) => void;
   onRun: (targetId: string) => void;
   onImport?: () => void;
+  onRenameCollection?: () => void;
+  onDeleteCollection?: () => void;
 }
 
 function useExpanded(workspaceId: string) {
@@ -107,9 +109,11 @@ interface Menu {
   x: number;
   y: number;
   node: TreeNode | null;
+  /** Background click: offer rename and delete for the open collection. */
+  collection?: boolean;
 }
 
-export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDeleted, onRun, onImport }: Props) {
+export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDeleted, onRun, onImport, onRenameCollection, onDeleteCollection }: Props) {
   const toast = useToast();
   const dialog = useDialog();
   const [q, setQ] = useState('');
@@ -371,7 +375,7 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
         }}
         onContextMenu={e => {
           e.preventDefault();
-          setMenu({ x: e.clientX, y: e.clientY, node: null });
+          setMenu({ x: e.clientX, y: e.clientY, node: null, collection: true });
         }}
       >
         {renderNodes(visible, 0, workspaceId)}
@@ -419,6 +423,17 @@ export function Sidebar({ workspaceId, tree, activeId, onOpen, onCreated, onDele
               {!menu.node && onImport && (
                 <MenuItem icon={<Download className="size-3.5" />} onClick={onImport}>
                   Import…
+                </MenuItem>
+              )}
+              {!menu.node && menu.collection && (onRenameCollection || onDeleteCollection) && <div className="my-1 border-t border-app" />}
+              {!menu.node && menu.collection && onRenameCollection && (
+                <MenuItem icon={<Pencil className="size-3.5" />} onClick={onRenameCollection}>
+                  Rename collection
+                </MenuItem>
+              )}
+              {!menu.node && menu.collection && onDeleteCollection && (
+                <MenuItem icon={<Trash2 className="size-3.5" />} danger onClick={onDeleteCollection}>
+                  Delete collection
                 </MenuItem>
               )}
             </>

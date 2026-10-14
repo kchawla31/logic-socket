@@ -180,16 +180,21 @@ export function ImportModal({
               <Badge tone="violet">{preview.formatLabel}</Badge>
               <span className="text-[12.5px] text-muted">detected</span>
             </div>
-            {preview.workspaces.map((w, i) => (
-              <div key={i} className="flex items-center gap-3 px-3 py-2">
-                <span className="font-medium">{w.name}</span>
-                {w.exists && <Badge tone="amber">already here</Badge>}
-                <span className="flex-1" />
-                <span className="text-[12px] text-muted">
-                  {plural(w.requests, 'request')} · {plural(w.folders, 'folder')} · {plural(w.environments, 'environment')}
-                </span>
-              </div>
-            ))}
+            {preview.workspaces.map((w, i) => {
+              const asCopy = !into && !(replace && w.exists);
+              const shown = asCopy ? w.importName : w.name;
+              return (
+                <div key={i} className="flex items-center gap-3 px-3 py-2">
+                  <span className="font-medium">{shown}</span>
+                  {asCopy && w.importName !== w.name && <Badge tone="amber">already imported</Badge>}
+                  {w.exists && !(asCopy && w.importName !== w.name) && <Badge tone="amber">already here</Badge>}
+                  <span className="flex-1" />
+                  <span className="text-[12px] text-muted">
+                    {plural(w.requests, 'request')} · {plural(w.folders, 'folder')} · {plural(w.environments, 'environment')}
+                  </span>
+                </div>
+              );
+            })}
             {preview.warnings.length > 0 && (
               <div className="flex flex-col gap-1 border-t border-app bg-amber-500/5 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-300">
                 {preview.warnings.map((w, i) => (

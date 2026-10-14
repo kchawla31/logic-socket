@@ -176,6 +176,15 @@ fn workspace_update(state: State<'_, AppState>, doc: Doc<Workspace>) -> CmdResul
     state.engine.store.update(&doc).map_err(e)
 }
 
+/// Delete a collection and every document under it (requests, folders,
+/// environments, history, tokens). A Git link is left in place so the file
+/// stays in the repository until it is committed as removed.
+#[tauri::command]
+fn workspace_delete(state: State<'_, AppState>, id: String) -> CmdResult<usize> {
+    let _ws: Doc<Workspace> = state.engine.store.get(&id).map_err(e)?;
+    state.engine.store.delete(&id).map_err(e)
+}
+
 // ------------------------------------------------------------------ generic items
 
 #[tauri::command]
@@ -1062,6 +1071,7 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             workspace_list,
             workspace_create,
             workspace_update,
+            workspace_delete,
             doc_get,
             item_delete,
             item_rename,

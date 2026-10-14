@@ -1,4 +1,4 @@
-import { Command as CommandIcon, Download, FileCode2, Folder, GitBranch, Layers, Upload, ListChecks, Moon, Network, PanelLeftClose, PanelLeftOpen, Plug, Plus, Radio, Send, Settings as SettingsIcon, Sparkles, X } from 'lucide-react';
+import { Command as CommandIcon, Download, FileCode2, Folder, GitBranch, Layers, Upload, ListChecks, Moon, Network, PanelLeftClose, PanelLeftOpen, Pencil, Plug, Plus, Radio, Send, Settings as SettingsIcon, Sparkles, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Logo, ThemeSwitch } from './components/Brand';
@@ -103,6 +103,7 @@ function Shell() {
   const [gitOpen, setGitOpen] = useState(false);
   const [codeFor, setCodeFor] = useState<string | null>(null);
   const [repos, setRepos] = useState<GitRepo[]>([]);
+  const [booted, setBooted] = useState(false);
 
   // Only the newest refresh may write state (a slow one for the previous
   // workspace must not overwrite the tree after a switch).
@@ -115,8 +116,17 @@ function Shell() {
     const ws = await api.workspaceList();
     if (seq !== refreshSeq.current) return;
     setWorkspaces(ws);
+    setBooted(true);
     const current = ws.find(w => w.id === wsId) ?? ws[0];
-    if (!current) return;
+    if (!current) {
+      setTree([]);
+      setEnvs(null);
+      const r = await api.gitRepoList().catch(() => [] as GitRepo[]);
+      if (seq !== refreshSeq.current) return;
+      setRepos(r);
+      setWsId(null);
+      return;
+    }
     if (current.id !== wsId) setWsId(current.id);
     const [t, e, r] = await Promise.all([api.treeGet(current.id), api.envList(current.id), api.gitRepoList().catch(() => [])]);
     if (seq !== refreshSeq.current) return;
@@ -137,18 +147,29 @@ function Shell() {
     };
   }, [refresh, toast]);
 
-  // Per-workspace tabs persistence. Only save once the workspace's tabs were restored.
+  // Per-workspace tabs persistence. Skip the save on the render that switches
+  // collections, or the previous collection's tabs would be written onto the next one.
   const restoredFor = useRef<string | null>(null);
+  const skipTabSave = useRef(true);
   useEffect(() => {
-    if (!wsId) return;
+    if (!wsId) {
+      restoredFor.current = null;
+      return;
+    }
     store('lsock-ws', wsId);
     const saved = load<{ tabs: Tab[]; active: string | null }>(`lsock-tabs-${wsId}`, { tabs: [], active: null });
+    skipTabSave.current = true;
+    restoredFor.current = wsId;
     setTabs(saved.tabs);
     setActive(saved.active);
-    restoredFor.current = wsId;
   }, [wsId]);
   useEffect(() => {
-    if (wsId && restoredFor.current === wsId) store(`lsock-tabs-${wsId}`, { tabs, active });
+    if (!wsId || restoredFor.current !== wsId) return;
+    if (skipTabSave.current) {
+      skipTabSave.current = false;
+      return;
+    }
+    store(`lsock-tabs-${wsId}`, { tabs, active });
   }, [tabs, active, wsId]);
 
   const nodes = useMemo(() => flatten(tree), [tree]);
@@ -210,6 +231,51 @@ function Shell() {
     setWsId(w.id);
   }, [dialog]);
 
+  const renameWorkspace = useCallback(async () => {
+    if (!wsId) return;
+    const current = workspaces.find(w => w.id === wsId);
+    if (!current) return;
+    const name = await dialog.prompt('Rename collection', current.name, 'Rename');
+    if (!name || name === current.name) return;
+    try {
+      await api.itemRename(current.id, name);
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+  }, [dialog, toast, workspaces, wsId]);
+
+  const deleteWorkspace = useCallback(async () => {
+    if (!wsId) return;
+    const current = workspaces.find(w => w.id === wsId);
+    if (!current) return;
+    const synced = repos.some(r => r.workspaces.some(w => w.workspaceId === current.id));
+    const ok = await dialog.confirm(`Delete collection “${current.name}”?`, {
+      danger: true,
+      confirmLabel: 'Delete',
+      message: synced
+        ? 'Requests, folders, environments and history in this collection are removed. Its file stays in the Git repository until you commit that removal.'
+        : 'Requests, folders, environments and history in this collection are removed. This cannot be undone.',
+    });
+    if (!ok) return;
+    try {
+      await api.workspaceDelete(current.id);
+      try {
+        localStorage.removeItem(`lsock-tabs-${current.id}`);
+        localStorage.removeItem(`lsock-expanded-${current.id}`);
+      } catch {
+        /* ignore */
+      }
+      const next = workspaces.find(w => w.id !== current.id);
+      // Clear the tree before switching so the next collection's tabs are not
+      // dropped for being absent from this collection.
+      setTree([]);
+      setEnvs(null);
+      setWsId(next?.id ?? null);
+    } catch (err) {
+      toast(errorText(err), 'error');
+    }
+  }, [dialog, repos, toast, workspaces, wsId]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
@@ -252,7 +318,13 @@ function Shell() {
         run: async () => wsId && open((await api.mcpServerCreate(wsId, 'New MCP Server')).id, 'mcp'),
       },
       { id: 'new-folder', group: 'Actions', label: 'New folder', icon: <Folder className="size-4" />, run: async () => wsId && (await api.folderCreate(wsId, 'New Folder')) },
-      { id: 'new-ws', group: 'Actions', label: 'New collection', icon: <Layers className="size-4" />, keywords: 'workspace', run: newWorkspace },
+      { id: 'new-ws', group: 'Actions', label: 'New collection', icon: <Layers className="size-4" />, keywords: 'workspace create', run: newWorkspace },
+      ...(wsId
+        ? [
+            { id: 'rename-ws', group: 'Actions', label: 'Rename collection', icon: <Pencil className="size-4" />, keywords: 'workspace update', run: renameWorkspace },
+            { id: 'delete-ws', group: 'Actions', label: 'Delete collection', icon: <Trash2 className="size-4" />, keywords: 'workspace remove', run: deleteWorkspace },
+          ]
+        : []),
       {
         id: 'new-ai',
         group: 'Actions',
@@ -336,7 +408,7 @@ function Shell() {
         run: () => open(n.id, n.kind),
       });
     return cmds;
-  }, [nodes, envs, workspaces, wsId, newRequest, newWorkspace, open, setTheme, active, byId, chooseEnv]);
+  }, [nodes, envs, workspaces, wsId, newRequest, newWorkspace, renameWorkspace, deleteWorkspace, open, setTheme, active, byId, chooseEnv]);
 
   const ws = workspaces.find(w => w.id === wsId);
   const activeTab = tabs.find(t => t.id === active);
@@ -355,6 +427,8 @@ function Shell() {
         <Select aria-label="Collection" value={wsId ?? ''} onChange={e => {
             const v = e.target.value;
             if (v === '__new') newWorkspace();
+            else if (v === '__rename') renameWorkspace();
+            else if (v === '__delete') deleteWorkspace();
             else if (v === '__import') setImportOpen(true);
             else if (v === '__export') setExportOpen(true);
             else setWsId(v);
@@ -365,8 +439,10 @@ function Shell() {
             </option>
           ))}
           <option value="__new">+ New collection…</option>
+          {wsId && <option value="__rename">Rename this collection…</option>}
+          {wsId && <option value="__delete">Delete this collection…</option>}
           <option value="__import">↓ Import…</option>
-          <option value="__export">↑ Export this collection…</option>
+          {wsId && <option value="__export">↑ Export this collection…</option>}
         </Select>
         <Select
           aria-label="Environment"
@@ -422,6 +498,8 @@ function Shell() {
             onDeleted={ids => ids.forEach(close)}
             onRun={targetId => open(`${RUNNER}${targetId}`, 'runner')}
             onImport={() => setImportOpen(true)}
+            onRenameCollection={renameWorkspace}
+            onDeleteCollection={deleteWorkspace}
           />
           <main className="panel flex h-full min-h-0 flex-col">
             {tabs.length > 0 && (
@@ -504,6 +582,20 @@ function Shell() {
           </main>
         </Split>
         </div>
+      ) : booted ? (
+        <Empty icon={<Layers className="size-9" />} title="No collections">
+          <div className="flex flex-col items-center gap-3">
+            <span>Create a collection, or import a Postman, OpenAPI, HAR or Insomnia file.</span>
+            <div className="flex gap-2">
+              <Button variant="primary" onClick={newWorkspace}>
+                <Plus className="size-3.5" /> New collection
+              </Button>
+              <Button onClick={() => setImportOpen(true)}>
+                <Download className="size-3.5" /> Import
+              </Button>
+            </div>
+          </div>
+        </Empty>
       ) : (
         <Empty title="Loading…" />
       )}

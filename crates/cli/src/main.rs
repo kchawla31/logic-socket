@@ -130,6 +130,17 @@ enum WorkspaceCmd {
     Tree {
         workspace: String,
     },
+    /// Rename a collection
+    Rename {
+        /// Collection id or name
+        workspace: String,
+        name: String,
+    },
+    /// Delete a collection and everything in it
+    Delete {
+        /// Collection id or name
+        workspace: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -447,6 +458,27 @@ fn workspace(engine: &Engine, c: WorkspaceCmd) -> Result<()> {
             let w = find::<Workspace>(engine, &workspace)?;
             println!("{}", bold(&w.name));
             print_tree(engine, w.id(), 1)?;
+        }
+        WorkspaceCmd::Rename { workspace, name } => {
+            let name = name.trim().to_string();
+            if name.is_empty() {
+                bail!("collection name cannot be empty");
+            }
+            let mut w = find::<Workspace>(engine, &workspace)?;
+            w.name = name;
+            let w = engine.store.update(&w)?;
+            println!("{} {} {}", green("✓"), bold(&w.name), dim(w.id()));
+        }
+        WorkspaceCmd::Delete { workspace } => {
+            let w = find::<Workspace>(engine, &workspace)?;
+            let name = w.name.clone();
+            let n = engine.store.delete(w.id())?;
+            println!(
+                "{} deleted {} {}",
+                green("✓"),
+                bold(&name),
+                dim(&format!("{n} documents"))
+            );
         }
     }
     Ok(())

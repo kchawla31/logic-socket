@@ -1178,7 +1178,11 @@ mod oauth {
     #[tokio::test]
     async fn authorization_code_catches_localhost_on_either_stack() {
         let (base, _) = setup().await;
-        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         let mut c = cfg(&base, "authorization_code");
         c.client_secret = "shh".into();
         c.redirect_url = format!("http://localhost:{port}/callback");
@@ -1201,7 +1205,12 @@ mod oauth {
         c.client_secret = "shh".into();
         c.redirect_url = "https://login.corp.example/oauth/callback".into();
         let (e, req, _) = engine_with(&base, Auth::OAuth2(c.clone()), false);
-        let err = e.oauth2_submit_callback(&req, "https://login.corp.example/oauth/callback?code=x&state=y").unwrap_err();
+        let err = e
+            .oauth2_submit_callback(
+                &req,
+                "https://login.corp.example/oauth/callback?code=x&state=y",
+            )
+            .unwrap_err();
         assert!(err.to_string().contains("Get token"), "{err}");
         let e2 = e.clone();
         let owner = req.clone();
@@ -1215,8 +1224,17 @@ mod oauth {
                     .build()
                     .unwrap();
                 let res = client.get(&url).send().await.unwrap();
-                let loc = res.headers().get("location").unwrap().to_str().unwrap().to_string();
-                assert!(loc.starts_with("https://login.corp.example/oauth/callback?"), "{loc}");
+                let loc = res
+                    .headers()
+                    .get("location")
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                assert!(
+                    loc.starts_with("https://login.corp.example/oauth/callback?"),
+                    "{loc}"
+                );
                 e2.oauth2_submit_callback(&owner, &loc).unwrap();
             });
         };
@@ -1385,7 +1403,19 @@ mod phase5 {
             .import_text(&postman(), &ImportOptions::default())
             .unwrap();
         assert_ne!(again.workspace_ids, s.workspace_ids);
+        assert_eq!(again.workspaces, vec!["Shop v1".to_string()]);
         assert_eq!(e.store.all_of::<Request>().unwrap().len(), 4);
+        let third = e
+            .import_text(&postman(), &ImportOptions::default())
+            .unwrap();
+        assert_eq!(third.workspaces, vec!["Shop v2".to_string()]);
+        let lower = e
+            .import_text(
+                &postman().replace("\"Shop\"", "\"shop\""),
+                &ImportOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(lower.workspaces, vec!["shop v3".to_string()]);
     }
 
     #[test]

@@ -42,10 +42,7 @@ fn secret_values_follow_the_same_json_parsing_as_plain_values() {
             String::from_utf8_lossy(&o.stderr)
         );
     }
-    let o = lsock(
-        data,
-        &["render", "Eval", "${plain}|${secret}|${pin}"],
-    );
+    let o = lsock(data, &["render", "Eval", "${plain}|${secret}|${pin}"]);
     let out = String::from_utf8_lossy(&o.stdout);
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(

@@ -390,7 +390,7 @@ interface DialogReq {
 
 const DialogCtx = createContext<{
   confirm: (title: string, opts?: { message?: string; danger?: boolean; confirmLabel?: string }) => Promise<boolean>;
-  prompt: (title: string, initial?: string) => Promise<string | null>;
+  prompt: (title: string, initial?: string, confirmLabel?: string) => Promise<string | null>;
 }>({ confirm: async () => false, prompt: async () => null });
 
 export function DialogProvider({ children }: { children: ReactNode }) {
@@ -402,10 +402,10 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     [],
   );
   const prompt = useCallback(
-    (title: string, initial = '') =>
+    (title: string, initial = '', confirmLabel = 'Create') =>
       new Promise<string | null>(resolve => {
         setValue(initial);
-        setReq({ kind: 'prompt', title, initial, resolve: v => resolve(typeof v === 'string' ? v : null) });
+        setReq({ kind: 'prompt', title, initial, confirmLabel, resolve: v => resolve(typeof v === 'string' ? v : null) });
       }),
     [],
   );

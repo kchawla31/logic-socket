@@ -98,7 +98,10 @@ pub struct RevealedOAuthToken {
 }
 
 #[tauri::command]
-pub fn oauth2_reveal(state: State<'_, AppState>, owner_id: String) -> CmdResult<RevealedOAuthToken> {
+pub fn oauth2_reveal(
+    state: State<'_, AppState>,
+    owner_id: String,
+) -> CmdResult<RevealedOAuthToken> {
     let t = state
         .engine
         .oauth2_cached(&owner_id)
@@ -116,8 +119,15 @@ pub fn oauth2_reveal(state: State<'_, AppState>, owner_id: String) -> CmdResult<
 
 /// The browser landed on a redirect this app could not catch. `callback` is that URL.
 #[tauri::command]
-pub fn oauth2_submit_callback(state: State<'_, AppState>, owner_id: String, callback: String) -> CmdResult<()> {
-    state.engine.oauth2_submit_callback(&owner_id, &callback).map_err(e)
+pub fn oauth2_submit_callback(
+    state: State<'_, AppState>,
+    owner_id: String,
+    callback: String,
+) -> CmdResult<()> {
+    state
+        .engine
+        .oauth2_submit_callback(&owner_id, &callback)
+        .map_err(e)
 }
 
 /// Open a URL in the user's default browser.

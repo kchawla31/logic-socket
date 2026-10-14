@@ -85,6 +85,44 @@ fn err(m: impl Into<String>) -> EngineError {
     EngineError::Message(m.into())
 }
 
+fn workspace_name_key(name: &str) -> String {
+    name.trim().to_lowercase()
+}
+
+/// Drop a trailing ` vN` so the next copy of "Shop v1" is "Shop v2".
+fn collection_name_base(name: &str) -> &str {
+    let Some((base, suffix)) = name.rsplit_once(" v") else {
+        return name;
+    };
+    if !base.is_empty() && !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit()) {
+        base
+    } else {
+        name
+    }
+}
+
+/// The name a new copy should use. A free name is kept. A name already used by
+/// a collection becomes `{name} v1`, then `v2`, and so on.
+pub fn next_collection_name(name: &str, taken: &HashSet<String>) -> String {
+    let trimmed = name.trim();
+    let name = if trimmed.is_empty() {
+        "Imported"
+    } else {
+        trimmed
+    };
+    if !taken.contains(&workspace_name_key(name)) {
+        return name.to_string();
+    }
+    let base = collection_name_base(name);
+    for n in 1..10_000 {
+        let candidate = format!("{base} v{n}");
+        if !taken.contains(&workspace_name_key(&candidate)) {
+            return candidate;
+        }
+    }
+    format!("{base} v10000")
+}
+
 struct Writer<'a, 'b> {
     tx: &'a mut Tx<'b>,
     mode: ImportMode,
@@ -189,6 +227,18 @@ fn pre_key_mcp(items: &[Item], ids: &mut HashMap<String, String>) {
 }
 
 impl Engine {
+    /// Name for a new collection. `also_taken` covers names chosen earlier in the same import.
+    pub fn copy_workspace_name(&self, name: &str, also_taken: &[String]) -> Result<String> {
+        let mut taken: HashSet<String> = self
+            .store
+            .all_of::<Workspace>()?
+            .into_iter()
+            .map(|w| workspace_name_key(&w.name))
+            .collect();
+        taken.extend(also_taken.iter().map(|n| workspace_name_key(n)));
+        Ok(next_collection_name(name, &taken))
+    }
+
     /// Detect the format of `text` and import it.
     pub fn import_text(&self, text: &str, opts: &ImportOptions) -> Result<ImportSummary> {
         let imported = lsock_convert::import(text).map_err(|e| err(e.to_string()))?;
@@ -245,6 +295,13 @@ impl Engine {
             vec![]
         };
         let existing_ws: Option<Doc<Workspace>> = self.store.get::<Workspace>(&ws_id).ok();
+        // A new collection whose name is already imported is "Name v1", then "Name v2".
+        // Replacing a collection that is already here keeps the file's name.
+        let import_name = if existing_ws.is_none() {
+            self.copy_workspace_name(&b.workspace.name, &[])?
+        } else {
+            b.workspace.name.clone()
+        };
         let existing_envs: HashMap<String, Environment> = existing
             .iter()
             .filter(|d| d.meta.kind == "Environment")
@@ -271,6 +328,7 @@ impl Engine {
             }
             // keep this machine's choices (active environments) when replacing
             let mut ws = b.workspace.clone();
+            ws.name = import_name;
             if let Some(old) = &existing_ws {
                 ws.active_environment_id = old.active_environment_id.clone();
                 ws.active_global_base_id = old.active_global_base_id.clone();

@@ -106,6 +106,59 @@ fn workspace_tree_and_request_round_trip() {
 }
 
 #[test]
+fn workspace_rename_and_delete() {
+    let h = Harness::new();
+    let imported = h.ok("workspace_create", json!({"name": "Imported"}));
+    let keep = h.ok("workspace_create", json!({"name": "Keep"}));
+    let imported_id = imported["id"].as_str().unwrap();
+
+    let mut doc = h.ok("doc_get", json!({"id": imported_id}));
+    doc["description"] = json!("from postman");
+    h.ok("workspace_update", json!({"doc": doc}));
+    h.ok("item_rename", json!({"id": imported_id, "name": "Shop"}));
+    let renamed = h.ok("doc_get", json!({"id": imported_id}));
+    assert_eq!(renamed["name"], "Shop");
+    assert_eq!(renamed["description"], "from postman");
+
+    let folder = h.ok(
+        "folder_create",
+        json!({"parentId": imported_id, "name": "Users"}),
+    );
+    let req = h.ok(
+        "request_create",
+        json!({"parentId": folder["id"], "request": null}),
+    );
+    // workspace, base environment, folder, request
+    assert!(
+        h.ok("workspace_delete", json!({"id": imported_id}))
+            .as_u64()
+            .unwrap()
+            >= 4
+    );
+    assert!(h.call("doc_get", json!({"id": imported_id})).is_err());
+    assert!(h.call("doc_get", json!({"id": req["id"]})).is_err());
+    assert!(h.call("doc_get", json!({"id": folder["id"]})).is_err());
+
+    let list = h.ok("workspace_list", json!({}));
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(list[0]["id"], keep["id"]);
+    assert_eq!(list[0]["name"], "Keep");
+
+    let stray = h.ok(
+        "request_create",
+        json!({"parentId": keep["id"], "request": null}),
+    );
+    assert!(
+        h.call("workspace_delete", json!({"id": stray["id"]}))
+            .is_err()
+    );
+    assert_eq!(
+        h.ok("doc_get", json!({"id": stray["id"]}))["type"],
+        "Request"
+    );
+}
+
+#[test]
 fn environments_preview_and_curl() {
     let h = Harness::new();
     let ws = h.ok("workspace_create", json!({"name": "API"}));
@@ -673,6 +726,14 @@ fn import_export_secrets_code_and_git_commands() {
         json!({"text": postman, "intoWorkspaceId": null, "replace": false}),
     );
     let ws_id = s["workspaceIds"][0].as_str().unwrap().to_string();
+    let again_preview = h.ok("import_preview", json!({"text": postman}));
+    assert_eq!(again_preview["workspaces"][0]["name"], "Shop");
+    assert_eq!(again_preview["workspaces"][0]["importName"], "Shop v1");
+    let again = h.ok(
+        "import_apply",
+        json!({"text": postman, "intoWorkspaceId": null, "replace": false}),
+    );
+    assert_eq!(again["workspaces"][0], "Shop v1");
 
     // secrets: set, masked in the env doc, revealed on demand, used by code generation
     let envs = h.ok("env_list", json!({"workspaceId": ws_id}));
@@ -728,7 +789,7 @@ fn import_export_secrets_code_and_git_commands() {
         out["content"]
             .as_str()
             .unwrap()
-            .contains("\"${base}/orders\"")
+            .contains("\"{{base}}/orders\"")
     );
 
     // git: open a repo folder, link, status, commit, log

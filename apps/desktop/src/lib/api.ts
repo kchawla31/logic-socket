@@ -610,7 +610,7 @@ export function runFailed(r: RunResult): boolean {
 export interface ImportPreview {
   format: string;
   formatLabel: string;
-  workspaces: { name: string; scope: string; requests: number; folders: number; environments: number; exists: boolean }[];
+  workspaces: { name: string; importName: string; scope: string; requests: number; folders: number; environments: number; exists: boolean }[];
   warnings: string[];
 }
 
@@ -685,6 +685,7 @@ export const api = {
   workspaceList: () => invoke<Workspace[]>('workspace_list'),
   workspaceCreate: (name: string) => invoke<Workspace>('workspace_create', { name }),
   workspaceUpdate: (doc: Workspace) => invoke<Workspace>('workspace_update', { doc }),
+  workspaceDelete: (id: string) => invoke<number>('workspace_delete', { id }),
   docGet: <T>(id: string) => invoke<T>('doc_get', { id }),
   itemDelete: (id: string) => invoke<number>('item_delete', { id }),
   itemRename: (id: string, name: string) => invoke<void>('item_rename', { id, name }),

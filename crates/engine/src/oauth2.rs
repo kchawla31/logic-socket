@@ -59,17 +59,26 @@ fn code_from_callback(raw: &str, expected_state: &str) -> Result<String> {
         url::Url::parse(raw).map_err(|e| err(format!("OAuth 2: that is not a URL ({e})")))?
     } else {
         let q = raw.trim_start_matches('?');
-        url::Url::parse(&format!("http://localhost/?{q}")).map_err(|e| err(format!("OAuth 2: that is not a URL ({e})")))?
+        url::Url::parse(&format!("http://localhost/?{q}"))
+            .map_err(|e| err(format!("OAuth 2: that is not a URL ({e})")))?
     };
-    let mut pairs: Vec<(String, String)> = u.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    let mut pairs: Vec<(String, String)> = u
+        .query_pairs()
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
     if let Some(fragment) = u.fragment() {
-        pairs.extend(url::form_urlencoded::parse(fragment.as_bytes()).map(|(k, v)| (k.into_owned(), v.into_owned())));
+        pairs.extend(
+            url::form_urlencoded::parse(fragment.as_bytes())
+                .map(|(k, v)| (k.into_owned(), v.into_owned())),
+        );
     }
     let get = |k: &str| pairs.iter().find(|(q, _)| q == k).map(|(_, v)| v.clone());
     match (get("code"), get("error")) {
         (_, Some(e)) => Err(err(format!(
             "OAuth 2: {e}{}",
-            get("error_description").map(|d| format!(": {d}")).unwrap_or_default()
+            get("error_description")
+                .map(|d| format!(": {d}"))
+                .unwrap_or_default()
         ))),
         (Some(c), _) if get("state").as_deref() == Some(expected_state) => Ok(c),
         (Some(_), _) => Err(err("OAuth 2: state mismatch (possible CSRF) — try again")),
@@ -89,7 +98,9 @@ impl Drop for AbortOnDrop {
 }
 
 struct ClearPaste {
-    map: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::mpsc::Sender<String>>>>,
+    map: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<String, tokio::sync::mpsc::Sender<String>>>,
+    >,
     id: String,
 }
 impl Drop for ClearPaste {
@@ -111,17 +122,28 @@ async fn read_callback(sock: &mut TcpStream, state: &str) -> Result<Option<Resul
     let Ok(u) = url::Url::parse(&format!("http://localhost{path}")) else {
         return Ok(None);
     };
-    let get = |k: &str| u.query_pairs().find(|(q, _)| q == k).map(|(_, v)| v.into_owned());
+    let get = |k: &str| {
+        u.query_pairs()
+            .find(|(q, _)| q == k)
+            .map(|(_, v)| v.into_owned())
+    };
     let (title, result) = match (get("code"), get("error")) {
         (_, Some(e)) => (
             "Sign-in failed",
             Some(Err(err(format!(
                 "OAuth 2: {e}{}",
-                get("error_description").map(|d| format!(": {d}")).unwrap_or_default()
+                get("error_description")
+                    .map(|d| format!(": {d}"))
+                    .unwrap_or_default()
             )))),
         ),
         (Some(c), _) if get("state").as_deref() == Some(state) => ("Signed in", Some(Ok(c))),
-        (Some(_), _) => ("Sign-in failed", Some(Err(err("OAuth 2: state mismatch (possible CSRF) — try again")))),
+        (Some(_), _) => (
+            "Sign-in failed",
+            Some(Err(err(
+                "OAuth 2: state mismatch (possible CSRF) — try again",
+            ))),
+        ),
         _ => return Ok(None),
     };
     let html = format!(
@@ -421,7 +443,9 @@ impl Engine {
                 }
                 None
             }
-            "javascript" | "data" | "file" => return Err(err("OAuth 2: that redirect URL is not allowed")),
+            "javascript" | "data" | "file" => {
+                return Err(err("OAuth 2: that redirect URL is not allowed"));
+            }
             _ => None,
         };
         let mut listeners = Vec::new();
@@ -437,7 +461,9 @@ impl Engine {
                 let port = addrs[0].port();
                 return Err(err(format!(
                     "OAuth 2: cannot listen on port {port} ({}). Pick a free port, or paste the final browser URL after signing in.",
-                    bind_error.map(|e| e.to_string()).unwrap_or_else(|| "bind failed".into())
+                    bind_error
+                        .map(|e| e.to_string())
+                        .unwrap_or_else(|| "bind failed".into())
                 )));
             }
         }
@@ -467,7 +493,10 @@ impl Engine {
         }
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-        self.oauth_paste.lock().unwrap().insert(owner_id.to_string(), tx);
+        self.oauth_paste
+            .lock()
+            .unwrap()
+            .insert(owner_id.to_string(), tx);
         let _clear = ClearPaste {
             map: self.oauth_paste.clone(),
             id: owner_id.to_string(),
