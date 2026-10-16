@@ -124,6 +124,72 @@ export interface Segment {
   name?: string;
 }
 
+/**
+ * Keep a name the user saved in the sidebar when this editor has not edited the name.
+ * URL, header, and auth saves send the whole request, so they would otherwise put the old name back.
+ */
+export function withStoredName<T extends { name: string }>(doc: T, storedName: string | undefined, nameEdited: boolean): T {
+  if (nameEdited || storedName === undefined || storedName === doc.name) return doc;
+  return { ...doc, name: storedName };
+}
+
+/** How much of a capped response to draw in the preview. The raw tab can show the rest of the slice. */
+export const RESPONSE_EXCERPT_CHARS = 8 * 1024;
+
+export function responseExcerpt(text: string, limit = RESPONSE_EXCERPT_CHARS): string {
+  return text.length <= limit ? text : text.slice(0, limit);
+}
+
+/**
+ * Parse a response body for the tree. A truncated slice is not valid JSON to display,
+ * and parsing it on the UI thread is what locks the window.
+ */
+export function responseJson(bodyText: string, contentType: string, truncated: boolean): unknown | undefined {
+  if (truncated || !bodyText) return undefined;
+  if (!/json|\+json/.test(contentType) && !/^\s*[[{]/.test(bodyText)) return undefined;
+  try {
+    return JSON.parse(bodyText) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Open one level when the shown JSON is long, so a wide payload does not mount a node per nested value. */
+export function jsonTreeOpenDepth(textLength: number): number {
+  return textLength > 32 * 1024 ? 1 : 2;
+}
+
+/** Note for a response the window is only showing in part. Null when the image preview is the whole image. */
+export function truncatedResponseNote(bytes: number, contentType: string, hasImage: boolean): string | null {
+  if (hasImage) return null;
+  if (contentType.startsWith('image/')) {
+    return `This image is too large to preview (${formatBytes(bytes)}). The full response is saved with this request.`;
+  }
+  return `Showing the start of this response (${formatBytes(bytes)} total). The full response is saved with this request.`;
+}
+
+/**
+ * Decide what to show once history has been read.
+ * A response cached while that read was in flight stays, even if the list does not have it yet.
+ * A cached id that history no longer contains is stale.
+ */
+export function responseAfterHistory(
+  beforeId: string | undefined,
+  currentId: string | undefined,
+  historyIds: readonly string[],
+): 'keep' | 'none' | 'latest' {
+  if (currentId && historyIds.includes(currentId)) return 'keep';
+  if (currentId && currentId !== beforeId) return 'keep';
+  if (historyIds.length === 0) return 'none';
+  return 'latest';
+}
+
+/** A history fetch that started earlier must not replace a response that arrived later. */
+export function preferNewerResponse<T extends { created: number }>(current: T | null, incoming: T): T {
+  if (current && current.created > incoming.created) return current;
+  return incoming;
+}
+
 /** True when `name` is a stored variable or a path under one (`user.id`, `api.key`). */
 export function variableDefined(names: Set<string>, name: string | undefined): boolean {
   if (!name) return false;

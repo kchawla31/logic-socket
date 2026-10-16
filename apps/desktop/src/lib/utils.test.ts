@@ -16,6 +16,13 @@ import {
   statusTone,
   tokenizeTemplate,
   variableDefined,
+  withStoredName,
+  responseExcerpt,
+  responseJson,
+  jsonTreeOpenDepth,
+  truncatedResponseNote,
+  responseAfterHistory,
+  preferNewerResponse,
   dropSortKey,
   htmlExcerpt,
   presentError,
@@ -42,6 +49,51 @@ describe('tokenizeTemplate', () => {
     expect(variableDefined(names, 'a.b.c')).toBe(true);
     expect(variableDefined(names, 'missing.key')).toBe(false);
     expect(variableDefined(names, 'host')).toBe(false);
+  });
+});
+
+describe('withStoredName', () => {
+  it('keeps the saved name when the editor has not renamed the request', () => {
+    expect(withStoredName({ name: 'New Request', url: '/orders' }, 'Orders', false)).toEqual({ name: 'Orders', url: '/orders' });
+    expect(withStoredName({ name: 'Orders', url: '/orders' }, 'Orders', false)).toEqual({ name: 'Orders', url: '/orders' });
+  });
+  it('keeps a name typed in this editor', () => {
+    expect(withStoredName({ name: 'Invoices', url: '/orders' }, 'Orders', true)).toEqual({ name: 'Invoices', url: '/orders' });
+  });
+});
+
+describe('saved responses', () => {
+  it('does not parse a truncated body', () => {
+    expect(responseJson('{"a":1}', 'application/json', true)).toBeUndefined();
+    expect(responseJson('{"a":1}', 'application/json', false)).toEqual({ a: 1 });
+    expect(responseJson('not json', 'text/plain', false)).toBeUndefined();
+    expect(responseJson('{"a":1}', 'text/plain', false)).toEqual({ a: 1 });
+  });
+
+  it('shows a short excerpt and says the full response is saved', () => {
+    expect(responseExcerpt('hello', 8)).toBe('hello');
+    expect(responseExcerpt('hello world', 5)).toBe('hello');
+    expect(truncatedResponseNote(200 * 1024, 'application/json', false)).toBe(
+      'Showing the start of this response (200.0 KB total). The full response is saved with this request.',
+    );
+    expect(truncatedResponseNote(2 * 1024 * 1024, 'image/png', false)).toBe(
+      'This image is too large to preview (2.0 MB). The full response is saved with this request.',
+    );
+    expect(truncatedResponseNote(200 * 1024, 'image/png', true)).toBeNull();
+  });
+
+  it('keeps a response that is still in history and prefers the newer one', () => {
+    expect(responseAfterHistory('a', 'a', ['b', 'a'])).toBe('keep');
+    expect(responseAfterHistory(undefined, 'sent', [])).toBe('keep');
+    expect(responseAfterHistory('old', 'sent', ['old'])).toBe('keep');
+    expect(responseAfterHistory(undefined, undefined, [])).toBe('none');
+    expect(responseAfterHistory('gone', 'gone', [])).toBe('none');
+    expect(responseAfterHistory('gone', 'gone', ['b'])).toBe('latest');
+    expect(jsonTreeOpenDepth(32 * 1024)).toBe(2);
+    expect(jsonTreeOpenDepth(32 * 1024 + 1)).toBe(1);
+    expect(preferNewerResponse({ created: 2, id: 'new' }, { created: 1, id: 'old' })).toEqual({ created: 2, id: 'new' });
+    expect(preferNewerResponse(null, { created: 1, id: 'old' })).toEqual({ created: 1, id: 'old' });
+    expect(preferNewerResponse({ created: 1, id: 'old' }, { created: 5, id: 'new' })).toEqual({ created: 5, id: 'new' });
   });
 });
 

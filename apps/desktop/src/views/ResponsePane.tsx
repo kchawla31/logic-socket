@@ -4,17 +4,33 @@ import { useEffect, useMemo, useState } from 'react';
 import { CodeEditor, JsonTree } from '../components/editors';
 import { CopyButton, Empty, IconButton, Kbd, Select, Tabs, useToast } from '../components/ui';
 import { api, type ResponseSummary, type ResponseView } from '../lib/api';
-import { cn, formatBytes, formatMs, htmlExcerpt, modKey, presentError, prettyJson, statusTone, timeAgo } from '../lib/utils';
+import {
+  cn,
+  formatBytes,
+  formatMs,
+  htmlExcerpt,
+  jsonTreeOpenDepth,
+  modKey,
+  presentError,
+  prettyJson,
+  responseExcerpt,
+  responseJson,
+  statusTone,
+  timeAgo,
+  truncatedResponseNote,
+} from '../lib/utils';
 
 export function ResponsePane({
   requestId,
   response,
   sending,
+  restoring = false,
   onSelect,
 }: {
   requestId: string;
   response: ResponseView | null;
   sending: boolean;
+  restoring?: boolean;
   onSelect: (r: ResponseView | null) => void;
 }) {
   const toast = useToast();
@@ -25,15 +41,10 @@ export function ResponsePane({
     api.responseList(requestId).then(setHistory).catch(() => setHistory([]));
   }, [requestId, response?.id]);
 
-  const json = useMemo(() => {
-    if (!response?.bodyText) return undefined;
-    if (!/json|\+json/.test(response.contentType) && !/^\s*[[{]/.test(response.bodyText)) return undefined;
-    try {
-      return JSON.parse(response.bodyText) as unknown;
-    } catch {
-      return undefined;
-    }
-  }, [response]);
+  const json = useMemo(
+    () => (response ? responseJson(response.bodyText, response.contentType, response.bodyTruncated) : undefined),
+    [response],
+  );
 
   if (sending && !response) {
     return (
@@ -43,6 +54,9 @@ export function ResponsePane({
     );
   }
   if (!response) {
+    if (restoring) {
+      return <Empty icon={<History className="size-8" />} title="Loading saved response…" />;
+    }
     return (
       <Empty icon={<Send className="size-8" />} title="No response yet">
         Press <Kbd>{modKey()}</Kbd> <Kbd>Enter</Kbd> or click Send. Responses are kept in history for this request.
@@ -56,6 +70,7 @@ export function ResponsePane({
   const consoleLines = response.console ?? [];
   const cookies = response.headers.filter(h => h.name.toLowerCase() === 'set-cookie');
   const page = htmlExcerpt(response.bodyText, response.contentType);
+  const note = response.bodyTruncated ? truncatedResponseNote(response.bytes, response.contentType, Boolean(response.bodyImage)) : null;
   const authNote =
     response.statusCode === 401
       ? 'Authorization failed. Check the Auth tab and the token or API key in the active environment.'
@@ -142,6 +157,8 @@ export function ResponsePane({
         </div>
       ) : null}
 
+      {note && <div className="shrink-0 border-b border-app px-3 py-2 text-[12.5px] text-muted">{note}</div>}
+
       {response.scriptError && !response.error && (
         <div className="mx-3 mt-3 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[12.5px]">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
@@ -176,6 +193,7 @@ export function ResponsePane({
             <div className="p-3">
               <JsonTree
                 value={json}
+                defaultOpen={jsonTreeOpenDepth(response.bodyText.length)}
                 onPath={p => {
                   navigator.clipboard?.writeText(p);
                   toast(`Copied ${p}`);
@@ -187,6 +205,8 @@ export function ResponsePane({
               <p className="text-[13px] break-words">{page}</p>
               <p className="mt-2 text-[12.5px] text-muted">This is an HTML page. The full source is in the Raw tab.</p>
             </div>
+          ) : response.bodyTruncated && response.bodyText ? (
+            <pre className="selectable p-3 font-mono text-[12.5px] break-all whitespace-pre-wrap">{responseExcerpt(response.bodyText)}</pre>
           ) : response.bodyText ? (
             authNote && response.bodyText.length > 400 ? (
               <div className="max-w-xl p-4">
@@ -197,16 +217,19 @@ export function ResponsePane({
               <pre className="selectable p-3 font-mono text-[12.5px] break-all whitespace-pre-wrap">{response.bodyText}</pre>
             )
           ) : (
-            <Empty title="Empty body" />
+            <Empty title={note ? 'Nothing to preview' : 'Empty body'} />
           ))}
         {tab === 'raw' && (
           <div className="flex h-full flex-col">
-            <CodeEditor
-              value={(json !== undefined && prettyJson(response.bodyText)) || response.bodyText}
-              language={json !== undefined ? 'json' : 'text'}
-              readOnly
-            />
-            {response.bodyTruncated && <div className="border-t border-app p-2 text-[12px] text-muted">Body truncated to 5 MB for display.</div>}
+            {response.bodyTruncated ? (
+              <pre className="selectable min-h-0 flex-1 overflow-auto p-3 font-mono text-[12.5px] break-all whitespace-pre-wrap">{response.bodyText}</pre>
+            ) : (
+              <CodeEditor
+                value={(json !== undefined && prettyJson(response.bodyText)) || response.bodyText}
+                language={json !== undefined ? 'json' : 'text'}
+                readOnly
+              />
+            )}
           </div>
         )}
         {tab === 'headers' && (

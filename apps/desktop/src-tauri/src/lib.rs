@@ -438,29 +438,36 @@ fn curl_parse(text: String) -> CmdResult<Request> {
     lsock_engine::curl::parse(&text).map_err(e)
 }
 
+/// How much of a response body is sent to the window. The full body stays saved.
+const DISPLAY_BODY_LIMIT: usize = 128 * 1024;
+const DISPLAY_IMAGE_LIMIT: usize = 1536 * 1024;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ResponseView {
     #[serde(flatten)]
     doc: Doc<Response>,
-    /// UTF-8 body (lossy), capped at 5 MB for display.
+    /// UTF-8 body (lossy), capped so a large payload does not lock the window.
     body_text: String,
     body_truncated: bool,
-    /// Base64 body for images.
+    /// Base64 body for images small enough to preview.
     body_image: Option<String>,
 }
 
 fn view(engine: &Engine, mut doc: Doc<Response>) -> ResponseView {
     let bytes = engine.response_body(&doc);
     doc.body_b64 = None;
-    let limit = 5 * 1024 * 1024;
-    let body_image = doc
-        .content_type
-        .starts_with("image/")
+    let image = doc.content_type.starts_with("image/");
+    let body_image = (image && bytes.len() <= DISPLAY_IMAGE_LIMIT)
         .then(|| base64::engine::general_purpose::STANDARD.encode(&bytes));
     ResponseView {
-        body_truncated: bytes.len() > limit,
-        body_text: String::from_utf8_lossy(&bytes[..bytes.len().min(limit)]).into_owned(),
+        body_truncated: bytes.len() > DISPLAY_BODY_LIMIT || (image && body_image.is_none()),
+        // Binary image bytes are not useful as text, and a multi-megabyte string locks the webview.
+        body_text: if image {
+            String::new()
+        } else {
+            String::from_utf8_lossy(&bytes[..bytes.len().min(DISPLAY_BODY_LIMIT)]).into_owned()
+        },
         body_image,
         doc,
     }
@@ -1216,3 +1223,74 @@ pub fn run() {
 
 #[cfg(test)]
 mod ipc_tests;
+
+#[cfg(test)]
+mod response_display {
+    use base64::Engine as _;
+
+    use super::{DISPLAY_BODY_LIMIT, DISPLAY_IMAGE_LIMIT, view};
+    use lsock_core::{Doc, Meta, Response};
+    use lsock_engine::Engine;
+
+    fn doc_with_body(bytes: &[u8], content_type: &str) -> Doc<Response> {
+        Doc {
+            meta: Meta {
+                id: "res_1".into(),
+                kind: "Response".into(),
+                parent_id: None,
+                sort_key: 0.0,
+                created: 1,
+                modified: 1,
+            },
+            body: Response {
+                content_type: content_type.into(),
+                body_b64: Some(base64::engine::general_purpose::STANDARD.encode(bytes)),
+                bytes: bytes.len() as u64,
+                ..Response::default()
+            },
+        }
+    }
+
+    #[test]
+    fn display_cap_large_json_is_a_short_slice() {
+        let engine = Engine::in_memory();
+        let payload = vec![b'{'; DISPLAY_BODY_LIMIT + 50];
+        let shown = view(&engine, doc_with_body(&payload, "application/json"));
+        assert!(shown.body_truncated);
+        assert!(shown.body_text.len() <= DISPLAY_BODY_LIMIT);
+        assert!(shown.body_image.is_none());
+        assert!(shown.doc.body_b64.is_none());
+    }
+
+    #[test]
+    fn display_cap_small_json_is_complete() {
+        let engine = Engine::in_memory();
+        let shown = view(
+            &engine,
+            doc_with_body(br#"{"ok":true}"#, "application/json"),
+        );
+        assert!(!shown.body_truncated);
+        assert_eq!(shown.body_text, r#"{"ok":true}"#);
+        assert!(shown.body_image.is_none());
+    }
+
+    #[test]
+    fn display_cap_large_image_is_not_sent_to_the_window() {
+        let engine = Engine::in_memory();
+        let payload = vec![0u8; DISPLAY_IMAGE_LIMIT + 1];
+        let shown = view(&engine, doc_with_body(&payload, "image/png"));
+        assert!(shown.body_truncated);
+        assert!(shown.body_text.is_empty());
+        assert!(shown.body_image.is_none());
+    }
+
+    #[test]
+    fn display_cap_image_over_the_text_cap_still_previews() {
+        let engine = Engine::in_memory();
+        let payload = vec![1u8; DISPLAY_BODY_LIMIT + 10];
+        let shown = view(&engine, doc_with_body(&payload, "image/png"));
+        assert!(shown.body_truncated);
+        assert!(shown.body_text.is_empty());
+        assert!(shown.body_image.is_some());
+    }
+}

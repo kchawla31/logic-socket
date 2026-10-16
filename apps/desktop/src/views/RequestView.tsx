@@ -6,8 +6,8 @@ import { GraphQLEditor } from '../components/GraphQLEditor';
 import { ScriptEditor } from '../components/ScriptEditor';
 import { Button, Empty, IconButton, Input, Kbd, Select, Split, Tabs, Toggle, useToast } from '../components/ui';
 import { useVarRevision, VarInput } from '../components/VarInput';
-import { api, type Body, errorText, type KeyValue, type Preview, type Request, type ResponseView } from '../lib/api';
-import { cn, looksLikeCurl, METHODS, methodColor, modKey, pathParamsInUrl, prettyJson, splitQuery } from '../lib/utils';
+import { api, type Body, errorText, type KeyValue, onDbChanged, type Preview, type Request, type ResponseView } from '../lib/api';
+import { cn, looksLikeCurl, METHODS, methodColor, modKey, pathParamsInUrl, preferNewerResponse, prettyJson, responseAfterHistory, splitQuery, withStoredName } from '../lib/utils';
 import { AuthEditor } from './AuthEditor';
 import { CodeModal } from './ImportExport';
 import { ResponsePane } from './ResponsePane';
@@ -23,7 +23,15 @@ const BODY_TYPES: { id: string; label: string }[] = [
   { id: 'application/octet-stream', label: 'Binary file' },
 ];
 
-/** Debounced autosave of a document; returns [doc, setDoc]. */
+/** Last response shown for each request. Switching requests unmounts the editor, so the view has to live here. */
+const savedResponses = new Map<string, ResponseView>();
+
+function cacheResponse(requestId: string, response: ResponseView | null) {
+  if (response) savedResponses.set(requestId, response);
+  else savedResponses.delete(requestId);
+}
+
+/** Debounced autosave. `patchSaved` writes a value that is already stored, without scheduling another save. */
 function useAutosave<T extends { id: string }>(id: string, save: (d: T) => Promise<unknown>) {
   const [doc, setDocState] = useState<T | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -40,7 +48,10 @@ function useAutosave<T extends { id: string }>(id: string, save: (d: T) => Promi
 
   useEffect(() => {
     let live = true;
-    api.docGet<T>(id).then(d => live && setDocState(d));
+    api.docGet<T>(id).then(d => {
+      if (!live || pending.current) return;
+      setDocState(d);
+    });
     return () => {
       live = false;
       flush();
@@ -57,7 +68,13 @@ function useAutosave<T extends { id: string }>(id: string, save: (d: T) => Promi
     },
     [flush],
   );
-  return [doc, setDoc, flush] as const;
+
+  const patchSaved = useCallback((patch: (current: T) => T) => {
+    if (pending.current) pending.current = patch(pending.current);
+    setDocState(current => (current ? patch(current) : current));
+  }, []);
+
+  return [doc, setDoc, flush, patchSaved] as const;
 }
 
 export { useAutosave };
@@ -94,22 +111,113 @@ export function clipboardPlainText(cd: DataTransfer): string {
 
 export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => void }) {
   const toast = useToast();
-  const [req, setReq, flush] = useAutosave<Request>(id, api.requestUpdate);
+  const nameEdited = useRef(false);
+  const patchSavedRef = useRef<(patch: (current: Request) => Request) => void>(() => {});
+  const saveRequest = useCallback(async (doc: Request) => {
+    let next = doc;
+    if (!nameEdited.current) {
+      const stored = await api.docGet<Request>(doc.id).catch(() => null);
+      if (!nameEdited.current) {
+        next = withStoredName(doc, stored?.name, false);
+        if (next.name !== doc.name) {
+          const name = next.name;
+          patchSavedRef.current(current => (current.id === doc.id ? { ...current, name } : current));
+        }
+      }
+    }
+    return api.requestUpdate(next);
+  }, []);
+  const [req, setReq, flush, patchSaved] = useAutosave<Request>(id, saveRequest);
+  patchSavedRef.current = patchSaved;
   const [tab, setTab] = useState('params');
   const [scriptPhase, setScriptPhase] = useState<'pre' | 'after'>('pre');
   const [sending, setSending] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
-  const [response, setResponse] = useState<ResponseView | null>(null);
+  const [response, setResponseState] = useState<ResponseView | null>(() => savedResponses.get(id) ?? null);
+  const [restoring, setRestoring] = useState(() => !savedResponses.has(id));
   const [preview, setPreview] = useState<Preview | null>(null);
   const urlRef = useRef<HTMLInputElement>(null);
   const curlImporting = useRef(false);
   const varRev = useVarRevision();
 
-  // Latest stored response on open.
-  useEffect(() => {
-    setResponse(null);
-    api.responseList(id).then(list => list[0] && api.responseGet(list[0].id).then(setResponse));
+  const showResponse = useCallback((next: ResponseView | null) => {
+    cacheResponse(id, next);
+    setResponseState(next);
   }, [id]);
+
+  // The response stays with the request. Opening it again shows the one already on screen,
+  // and only loads history when that copy is missing.
+  useEffect(() => {
+    let live = true;
+    const cached = savedResponses.get(id) ?? null;
+    setResponseState(cached);
+    setRestoring(cached === null);
+    const beforeId = cached?.id;
+    api
+      .responseList(id)
+      .then(async list => {
+        if (!live) return;
+        const choice = responseAfterHistory(
+          beforeId,
+          savedResponses.get(id)?.id,
+          list.map(item => item.id),
+        );
+        if (choice === 'keep') {
+          const kept = savedResponses.get(id) ?? cached;
+          if (kept) setResponseState(kept);
+          setRestoring(false);
+          return;
+        }
+        if (choice === 'none') {
+          cacheResponse(id, null);
+          setResponseState(null);
+          setRestoring(false);
+          return;
+        }
+        const latest = list[0];
+        if (!latest) {
+          setRestoring(false);
+          return;
+        }
+        const view = await api.responseGet(latest.id);
+        if (!live) return;
+        const chosen = preferNewerResponse(savedResponses.get(id) ?? null, view);
+        if (chosen === view) cacheResponse(id, view);
+        setResponseState(chosen);
+        setRestoring(false);
+      })
+      .catch(() => {
+        if (live) setRestoring(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [id]);
+
+  // A sidebar rename writes the stored name only. Pick it up unless this editor changed the name.
+  useEffect(() => {
+    let live = true;
+    let unlisten: (() => void) | undefined;
+    onDbChanged(() => {
+      if (!live || nameEdited.current) return;
+      api
+        .docGet<Request>(id)
+        .then(stored => {
+          if (!live || nameEdited.current) return;
+          patchSaved(current => (current.id === id && current.name !== stored.name ? { ...current, name: stored.name } : current));
+        })
+        .catch(() => {});
+    })
+      .then(u => {
+        if (live) unlisten = u;
+        else u();
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+      unlisten?.();
+    };
+  }, [id, patchSaved]);
 
   // Live URL preview. `varRev` changes when the active environment (or any saved data) changes.
   useEffect(() => {
@@ -128,9 +236,10 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
     void (async () => {
       try {
         const parsed = await api.curlParse(text);
-        const keepName = req.name.trim() !== '' && req.name !== 'New Request';
-        setReq(applyCurlImport(req, parsed));
-        if (!keepName) setTimeout(onRenamed, 500);
+        const next = applyCurlImport(req, parsed);
+        if (next.name !== req.name) nameEdited.current = true;
+        setReq(next);
+        if (next.name !== req.name) setTimeout(onRenamed, 500);
         toast('Imported from cURL', 'success');
       } catch (err) {
         toast(`Could not parse cURL: ${errorText(err)}`, 'error');
@@ -163,13 +272,13 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
     try {
       await flush();
       const r = await api.requestSend(req.id);
-      setResponse(r);
+      showResponse(r);
     } catch (e) {
       toast(errorText(e), 'error');
     } finally {
       setSending(false);
     }
-  }, [req, sending, flush, toast]);
+  }, [req, sending, flush, toast, showResponse]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -430,7 +539,15 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
           )}
           {tab === 'docs' && (
             <div className="flex h-full flex-col gap-2 p-3">
-              <Input value={req.name} onChange={e => update({ name: e.target.value })} onBlur={onRenamed} aria-label="Request name" />
+              <Input
+                value={req.name}
+                onChange={e => {
+                  nameEdited.current = true;
+                  update({ name: e.target.value });
+                }}
+                onBlur={onRenamed}
+                aria-label="Request name"
+              />
               <textarea
                 value={req.description}
                 onChange={e => update({ description: e.target.value })}
@@ -452,7 +569,7 @@ export function RequestView({ id, onRenamed }: { id: string; onRenamed: () => vo
           </span>
         </div>
       </div>
-      <ResponsePane requestId={id} response={response} sending={sending} onSelect={setResponse} />
+      <ResponsePane requestId={id} response={response} sending={sending} restoring={restoring} onSelect={showResponse} />
     </Split>
   );
 }
