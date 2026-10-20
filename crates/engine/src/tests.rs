@@ -317,7 +317,25 @@ async fn send_many_keeps_order_history_prunes_and_large_bodies_go_to_disk() {
         .unwrap();
     let r = e.send(big.id()).await.unwrap();
     assert!(r.body_b64.is_none() && r.body_path.is_some());
+    let path = r.body_path.as_deref().unwrap();
+    assert!(std::path::Path::new(path).is_file(), "{path}");
+    assert_eq!(std::fs::metadata(path).unwrap().len(), 2 * 1024 * 1024);
     assert_eq!(e.response_body(&r).len(), 2 * 1024 * 1024);
+}
+
+#[test]
+fn body_extension_follows_the_content_type() {
+    assert_eq!(
+        crate::body_extension("application/json; charset=utf-8"),
+        "json"
+    );
+    assert_eq!(crate::body_extension("application/problem+json"), "json");
+    assert_eq!(crate::body_extension("text/html"), "html");
+    assert_eq!(crate::body_extension("image/svg+xml"), "svg");
+    assert_eq!(crate::body_extension("image/png"), "png");
+    assert_eq!(crate::body_extension("text/plain"), "txt");
+    assert_eq!(crate::body_extension("application/octet-stream"), "bin");
+    assert_eq!(crate::body_extension(""), "bin");
 }
 
 // ---------------------------------------------------------------- scripts in the pipeline

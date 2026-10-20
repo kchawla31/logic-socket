@@ -73,12 +73,11 @@ describe('saved responses', () => {
   it('shows a short excerpt and says the full response is saved', () => {
     expect(responseExcerpt('hello', 8)).toBe('hello');
     expect(responseExcerpt('hello world', 5)).toBe('hello');
-    expect(truncatedResponseNote(200 * 1024, 'application/json', false)).toBe(
-      'Showing the start of this response (200.0 KB total). The full response is saved with this request.',
+    expect(truncatedResponseNote(200 * 1024, 'application/json', false)).toBe('Showing the start of this response (200.0 KB total).');
+    expect(truncatedResponseNote(2 * 1024 * 1024, 'application/json', false)).toBe(
+      'Showing the start of this response (2.0 MB total). It is too large to copy here. Download saves the full response to your Downloads folder.',
     );
-    expect(truncatedResponseNote(2 * 1024 * 1024, 'image/png', false)).toBe(
-      'This image is too large to preview (2.0 MB). The full response is saved with this request.',
-    );
+    expect(truncatedResponseNote(2 * 1024 * 1024, 'image/png', false)).toBe('This image is too large to preview (2.0 MB).');
     expect(truncatedResponseNote(200 * 1024, 'image/png', true)).toBeNull();
   });
 

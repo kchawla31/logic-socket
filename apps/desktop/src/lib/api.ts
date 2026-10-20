@@ -394,6 +394,10 @@ export interface ResponseView extends Meta {
   bodyText: string;
   bodyTruncated: boolean;
   bodyImage?: string | null;
+  /** Absolute path of the full body, when it was written to a file. */
+  bodyPath?: string | null;
+  /** The stored file is gone. Send the request again to capture it. */
+  bodyMissing?: boolean;
 }
 
 export interface ResponseSummary {
@@ -704,6 +708,9 @@ export const api = {
     invoke<{ data?: unknown; errors?: unknown }>('graphql_query', { requestId, query, variables: variables ?? null }),
   responseList: (requestId: string) => invoke<ResponseSummary[]>('response_list', { requestId }),
   responseGet: (id: string) => invoke<ResponseView>('response_get', { id }),
+  responseSave: (id: string) => invoke<string>('response_save', { id }),
+  responseOpen: (id: string) => invoke<string>('response_open', { id }),
+  responseCopyText: (id: string) => invoke<string>('response_copy_text', { id }),
   responseClear: (requestId: string) => invoke<void>('response_clear', { requestId }),
   envList: (workspaceId: string) => invoke<EnvList>('env_list', { workspaceId }),
   envCreate: (workspaceId: string, name: string) => invoke<Environment>('env_create', { workspaceId, name }),

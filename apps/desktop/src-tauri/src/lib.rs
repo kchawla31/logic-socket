@@ -452,16 +452,56 @@ struct ResponseView {
     body_truncated: bool,
     /// Base64 body for images small enough to preview.
     body_image: Option<String>,
+    /// The stored file could not be read. `bytes` on the document is the size we expected.
+    body_missing: bool,
+}
+
+/// Bytes for the window. A body file is read only up to the preview cap.
+fn preview_body(engine: &Engine, doc: &Response) -> (Vec<u8>, bool) {
+    let image = doc.content_type.starts_with("image/");
+    let limit = if image {
+        DISPLAY_IMAGE_LIMIT
+    } else {
+        DISPLAY_BODY_LIMIT
+    };
+    if let Some(path) = &doc.body_path {
+        if image && doc.bytes as usize > DISPLAY_IMAGE_LIMIT {
+            return (Vec::new(), !std::path::Path::new(path).is_file());
+        }
+        let file = match std::fs::File::open(path) {
+            Ok(file) => file,
+            Err(_) => return (Vec::new(), doc.bytes > 0),
+        };
+        let mut limited = std::io::Read::take(file, limit as u64);
+        let mut buf = Vec::new();
+        return match std::io::Read::read_to_end(&mut limited, &mut buf) {
+            Ok(_) => (buf, false),
+            Err(_) => (Vec::new(), doc.bytes > 0),
+        };
+    }
+    let mut all = engine.response_body(doc);
+    if doc.bytes > 0 && all.is_empty() {
+        return (Vec::new(), true);
+    }
+    if image && all.len() > DISPLAY_IMAGE_LIMIT {
+        return (Vec::new(), false);
+    }
+    if all.len() > limit {
+        all.truncate(limit);
+    }
+    (all, false)
 }
 
 fn view(engine: &Engine, mut doc: Doc<Response>) -> ResponseView {
-    let bytes = engine.response_body(&doc);
+    let (bytes, body_missing) = preview_body(engine, &doc);
     doc.body_b64 = None;
     let image = doc.content_type.starts_with("image/");
-    let body_image = (image && bytes.len() <= DISPLAY_IMAGE_LIMIT)
+    let body_image = (image && !bytes.is_empty() && bytes.len() <= DISPLAY_IMAGE_LIMIT)
         .then(|| base64::engine::general_purpose::STANDARD.encode(&bytes));
     ResponseView {
-        body_truncated: bytes.len() > DISPLAY_BODY_LIMIT || (image && body_image.is_none()),
+        body_truncated: !body_missing
+            && (doc.bytes as usize > DISPLAY_BODY_LIMIT || (image && body_image.is_none())),
+        body_missing,
         // Binary image bytes are not useful as text, and a multi-megabyte string locks the webview.
         body_text: if image {
             String::new()
@@ -516,21 +556,137 @@ fn response_get(state: State<'_, AppState>, id: String) -> CmdResult<ResponseVie
     Ok(view(&state.engine, doc))
 }
 
+fn response_doc(state: &AppState, id: &str) -> CmdResult<Doc<Response>> {
+    state.engine.store.get(id).map_err(e)
+}
+
+fn missing_body(doc: &Response) -> CmdResult<()> {
+    if let Some(path) = &doc.body_path
+        && !std::path::Path::new(path).is_file()
+    {
+        return Err(format!(
+            "The full response is not on disk ({path}). Send the request again."
+        ));
+    }
+    Ok(())
+}
+
+fn download_name(doc: &Doc<Response>) -> String {
+    format!(
+        "response-{}.{}",
+        doc.meta.id,
+        lsock_engine::body_extension(&doc.content_type)
+    )
+}
+
+fn human_size(n: u64) -> String {
+    if n < 1024 {
+        format!("{n} B")
+    } else if n < 1024 * 1024 {
+        format!("{:.1} KB", n as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", n as f64 / 1024.0 / 1024.0)
+    }
+}
+
+/// Copy the full body into Downloads and return that path. The bytes stay out of the window.
+#[tauri::command]
+fn response_save(state: State<'_, AppState>, id: String) -> CmdResult<String> {
+    let doc = response_doc(&state, &id)?;
+    missing_body(&doc)?;
+    let name = download_name(&doc);
+    if let Some(path) = &doc.body_path
+        && std::path::Path::new(path).is_file()
+    {
+        return sync::copy_download(&name, std::path::Path::new(path));
+    }
+    let bytes = state.engine.response_body(&doc);
+    if doc.bytes > 0 && bytes.is_empty() {
+        return Err("The full response body is missing. Send the request again.".into());
+    }
+    sync::write_download(&name, &bytes)
+}
+
+/// Open the full body in the default app. A `.bin` file is copied with a useful extension first.
+#[tauri::command]
+fn response_open(state: State<'_, AppState>, id: String) -> CmdResult<String> {
+    let doc = response_doc(&state, &id)?;
+    missing_body(&doc)?;
+    let path = if let Some(stored) = &doc.body_path
+        && std::path::Path::new(stored).is_file()
+    {
+        let ext = std::path::Path::new(stored)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        if ext == lsock_engine::body_extension(&doc.content_type) {
+            stored.clone()
+        } else {
+            sync::copy_download(&download_name(&doc), std::path::Path::new(stored))?
+        }
+    } else {
+        let bytes = state.engine.response_body(&doc);
+        if doc.bytes > 0 && bytes.is_empty() {
+            return Err("The full response body is missing. Send the request again.".into());
+        }
+        sync::write_download(&download_name(&doc), &bytes)?
+    };
+    open_file(&path)?;
+    Ok(path)
+}
+
+fn open_file(path: &str) -> CmdResult<()> {
+    let mut cmd = if cfg!(target_os = "macos") {
+        let mut c = std::process::Command::new("open");
+        c.arg(path);
+        c
+    } else if cfg!(target_os = "windows") {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", "start", "", path]);
+        c
+    } else {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(path);
+        c
+    };
+    cmd.status()
+        .map_err(|err| format!("could not open the response: {err}"))?;
+    Ok(())
+}
+
+/// Full response text, only when it is small enough to put on the clipboard.
+#[tauri::command]
+fn response_copy_text(state: State<'_, AppState>, id: String) -> CmdResult<String> {
+    const COPY_LIMIT: u64 = 1024 * 1024;
+    let doc = response_doc(&state, &id)?;
+    missing_body(&doc)?;
+    if doc.bytes > COPY_LIMIT {
+        return Err(format!(
+            "This response is {}, which is too large to put on the clipboard. Save a copy and open that file.",
+            human_size(doc.bytes)
+        ));
+    }
+    let bytes = state.engine.response_body(&doc);
+    if doc.bytes > 0 && bytes.is_empty() {
+        return Err("The full response body is missing. Send the request again.".into());
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
 #[tauri::command]
 fn response_clear(state: State<'_, AppState>, request_id: String) -> CmdResult<()> {
-    let ids: Vec<String> = state
-        .engine
-        .responses(&request_id)
-        .map_err(e)?
-        .into_iter()
-        .map(|r| r.meta.id)
-        .collect();
+    let docs = state.engine.responses(&request_id).map_err(e)?;
+    for doc in &docs {
+        if let Some(path) = &doc.body_path {
+            let _ = std::fs::remove_file(path);
+        }
+    }
     state
         .engine
         .store
         .batch(|tx| {
-            for id in &ids {
-                tx.delete(id)?;
+            for doc in &docs {
+                tx.delete(doc.id())?;
             }
             Ok(())
         })
@@ -1095,6 +1251,9 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             graphql_query,
             response_list,
             response_get,
+            response_save,
+            response_open,
+            response_copy_text,
             response_clear,
             env_list,
             env_create,

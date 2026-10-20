@@ -1,9 +1,9 @@
-import { AlertTriangle, CheckCircle2, CircleSlash, History, Send, Trash2, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleSlash, Download, History, Send, Trash2, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { CodeEditor, JsonTree } from '../components/editors';
-import { CopyButton, Empty, IconButton, Kbd, Select, Tabs, useToast } from '../components/ui';
-import { api, type ResponseSummary, type ResponseView } from '../lib/api';
+import { Button, CopyButton, Empty, IconButton, Kbd, Select, Tabs, useToast } from '../components/ui';
+import { api, errorText, type ResponseSummary, type ResponseView } from '../lib/api';
 import {
   cn,
   formatBytes,
@@ -36,10 +36,16 @@ export function ResponsePane({
   const toast = useToast();
   const [tab, setTab] = useState('preview');
   const [history, setHistory] = useState<ResponseSummary[]>([]);
+  const [downloadPath, setDownloadPath] = useState<string | null>(null);
+  const [bodyAction, setBodyAction] = useState<'save' | 'open' | 'copy' | null>(null);
 
   useEffect(() => {
     api.responseList(requestId).then(setHistory).catch(() => setHistory([]));
   }, [requestId, response?.id]);
+
+  useEffect(() => {
+    setDownloadPath(null);
+  }, [response?.id]);
 
   const json = useMemo(
     () => (response ? responseJson(response.bodyText, response.contentType, response.bodyTruncated) : undefined),
@@ -78,6 +84,30 @@ export function ResponsePane({
         ? 'The server refused this request. The credentials may not be allowed to do this.'
         : null;
 
+  const runBody = async (action: 'save' | 'open' | 'copy') => {
+    if (bodyAction) return;
+    setBodyAction(action);
+    try {
+      if (action === 'save') {
+        const path = await api.responseSave(response.id);
+        setDownloadPath(path);
+        toast(`Downloaded to ${path}`, 'success');
+      } else if (action === 'open') {
+        const path = await api.responseOpen(response.id);
+        if (path !== (response.bodyPath || '')) setDownloadPath(path);
+        toast('Opened the full response', 'success');
+      } else {
+        const text = await api.responseCopyText(response.id);
+        await navigator.clipboard.writeText(text);
+        toast('Copied the full response', 'success');
+      }
+    } catch (err) {
+      toast(errorText(err), 'error');
+    } finally {
+      setBodyAction(null);
+    }
+  };
+
   return (
     <div className={cn('flex h-full min-h-0 min-w-0 flex-col', sending && 'opacity-60')}>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-app px-3">
@@ -108,6 +138,11 @@ export function ResponsePane({
           </button>
         )}
         <div className="flex-1" />
+        {(response.bytes > 0 || !!response.bodyText) && !response.bodyMissing && (
+          <Button size="sm" variant="secondary" loading={bodyAction === 'save'} onClick={() => runBody('save')}>
+            <Download className="size-3.5" /> Download
+          </Button>
+        )}
         <History className="size-3.5 shrink-0 text-muted" />
         <Select
           aria-label="Response history"
@@ -157,7 +192,17 @@ export function ResponsePane({
         </div>
       ) : null}
 
-      {note && <div className="shrink-0 border-b border-app px-3 py-2 text-[12.5px] text-muted">{note}</div>}
+      {(note || response.bodyMissing) && (
+        <FullBodyBar
+          response={response}
+          note={note}
+          downloadPath={downloadPath}
+          busy={bodyAction}
+          onDownload={() => runBody('save')}
+          onOpen={() => runBody('open')}
+          onCopy={() => runBody('copy')}
+        />
+      )}
 
       {response.scriptError && !response.error && (
         <div className="mx-3 mt-3 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[12.5px]">
@@ -181,7 +226,11 @@ export function ResponsePane({
           { id: 'timeline', label: 'Timeline' },
           { id: 'timing', label: 'Timing' },
         ]}
-        right={tab === 'raw' || tab === 'preview' ? <CopyButton text={response.bodyText} label="Copy body" /> : undefined}
+        right={
+          tab === 'raw' || tab === 'preview' ? (
+            <CopyButton text={response.bodyText} label={response.bodyTruncated ? 'Copy shown text' : 'Copy body'} />
+          ) : undefined
+        }
       />
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === 'preview' &&
@@ -279,6 +328,47 @@ export function ResponsePane({
         {tab === 'tests' && <TestsView response={response} />}
         {tab === 'console' && <ConsoleView response={response} />}
       </div>
+    </div>
+  );
+}
+
+function FullBodyBar({
+  response,
+  note,
+  downloadPath,
+  busy,
+  onDownload,
+  onOpen,
+  onCopy,
+}: {
+  response: ResponseView;
+  note: string | null;
+  downloadPath: string | null;
+  busy: 'save' | 'open' | 'copy' | null;
+  onDownload: () => void;
+  onOpen: () => void;
+  onCopy: () => void;
+}) {
+  const copyable = response.bytes > 0 && response.bytes <= 1024 * 1024;
+  return (
+    <div className="shrink-0 border-b border-app px-3 py-2 text-[12.5px]">
+      <p className="text-muted">{response.bodyMissing ? 'The full response file is missing. Send the request again.' : note}</p>
+      {downloadPath && <p className="selectable mt-1 font-mono text-[12px] break-all">Downloaded to {downloadPath}</p>}
+      {!response.bodyMissing && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <Button size="sm" variant="primary" loading={busy === 'save'} onClick={onDownload}>
+            <Download className="size-3.5" /> Download
+          </Button>
+          <Button size="sm" variant="secondary" loading={busy === 'open'} onClick={onOpen}>
+            Open
+          </Button>
+          {copyable && (
+            <Button size="sm" variant="ghost" loading={busy === 'copy'} onClick={onCopy}>
+              Copy full response
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

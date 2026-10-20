@@ -162,10 +162,14 @@ export function jsonTreeOpenDepth(textLength: number): number {
 /** Note for a response the window is only showing in part. Null when the image preview is the whole image. */
 export function truncatedResponseNote(bytes: number, contentType: string, hasImage: boolean): string | null {
   if (hasImage) return null;
+  const size = formatBytes(bytes);
   if (contentType.startsWith('image/')) {
-    return `This image is too large to preview (${formatBytes(bytes)}). The full response is saved with this request.`;
+    return `This image is too large to preview (${size}).`;
   }
-  return `Showing the start of this response (${formatBytes(bytes)} total). The full response is saved with this request.`;
+  if (bytes > 1024 * 1024) {
+    return `Showing the start of this response (${size} total). It is too large to copy here. Download saves the full response to your Downloads folder.`;
+  }
+  return `Showing the start of this response (${size} total).`;
 }
 
 /**

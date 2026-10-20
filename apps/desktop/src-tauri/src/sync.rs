@@ -159,14 +159,43 @@ pub fn export_workspace(
 /// Save text to the Downloads folder (unique name) and return the path.
 #[tauri::command]
 pub fn save_to_downloads(file_name: String, content: String) -> CmdResult<String> {
+    write_download(&file_name, content.as_bytes())
+}
+
+/// Copy bytes into Downloads under `file_name`, adding " (2)" when the name is taken.
+pub fn write_download(file_name: &str, bytes: &[u8]) -> CmdResult<String> {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .ok_or("no home directory")?;
     let dir = std::path::PathBuf::from(home).join("Downloads");
     std::fs::create_dir_all(&dir).map_err(e)?;
+    let path = unique_download(&dir, file_name);
+    std::fs::write(&path, bytes).map_err(e)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Copy an existing file into Downloads. The body is not loaded into the window.
+pub fn copy_download(file_name: &str, source: &std::path::Path) -> CmdResult<String> {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .ok_or("no home directory")?;
+    let dir = std::path::PathBuf::from(home).join("Downloads");
+    std::fs::create_dir_all(&dir).map_err(e)?;
+    let path = unique_download(&dir, file_name);
+    std::fs::copy(source, &path).map_err(e)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+fn unique_download(dir: &std::path::Path, file_name: &str) -> std::path::PathBuf {
     let safe: String = file_name
         .chars()
-        .map(|c| if c == '/' || c == '\\' { '-' } else { c })
+        .map(|c| {
+            if c == '/' || c == '\\' || c == ':' {
+                '-'
+            } else {
+                c
+            }
+        })
         .collect();
     let (stem, ext) = safe
         .rsplit_once('.')
@@ -178,8 +207,7 @@ pub fn save_to_downloads(file_name: String, content: String) -> CmdResult<String
         path = dir.join(format!("{stem} ({n}){ext}"));
         n += 1;
     }
-    std::fs::write(&path, content).map_err(e)?;
-    Ok(path.to_string_lossy().into_owned())
+    path
 }
 
 /// Show a file or folder in Finder / Explorer / the file manager.

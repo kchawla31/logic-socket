@@ -71,6 +71,29 @@ pub fn default_data_dir() -> PathBuf {
 /// Bodies larger than this are stored as files next to the database.
 const INLINE_BODY_LIMIT: usize = 1024 * 1024;
 
+/// File extension for a saved response body, so opening it picks a useful app.
+pub fn body_extension(content_type: &str) -> &'static str {
+    let ct = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    match ct.as_str() {
+        "image/png" => "png",
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/svg+xml" => "svg",
+        "application/pdf" => "pdf",
+        _ if ct.contains("json") => "json",
+        _ if ct.contains("html") => "html",
+        _ if ct.contains("xml") => "xml",
+        _ if ct.starts_with("text/") => "txt",
+        _ => "bin",
+    }
+}
+
 #[derive(Clone)]
 pub struct Engine {
     pub store: Store,
@@ -497,20 +520,35 @@ impl Engine {
             .body_b64
             .as_ref()
             .is_some_and(|b| b.len() > INLINE_BODY_LIMIT * 4 / 3);
-        let mut file_to_write: Option<(PathBuf, Vec<u8>)> = None;
         if big_body && let Some(dir) = &self.data_dir {
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(resp.body_b64.take().unwrap())
-                .unwrap_or_default();
-            let path = dir
-                .join("responses")
-                .join(format!("{}.bin", lsock_core::new_id("body")));
+            let encoded = resp.body_b64.take().unwrap_or_default();
+            let bytes = match base64::engine::general_purpose::STANDARD.decode(&encoded) {
+                Ok(bytes) => bytes,
+                Err(err) => {
+                    resp.body_b64 = Some(encoded);
+                    return Err(EngineError::Message(format!(
+                        "could not save the response body: {err}"
+                    )));
+                }
+            };
+            let path = dir.join("responses").join(format!(
+                "{}.{}",
+                lsock_core::new_id("body"),
+                body_extension(&resp.content_type)
+            ));
+            let write_result = (|| {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&path, &bytes)
+            })();
+            if let Err(err) = write_result {
+                resp.body_b64 = Some(encoded);
+                return Err(EngineError::Message(format!(
+                    "could not save the response body: {err}"
+                )));
+            }
             resp.body_path = Some(path.to_string_lossy().into_owned());
-            file_to_write = Some((path, bytes));
-        }
-        if let Some((path, bytes)) = &file_to_write {
-            let _ = std::fs::create_dir_all(path.parent().unwrap());
-            let _ = std::fs::write(path, bytes);
         }
         let sealed_envs = self.sealed(envs)?;
         let doc = self.store.batch(|tx| {
