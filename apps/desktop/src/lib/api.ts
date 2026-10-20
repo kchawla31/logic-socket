@@ -400,6 +400,14 @@ export interface ResponseView extends Meta {
   bodyMissing?: boolean;
 }
 
+/** One part of a full response body. `nextOffset` is the start of the next part. */
+export interface BodyPage {
+  offset: number;
+  nextOffset: number;
+  total: number;
+  text: string;
+}
+
 export interface ResponseSummary {
   id: string;
   created: number;
@@ -710,6 +718,7 @@ export const api = {
   responseGet: (id: string) => invoke<ResponseView>('response_get', { id }),
   responseSave: (id: string) => invoke<string>('response_save', { id }),
   responseOpen: (id: string) => invoke<string>('response_open', { id }),
+  responseSlice: (id: string, offset: number) => invoke<BodyPage>('response_slice', { id, offset }),
   responseCopyText: (id: string) => invoke<string>('response_copy_text', { id }),
   responseClear: (requestId: string) => invoke<void>('response_clear', { requestId }),
   envList: (workspaceId: string) => invoke<EnvList>('env_list', { workspaceId }),

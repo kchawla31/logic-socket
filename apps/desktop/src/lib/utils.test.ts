@@ -20,6 +20,7 @@ import {
   responseExcerpt,
   responseJson,
   jsonTreeOpenDepth,
+  bodyWindowLabel,
   truncatedResponseNote,
   responseAfterHistory,
   preferNewerResponse,
@@ -73,10 +74,16 @@ describe('saved responses', () => {
   it('shows a short excerpt and says the full response is saved', () => {
     expect(responseExcerpt('hello', 8)).toBe('hello');
     expect(responseExcerpt('hello world', 5)).toBe('hello');
-    expect(truncatedResponseNote(200 * 1024, 'application/json', false)).toBe('Showing the start of this response (200.0 KB total).');
-    expect(truncatedResponseNote(2 * 1024 * 1024, 'application/json', false)).toBe(
-      'Showing the start of this response (2.0 MB total). It is too large to copy here. Download saves the full response to your Downloads folder.',
+    expect(truncatedResponseNote(200 * 1024, 'application/json', false)).toBe(
+      'Showing the start of this response (200.0 KB total). Open loads the full response here.',
     );
+    expect(truncatedResponseNote(2 * 1024 * 1024, 'application/json', false)).toBe(
+      'Showing the start of this response (2.0 MB total). It is too large to copy here. Open loads the full response here. Download saves the file to your Downloads folder.',
+    );
+    expect(bodyWindowLabel(0, 96 * 1024, 2 * 1024 * 1024)).toBe('Showing the start through 96.0 KB of 2.0 MB.');
+    expect(bodyWindowLabel(96 * 1024, 192 * 1024, 2 * 1024 * 1024)).toBe('Showing 96.0 KB to 192.0 KB of 2.0 MB.');
+    expect(bodyWindowLabel(0, 400, 400)).toBe('Showing the full response (400 B).');
+    expect(bodyWindowLabel(1024 * 1024, 2 * 1024 * 1024, 2 * 1024 * 1024)).toBe('Showing 1.0 MB through the end of 2.0 MB.');
     expect(truncatedResponseNote(2 * 1024 * 1024, 'image/png', false)).toBe('This image is too large to preview (2.0 MB).');
     expect(truncatedResponseNote(200 * 1024, 'image/png', true)).toBeNull();
   });

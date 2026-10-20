@@ -3,8 +3,9 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { CodeEditor, JsonTree } from '../components/editors';
 import { Button, CopyButton, Empty, IconButton, Kbd, Select, Tabs, useToast } from '../components/ui';
-import { api, errorText, type ResponseSummary, type ResponseView } from '../lib/api';
+import { api, errorText, type BodyPage, type ResponseSummary, type ResponseView } from '../lib/api';
 import {
+  bodyWindowLabel,
   cn,
   formatBytes,
   formatMs,
@@ -37,6 +38,7 @@ export function ResponsePane({
   const [tab, setTab] = useState('preview');
   const [history, setHistory] = useState<ResponseSummary[]>([]);
   const [downloadPath, setDownloadPath] = useState<string | null>(null);
+  const [bodyPage, setBodyPage] = useState<BodyPage | null>(null);
   const [bodyAction, setBodyAction] = useState<'save' | 'open' | 'copy' | null>(null);
 
   useEffect(() => {
@@ -45,6 +47,7 @@ export function ResponsePane({
 
   useEffect(() => {
     setDownloadPath(null);
+    setBodyPage(null);
   }, [response?.id]);
 
   const json = useMemo(
@@ -93,14 +96,36 @@ export function ResponsePane({
         setDownloadPath(path);
         toast(`Downloaded to ${path}`, 'success');
       } else if (action === 'open') {
-        const path = await api.responseOpen(response.id);
-        if (path !== (response.bodyPath || '')) setDownloadPath(path);
-        toast('Opened the full response', 'success');
+        if (response.contentType.startsWith('image/')) {
+          const path = await api.responseOpen(response.id);
+          if (path !== (response.bodyPath || '')) setDownloadPath(path);
+          toast('Opened the full response', 'success');
+        } else {
+          await loadPage(0);
+        }
       } else {
         const text = await api.responseCopyText(response.id);
         await navigator.clipboard.writeText(text);
         toast('Copied the full response', 'success');
       }
+    } catch (err) {
+      toast(errorText(err), 'error');
+    } finally {
+      setBodyAction(null);
+    }
+  };
+
+  const loadPage = async (offset: number) => {
+    const next = await api.responseSlice(response.id, offset);
+    setBodyPage(next);
+    setTab('raw');
+  };
+
+  const seekPage = async (offset: number) => {
+    if (bodyAction) return;
+    setBodyAction('open');
+    try {
+      await loadPage(offset);
     } catch (err) {
       toast(errorText(err), 'error');
     } finally {
@@ -196,10 +221,12 @@ export function ResponsePane({
         <FullBodyBar
           response={response}
           note={note}
+          page={bodyPage}
           downloadPath={downloadPath}
           busy={bodyAction}
           onDownload={() => runBody('save')}
           onOpen={() => runBody('open')}
+          onSeek={offset => void seekPage(offset)}
           onCopy={() => runBody('copy')}
         />
       )}
@@ -228,12 +255,14 @@ export function ResponsePane({
         ]}
         right={
           tab === 'raw' || tab === 'preview' ? (
-            <CopyButton text={response.bodyText} label={response.bodyTruncated ? 'Copy shown text' : 'Copy body'} />
+            <CopyButton text={bodyPage?.text ?? response.bodyText} label={response.bodyTruncated ? 'Copy shown text' : 'Copy body'} />
           ) : undefined
         }
       />
       <div className="min-h-0 flex-1 overflow-auto">
-        {tab === 'preview' &&
+        {tab === 'preview' && bodyPage ? (
+          <pre className="selectable p-3 font-mono text-[12.5px] break-all whitespace-pre-wrap">{bodyPage.text}</pre>
+        ) : tab === 'preview' &&
           (response.bodyImage ? (
             <div className="p-4">
               <img alt="Response" className="max-w-full" src={`data:${response.contentType};base64,${response.bodyImage}`} />
@@ -270,8 +299,10 @@ export function ResponsePane({
           ))}
         {tab === 'raw' && (
           <div className="flex h-full flex-col">
-            {response.bodyTruncated ? (
-              <pre className="selectable min-h-0 flex-1 overflow-auto p-3 font-mono text-[12.5px] break-all whitespace-pre-wrap">{response.bodyText}</pre>
+            {bodyPage || response.bodyTruncated ? (
+              <pre className="selectable min-h-0 flex-1 overflow-auto p-3 font-mono text-[12.5px] break-all whitespace-pre-wrap">
+                {bodyPage ? bodyPage.text : response.bodyText}
+              </pre>
             ) : (
               <CodeEditor
                 value={(json !== undefined && prettyJson(response.bodyText)) || response.bodyText}
@@ -335,25 +366,83 @@ export function ResponsePane({
 function FullBodyBar({
   response,
   note,
+  page,
   downloadPath,
   busy,
   onDownload,
   onOpen,
+  onSeek,
   onCopy,
 }: {
   response: ResponseView;
   note: string | null;
+  page: BodyPage | null;
   downloadPath: string | null;
   busy: 'save' | 'open' | 'copy' | null;
   onDownload: () => void;
   onOpen: () => void;
+  onSeek: (offset: number) => void;
   onCopy: () => void;
 }) {
   const copyable = response.bytes > 0 && response.bytes <= 1024 * 1024;
+  const paged = page != null && (page.offset > 0 || page.nextOffset < page.total);
+  const atEnd = page != null && page.nextOffset >= page.total;
+  const [drag, setDrag] = useState<number | null>(null);
+  const slider = drag ?? (page == null ? 0 : atEnd ? page.total : page.offset);
+  const label = response.bodyMissing
+    ? 'The full response file is missing. Send the request again.'
+    : page
+      ? bodyWindowLabel(page.offset, page.nextOffset, page.total)
+      : note;
   return (
     <div className="shrink-0 border-b border-app px-3 py-2 text-[12.5px]">
-      <p className="text-muted">{response.bodyMissing ? 'The full response file is missing. Send the request again.' : note}</p>
+      <p className="text-muted">{label}</p>
       {downloadPath && <p className="selectable mt-1 font-mono text-[12px] break-all">Downloaded to {downloadPath}</p>}
+      {paged && page && (
+        <div className="mt-2">
+          <input
+            aria-label="Position in the response"
+            className="w-full accent-[var(--accent)]"
+            type="range"
+            min={0}
+            max={page.total}
+            step={1}
+            value={slider}
+            disabled={busy != null}
+            onChange={e => setDrag(Number(e.target.value))}
+            onPointerUp={e => {
+              const next = Number((e.target as HTMLInputElement).value);
+              setDrag(null);
+              onSeek(next);
+            }}
+            onKeyUp={() => {
+              if (drag == null) return;
+              const next = drag;
+              setDrag(null);
+              onSeek(next);
+            }}
+          />
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <Button size="sm" variant="ghost" disabled={busy != null || page.offset === 0} onClick={() => onSeek(0)}>
+              Start
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy != null || page.offset === 0}
+              onClick={() => onSeek(Math.max(0, page.offset - Math.max(1, page.nextOffset - page.offset)))}
+            >
+              Earlier
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy != null || page.nextOffset >= page.total} onClick={() => onSeek(page.nextOffset)}>
+              Later
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy != null || page.nextOffset >= page.total} onClick={() => onSeek(page.total)}>
+              End
+            </Button>
+          </div>
+        </div>
+      )}
       {!response.bodyMissing && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           <Button size="sm" variant="primary" loading={busy === 'save'} onClick={onDownload}>

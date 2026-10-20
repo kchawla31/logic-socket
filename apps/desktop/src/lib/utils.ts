@@ -167,9 +167,19 @@ export function truncatedResponseNote(bytes: number, contentType: string, hasIma
     return `This image is too large to preview (${size}).`;
   }
   if (bytes > 1024 * 1024) {
-    return `Showing the start of this response (${size} total). It is too large to copy here. Download saves the full response to your Downloads folder.`;
+    return `Showing the start of this response (${size} total). It is too large to copy here. Open loads the full response here. Download saves the file to your Downloads folder.`;
   }
-  return `Showing the start of this response (${size} total).`;
+  return `Showing the start of this response (${size} total). Open loads the full response here.`;
+}
+
+/** Where the open response window sits inside the full body. */
+export function bodyWindowLabel(offset: number, nextOffset: number, total: number): string {
+  if (total <= 0) return 'Empty response.';
+  if (offset <= 0 && nextOffset >= total) return `Showing the full response (${formatBytes(total)}).`;
+  const end = Math.min(Math.max(nextOffset, offset), total);
+  if (offset <= 0) return `Showing the start through ${formatBytes(end)} of ${formatBytes(total)}.`;
+  if (nextOffset >= total) return `Showing ${formatBytes(offset)} through the end of ${formatBytes(total)}.`;
+  return `Showing ${formatBytes(offset)} to ${formatBytes(end)} of ${formatBytes(total)}.`;
 }
 
 /**

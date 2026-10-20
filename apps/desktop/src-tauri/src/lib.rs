@@ -441,6 +441,8 @@ fn curl_parse(text: String) -> CmdResult<Request> {
 /// How much of a response body is sent to the window. The full body stays saved.
 const DISPLAY_BODY_LIMIT: usize = 128 * 1024;
 const DISPLAY_IMAGE_LIMIT: usize = 1536 * 1024;
+/// One part of the full body when the user opens it. The window never receives the whole file.
+const BODY_PAGE: usize = 96 * 1024;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -607,7 +609,132 @@ fn response_save(state: State<'_, AppState>, id: String) -> CmdResult<String> {
     sync::write_download(&name, &bytes)
 }
 
-/// Open the full body in the default app. A `.bin` file is copied with a useful extension first.
+/// One part of a saved body. `next_offset` is where the following part starts.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BodyPage {
+    offset: u64,
+    next_offset: u64,
+    total: u64,
+    text: String,
+}
+
+/// Read one part of the full body. A large file is seeked, not loaded into the window.
+#[tauri::command]
+fn response_slice(state: State<'_, AppState>, id: String, offset: u64) -> CmdResult<BodyPage> {
+    let doc = response_doc(&state, &id)?;
+    missing_body(&doc)?;
+    let (offset, next_offset, text, total) = if let Some(path) = &doc.body_path
+        && std::path::Path::new(path).is_file()
+    {
+        read_page_file(std::path::Path::new(path), offset)?
+    } else {
+        let bytes = state.engine.response_body(&doc);
+        if doc.bytes > 0 && bytes.is_empty() {
+            return Err("The full response body is missing. Send the request again.".into());
+        }
+        let (offset, next, text) = page_from_bytes(&bytes, offset);
+        (offset, next, text, bytes.len() as u64)
+    };
+    Ok(BodyPage {
+        offset,
+        next_offset,
+        total,
+        text,
+    })
+}
+
+/// Byte index of the character that contains `index`, or the next one when `index` is mid-character.
+fn char_start(bytes: &[u8], index: usize) -> usize {
+    let mut i = index.min(bytes.len());
+    if i >= bytes.len() {
+        return bytes.len();
+    }
+    let mut back = 0;
+    while i > 0 && back < 3 && bytes[i] & 0b1100_0000 == 0b1000_0000 {
+        i -= 1;
+        back += 1;
+    }
+    while i < bytes.len() && bytes[i] & 0b1100_0000 == 0b1000_0000 {
+        i += 1;
+    }
+    i
+}
+
+/// Text for one page. An offset at or past the end returns the last page, not an empty one.
+fn page_from_bytes(bytes: &[u8], mut offset: u64) -> (u64, u64, String) {
+    let total = bytes.len() as u64;
+    if total == 0 {
+        return (0, 0, String::new());
+    }
+    if offset >= total {
+        offset = total.saturating_sub(BODY_PAGE as u64);
+    }
+    let start = char_start(bytes, offset as usize);
+    if start >= bytes.len() {
+        return (total, total, String::new());
+    }
+    let end = (start + BODY_PAGE).min(bytes.len());
+    let (text, consumed) = lossy_prefix(&bytes[start..end]);
+    let mut next = start + consumed;
+    if next == start && start < bytes.len() {
+        next = start + 1;
+    }
+    (start as u64, next as u64, text)
+}
+
+/// Valid UTF-8 from the front of `bytes`. A trailing split character is left for the next page.
+fn lossy_prefix(bytes: &[u8]) -> (String, usize) {
+    if bytes.is_empty() {
+        return (String::new(), 0);
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(text) => (text.to_owned(), bytes.len()),
+        Err(err) => {
+            let cut = err.valid_up_to();
+            if cut == 0 {
+                ("\u{FFFD}".to_owned(), 1)
+            } else {
+                let text = std::str::from_utf8(&bytes[..cut]).unwrap_or("").to_owned();
+                (text, cut)
+            }
+        }
+    }
+}
+
+fn read_page_file(path: &std::path::Path, mut offset: u64) -> CmdResult<(u64, u64, String, u64)> {
+    let mut file =
+        std::fs::File::open(path).map_err(|err| format!("could not read the response: {err}"))?;
+    let total = file
+        .metadata()
+        .map_err(|err| format!("could not read the response: {err}"))?
+        .len();
+    if total == 0 {
+        return Ok((0, 0, String::new(), 0));
+    }
+    if offset >= total {
+        offset = total.saturating_sub(BODY_PAGE as u64);
+    }
+    let back = offset.saturating_sub(3);
+    std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(back))
+        .map_err(|err| format!("could not read the response: {err}"))?;
+    let want = (offset - back) as usize + BODY_PAGE + 3;
+    let mut buf = vec![0u8; want];
+    let mut got = 0;
+    while got < buf.len() {
+        match std::io::Read::read(&mut file, &mut buf[got..]) {
+            Ok(0) => break,
+            Ok(n) => got += n,
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(err) => return Err(format!("could not read the response: {err}")),
+        }
+    }
+    buf.truncate(got);
+    let (start, next, text) = page_from_bytes(&buf, offset - back);
+    Ok((back + start, back + next, text, total))
+}
+
+/// Open an image body in the default app. Text bodies are read with `response_slice`.
 #[tauri::command]
 fn response_open(state: State<'_, AppState>, id: String) -> CmdResult<String> {
     let doc = response_doc(&state, &id)?;
@@ -649,8 +776,12 @@ fn open_file(path: &str) -> CmdResult<()> {
         c.arg(path);
         c
     };
-    cmd.status()
+    let status = cmd
+        .status()
         .map_err(|err| format!("could not open the response: {err}"))?;
+    if !status.success() {
+        return Err(format!("could not open the response ({status})"));
+    }
     Ok(())
 }
 
@@ -1253,6 +1384,7 @@ pub fn build<R: tauri::Runtime>(builder: tauri::Builder<R>, engine: Engine) -> t
             response_get,
             response_save,
             response_open,
+            response_slice,
             response_copy_text,
             response_clear,
             env_list,
@@ -1387,7 +1519,9 @@ mod ipc_tests;
 mod response_display {
     use base64::Engine as _;
 
-    use super::{DISPLAY_BODY_LIMIT, DISPLAY_IMAGE_LIMIT, view};
+    use super::{
+        BODY_PAGE, DISPLAY_BODY_LIMIT, DISPLAY_IMAGE_LIMIT, page_from_bytes, read_page_file, view,
+    };
     use lsock_core::{Doc, Meta, Response};
     use lsock_engine::Engine;
 
@@ -1451,5 +1585,47 @@ mod response_display {
         assert!(shown.body_truncated);
         assert!(shown.body_text.is_empty());
         assert!(shown.body_image.is_some());
+    }
+
+    #[test]
+    fn page_keeps_a_character_that_would_split() {
+        let mut bytes = vec![b'a'; BODY_PAGE - 1];
+        bytes.extend_from_slice("é".as_bytes());
+        let (start, next, text) = page_from_bytes(&bytes, 0);
+        assert_eq!(start, 0);
+        assert_eq!(next, (BODY_PAGE - 1) as u64);
+        assert!(text.chars().all(|c| c == 'a'));
+        let (start, next, text) = page_from_bytes(&bytes, next);
+        assert_eq!(start, (BODY_PAGE - 1) as u64);
+        assert_eq!(text, "é");
+        assert_eq!(next, bytes.len() as u64);
+    }
+
+    #[test]
+    fn page_at_the_end_is_the_last_part() {
+        let bytes = vec![b'x'; BODY_PAGE + 20];
+        let (start, next, text) = page_from_bytes(&bytes, bytes.len() as u64);
+        assert_eq!(start, 20);
+        assert_eq!(next, bytes.len() as u64);
+        assert_eq!(text.len(), BODY_PAGE);
+        assert!(text.chars().all(|c| c == 'x'));
+    }
+
+    #[test]
+    fn page_from_a_file_reads_one_part_then_the_end() {
+        let mut bytes = vec![b'b'; BODY_PAGE + 10];
+        bytes.extend_from_slice("é".as_bytes());
+        let path = std::env::temp_dir().join(format!("lsock-page-{}", std::process::id()));
+        std::fs::write(&path, &bytes).unwrap();
+        let (start, next, text, total) = read_page_file(&path, 0).unwrap();
+        assert_eq!(total, bytes.len() as u64);
+        assert_eq!(start, 0);
+        assert_eq!(next, BODY_PAGE as u64);
+        assert_eq!(text.len(), BODY_PAGE);
+        let (start, next, text, _) = read_page_file(&path, bytes.len() as u64).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(next, bytes.len() as u64);
+        assert!(start < next);
+        assert!(text.ends_with('é'));
     }
 }
